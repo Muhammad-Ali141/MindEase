@@ -1,653 +1,660 @@
-// "use client"
-
-// import Link from "next/link"
-// import { Button } from "@/components/ui/button"
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-// import { dict, useLanguage } from "@/lib/i18n"
-// import { LanguageToggle } from "@/components/LanguageToggle"
-// import { useEffect, useState } from "react"
-
-// export default function HomePage() {
-//   const lang = useLanguage()
-//   const t = dict[lang]
-//   const isUrdu = lang === "ur"
-//   const [mounted, setMounted] = useState(false)
-
-//   useEffect(() => {
-//     setMounted(true)
-//   }, [])
-
-//   if (!mounted) {
-//     return null
-//   }
-
-//   return (
-//     <div className="min-h-dvh bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-gray-900 dark:to-slate-800">
-//       {/* Main Content */}
-//       <main className="mx-auto max-w-6xl px-6 py-20">
-//         <div className="text-center">
-//           {/* Hero Section */}
-//           <div className="mb-16">
-//             <h1 
-//               className={`mb-8 text-5xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-7xl ${
-//                 isUrdu ? 'font-urdu' : ''
-//               }`}
-//               dir={isUrdu ? "rtl" : "ltr"}
-//               style={isUrdu ? { 
-//                 fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                 lineHeight: '1.4',
-//                 textAlign: 'center'
-//               } : {}}
-//             >
-//               <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
-//                 {t.welcomeTitle}
-//               </span>
-//             </h1>
-//             <p 
-//               className={`mx-auto max-w-3xl text-xl text-slate-600 dark:text-slate-300 sm:text-2xl leading-relaxed ${
-//                 isUrdu ? 'font-urdu' : ''
-//               }`}
-//               dir={isUrdu ? "rtl" : "ltr"}
-//               style={isUrdu ? { 
-//                 fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                 lineHeight: '1.8',
-//                 textAlign: 'center'
-//               } : {}}
-//             >
-//               {t.welcomeSubtitle}
-//             </p>
-//           </div>
-
-//           {/* Action Cards */}
-//           <div className="grid gap-8 sm:grid-cols-2 lg:gap-12">
-//             {/* Login Card */}
-//             <div className="group">
-//               <Card className="group relative overflow-hidden border-0 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-2">
-//                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-//                 <CardHeader className="relative text-center pb-6">
-//                   <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg group-hover:scale-110 transition-transform duration-300">
-//                     <svg
-//                       className="h-8 w-8 text-white"
-//                       fill="none"
-//                       stroke="currentColor"
-//                       viewBox="0 0 24 24"
-//                     >
-//                       <path
-//                         strokeLinecap="round"
-//                         strokeLinejoin="round"
-//                         strokeWidth={2.5}
-//                         d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
-//                       />
-//                     </svg>
-//                   </div>
-//                   <CardTitle 
-//                     className={`text-2xl font-bold text-slate-800 dark:text-white ${
-//                       isUrdu ? 'font-urdu' : ''
-//                     }`}
-//                     dir={isUrdu ? "rtl" : "ltr"}
-//                     style={isUrdu ? { 
-//                       fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                       lineHeight: '1.4'
-//                     } : {}}
-//                   >
-//                     {t.login}
-//                   </CardTitle>
-//                   <CardDescription 
-//                     className={`text-slate-600 dark:text-slate-300 ${
-//                       isUrdu ? 'font-urdu' : ''
-//                     }`}
-//                     dir={isUrdu ? "rtl" : "ltr"}
-//                     style={isUrdu ? { 
-//                       fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                       lineHeight: '1.6'
-//                     } : {}}
-//                   >
-//                     {t.signInDescription}
-//                   </CardDescription>
-//                 </CardHeader>
-//                 <CardContent className="relative text-center pt-0">
-//                   <Link href="/login">
-//                     <Button 
-//                       className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-300" 
-//                       size="lg"
-//                     >
-//                       {t.login}
-//                     </Button>
-//                   </Link>
-//                 </CardContent>
-//               </Card>
-//             </div>
-
-//             {/* Register Card */}
-//             <div className="group">
-//               <Card className="group relative overflow-hidden border-0 bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-emerald-900/20 dark:to-teal-900/20 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-2">
-//                 <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-//                 <CardHeader className="relative text-center pb-6">
-//                   <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg group-hover:scale-110 transition-transform duration-300">
-//                     <svg
-//                       className="h-8 w-8 text-white"
-//                       fill="none"
-//                       stroke="currentColor"
-//                       viewBox="0 0 24 24"
-//                     >
-//                       <path
-//                         strokeLinecap="round"
-//                         strokeLinejoin="round"
-//                         strokeWidth={2.5}
-//                         d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-//                       />
-//                     </svg>
-//                   </div>
-//                   <CardTitle 
-//                     className={`text-2xl font-bold text-slate-800 dark:text-white ${
-//                       isUrdu ? 'font-urdu' : ''
-//                     }`}
-//                     dir={isUrdu ? "rtl" : "ltr"}
-//                     style={isUrdu ? { 
-//                       fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                       lineHeight: '1.4'
-//                     } : {}}
-//                   >
-//                     {t.register}
-//                   </CardTitle>
-//                   <CardDescription 
-//                     className={`text-slate-600 dark:text-slate-300 ${
-//                       isUrdu ? 'font-urdu' : ''
-//                     }`}
-//                     dir={isUrdu ? "rtl" : "ltr"}
-//                     style={isUrdu ? { 
-//                       fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                       lineHeight: '1.6'
-//                     } : {}}
-//                   >
-//                     {t.signUpDescription}
-//                   </CardDescription>
-//                 </CardHeader>
-//                 <CardContent className="relative text-center pt-0">
-//                   <Link href="/register">
-//                     <Button 
-//                       className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all duration-300" 
-//                       size="lg"
-//                     >
-//                       {t.register}
-//                     </Button>
-//                   </Link>
-//                 </CardContent>
-//               </Card>
-//             </div>
-//           </div>
-
-//           {/* Features Section */}
-//           <div className="mt-24">
-//             <h2 
-//               className={`mb-12 text-3xl font-bold text-slate-800 dark:text-white ${
-//                 isUrdu ? 'font-urdu' : ''
-//               }`}
-//               dir={isUrdu ? "rtl" : "ltr"}
-//               style={isUrdu ? { 
-//                 fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                 lineHeight: '1.4'
-//               } : {}}
-//             >
-//               <span className="bg-gradient-to-r from-slate-700 to-slate-900 dark:from-slate-200 dark:to-slate-400 bg-clip-text text-transparent">
-//                 {t.whyChooseTitle}
-//               </span>
-//             </h2>
-//             <div className="grid gap-8 sm:grid-cols-3">
-//               <div className="group text-center hover:-translate-y-2 transition-all duration-300">
-//                 <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 shadow-lg group-hover:scale-110 transition-all duration-300">
-//                   <svg className="h-7 w-7 text-white" fill="currentColor" viewBox="0 0 20 20">
-//                     <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.828a4 4 0 00-5.656 0z" clipRule="evenodd" />
-//                   </svg>
-//                 </div>
-//                 <h3 
-//                   className={`mb-3 text-lg font-bold text-slate-800 dark:text-white ${
-//                     isUrdu ? 'font-urdu' : ''
-//                   }`}
-//                   dir={isUrdu ? "rtl" : "ltr"}
-//                   style={isUrdu ? { 
-//                     fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                     lineHeight: '1.4'
-//                   } : {}}
-//                 >
-//                   {t.personalizedCare}
-//                 </h3>
-//                 <p 
-//                   className={`text-slate-600 dark:text-slate-300 ${
-//                     isUrdu ? 'font-urdu' : ''
-//                   }`}
-//                   dir={isUrdu ? "rtl" : "ltr"}
-//                   style={isUrdu ? { 
-//                     fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                     lineHeight: '1.6'
-//                   } : {}}
-//                 >
-//                   {t.personalizedCareDesc}
-//                 </p>
-//               </div>
-              
-//               <div className="group text-center hover:-translate-y-2 transition-all duration-300">
-//                 <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 shadow-lg group-hover:scale-110 transition-all duration-300">
-//                   <svg className="h-7 w-7 text-white" fill="currentColor" viewBox="0 0 20 20">
-//                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-//                   </svg>
-//                 </div>
-//                 <h3 
-//                   className={`mb-3 text-lg font-bold text-slate-800 dark:text-white ${
-//                     isUrdu ? 'font-urdu' : ''
-//                   }`}
-//                   dir={isUrdu ? "rtl" : "ltr"}
-//                   style={isUrdu ? { 
-//                     fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                     lineHeight: '1.4'
-//                   } : {}}
-//                 >
-//                   {t.safeSecure}
-//                 </h3>
-//                 <p 
-//                   className={`text-slate-600 dark:text-slate-300 ${
-//                     isUrdu ? 'font-urdu' : ''
-//                   }`}
-//                   dir={isUrdu ? "rtl" : "ltr"}
-//                   style={isUrdu ? { 
-//                     fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                     lineHeight: '1.6'
-//                   } : {}}
-//                 >
-//                   {t.safeSecureDesc}
-//                 </p>
-//               </div>
-              
-//               <div className="group text-center hover:-translate-y-2 transition-all duration-300">
-//                 <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 shadow-lg group-hover:scale-110 transition-all duration-300">
-//                   <svg className="h-7 w-7 text-white" fill="currentColor" viewBox="0 0 20 20">
-//                     <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-//                   </svg>
-//                 </div>
-//                 <h3 
-//                   className={`mb-3 text-lg font-bold text-slate-800 dark:text-white ${
-//                     isUrdu ? 'font-urdu' : ''
-//                   }`}
-//                   dir={isUrdu ? "rtl" : "ltr"}
-//                   style={isUrdu ? { 
-//                     fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                     lineHeight: '1.4'
-//                   } : {}}
-//                 >
-//                   {t.support247}
-//                 </h3>
-//                 <p 
-//                   className={`text-slate-600 dark:text-slate-300 ${
-//                     isUrdu ? 'font-urdu' : ''
-//                   }`}
-//                   dir={isUrdu ? "rtl" : "ltr"}
-//                   style={isUrdu ? { 
-//                     fontFamily: "'Noto Nastaliq Urdu', 'Amiri', 'Scheherazade New', serif",
-//                     lineHeight: '1.6'
-//                   } : {}}
-//                 >
-//                   {t.support247Desc}
-//                 </p>
-//               </div>
-//             </div>
-//           </div>
-//         </div>
-//       </main>
-//     </div>
-//   )
-// }
-
-
-
-// "use client"
-
-// import Link from "next/link"
-// import { motion } from "framer-motion"
-// import { Button } from "@/components/ui/button"
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-// import { dict, useLanguage } from "@/lib/i18n"
-// import { useEffect, useState } from "react"
-
-// export default function HomePage() {
-//   const lang = useLanguage()
-//   const t = dict[lang]
-//   const isUrdu = lang === "ur"
-//   const [mounted, setMounted] = useState(false)
-
-//   useEffect(() => setMounted(true), [])
-//   if (!mounted) return null
-
-//   return (
-//     <div className="min-h-screen flex flex-col bg-gradient-to-br from-teal-50 via-blue-50 to-indigo-100 dark:from-slate-950 dark:via-gray-900 dark:to-slate-800 transition-all">
-
-//       {/* ================= Hero Section ================= */}
-//       <section className="relative isolate overflow-hidden">
-//         {/* Background Glow */}
-//         <div className="absolute inset-0 -z-10 opacity-40">
-//           <svg
-//             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[70rem] w-[70rem] blur-3xl"
-//             aria-hidden="true"
-//           >
-//             <defs>
-//               <radialGradient id="gradient" cx="0" cy="0" r="1">
-//                 <stop offset="0%" stopColor="#34d399" />
-//                 <stop offset="100%" stopColor="#2563eb" />
-//               </radialGradient>
-//             </defs>
-//             <circle cx="50%" cy="50%" r="50%" fill="url(#gradient)" />
-//           </svg>
-//         </div>
-
-//         <div className="mx-auto max-w-6xl px-6 py-24 sm:py-32 text-center">
-//           <motion.h1
-//             initial={{ opacity: 0, y: 40 }}
-//             animate={{ opacity: 1, y: 0 }}
-//             transition={{ duration: 1 }}
-//             className={`text-5xl sm:text-7xl font-extrabold tracking-tight text-gray-900 dark:text-white ${isUrdu ? "font-urdu" : ""}`}
-//             dir={isUrdu ? "rtl" : "ltr"}
-//           >
-//             <span className="bg-gradient-to-r from-blue-600 via-teal-600 to-indigo-600 bg-clip-text text-transparent">
-//               {t.welcomeTitle}
-//             </span>
-//           </motion.h1>
-
-//           <motion.p
-//             initial={{ opacity: 0, y: 40 }}
-//             animate={{ opacity: 1, y: 0 }}
-//             transition={{ duration: 1.2 }}
-//             className={`mt-6 text-lg sm:text-2xl text-slate-600 dark:text-slate-300 leading-relaxed ${isUrdu ? "font-urdu" : ""}`}
-//             dir={isUrdu ? "rtl" : "ltr"}
-//           >
-//             {t.welcomeSubtitle}
-//           </motion.p>
-
-//           <motion.div
-//             initial={{ opacity: 0, y: 40 }}
-//             animate={{ opacity: 1, y: 0 }}
-//             transition={{ duration: 1.4 }}
-//             className="mt-10 flex justify-center gap-6 flex-wrap"
-//           >
-//             <Link href="/register">
-//               <Button
-//                 size="lg"
-//                 className="rounded-full bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-indigo-700 text-white text-lg px-8 py-4 shadow-xl"
-//               >
-//                 {t.register}
-//               </Button>
-//             </Link>
-//             <Link href="/login">
-//               <Button
-//                 size="lg"
-//                 variant="outline"
-//                 className="rounded-full border-teal-600 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-800 text-lg px-8 py-4"
-//               >
-//                 {t.login}
-//               </Button>
-//             </Link>
-//           </motion.div>
-//         </div>
-//       </section>
-
-//       {/* ================= Login / Register Cards ================= */}
-//       <section className="relative mx-auto max-w-6xl px-6 py-16 grid gap-10 sm:grid-cols-2">
-
-//         {/* Background Image Behind Cards */}
-//         <div
-//           className="absolute inset-0 -z-10 opacity-20 bg-cover bg-center"
-//           style={{ backgroundImage: "url('/img1.jpg')" }}
-//         ></div>
-
-//         {[
-//           {
-//             iconColor: "from-blue-500 to-indigo-600",
-//             link: "/login",
-//             title: t.login,
-//             desc: t.signInDescription,
-//             btnColor: "from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700",
-//           },
-//           {
-//             iconColor: "from-emerald-500 to-teal-600",
-//             link: "/register",
-//             title: t.register,
-//             desc: t.signUpDescription,
-//             btnColor: "from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700",
-//           },
-//         ].map((card, i) => (
-//           <motion.div
-//             key={i}
-//             initial={{ opacity: 0, y: 30 }}
-//             whileInView={{ opacity: 1, y: 0 }}
-//             transition={{ delay: i * 0.2 }}
-//           >
-//             <Card className="relative overflow-hidden bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl border border-slate-200/30 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-2 rounded-3xl">
-//               <CardHeader className="text-center pb-6">
-//                 <div
-//                   className={`mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${card.iconColor} shadow-lg`}
-//                 >
-//                   <svg
-//                     className="h-8 w-8 text-white"
-//                     fill="none"
-//                     stroke="currentColor"
-//                     viewBox="0 0 24 24"
-//                   >
-//                     {i === 0 ? (
-//                       <path
-//                         strokeLinecap="round"
-//                         strokeLinejoin="round"
-//                         strokeWidth={2.5}
-//                         d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
-//                       />
-//                     ) : (
-//                       <path
-//                         strokeLinecap="round"
-//                         strokeLinejoin="round"
-//                         strokeWidth={2.5}
-//                         d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-//                       />
-//                     )}
-//                   </svg>
-//                 </div>
-//                 <CardTitle className={`text-2xl font-bold text-slate-800 dark:text-white ${isUrdu ? "font-urdu" : ""}`} dir={isUrdu ? "rtl" : "ltr"}>
-//                   {card.title}
-//                 </CardTitle>
-//                 <CardDescription className={`text-slate-600 dark:text-slate-300 ${isUrdu ? "font-urdu" : ""}`} dir={isUrdu ? "rtl" : "ltr"}>
-//                   {card.desc}
-//                 </CardDescription>
-//               </CardHeader>
-//               <CardContent className="text-center">
-//                 <Link href={card.link}>
-//                   <Button
-//                     size="lg"
-//                     className={`w-full h-12 text-lg font-semibold text-white rounded-full bg-gradient-to-r ${card.btnColor} shadow-lg transition-all`}
-//                   >
-//                     {card.title}
-//                   </Button>
-//                 </Link>
-//               </CardContent>
-//             </Card>
-//           </motion.div>
-//         ))}
-//       </section>
-
-//       {/* ================= Why Choose Us ================= */}
-//       <section className="mx-auto max-w-6xl px-6 py-24 text-center">
-//         <h2
-//           className={`mb-12 text-3xl font-bold text-slate-800 dark:text-white ${isUrdu ? "font-urdu" : ""}`}
-//           dir={isUrdu ? "rtl" : "ltr"}
-//         >
-//           <span className="bg-gradient-to-r from-slate-700 to-slate-900 dark:from-slate-200 dark:to-slate-400 bg-clip-text text-transparent">
-//             {t.whyChooseTitle}
-//           </span>
-//         </h2>
-
-//         <div className="grid gap-10 sm:grid-cols-3">
-//           {[{ icon: "💬", title: t.personalizedCare, desc: t.personalizedCareDesc },
-//             { icon: "🔒", title: t.safeSecure, desc: t.safeSecureDesc },
-//             { icon: "⏰", title: t.support247, desc: t.support247Desc }].map((feature, i) => (
-//             <motion.div
-//               key={i}
-//               initial={{ opacity: 0, y: 30 }}
-//               whileInView={{ opacity: 1, y: 0 }}
-//               transition={{ delay: i * 0.2 }}
-//               className="p-8 rounded-3xl bg-white/70 dark:bg-slate-900/60 shadow-md hover:shadow-xl backdrop-blur-lg transition-all duration-300"
-//             >
-//               <div className="text-5xl mb-4">{feature.icon}</div>
-//               <h3 className="text-2xl font-semibold text-slate-800 dark:text-white mb-3">
-//                 {feature.title}
-//               </h3>
-//               <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-//                 {feature.desc}
-//               </p>
-//             </motion.div>
-//           ))}
-//         </div>
-//       </section>
-
-//       {/* ================= Footer ================= */}
-//       <footer className="mt-auto border-t border-slate-200 dark:border-slate-700 py-12 text-center text-slate-600 dark:text-slate-400">
-//         <p>© {new Date().getFullYear()} MindEase. {t.allRightsReserved}</p>
-//         <div className="mt-4 flex justify-center gap-6 text-sm">
-//           <Link href="/about" className="hover:underline">{t.aboutUs}</Link>
-//           <Link href="/contact" className="hover:underline">{t.contact}</Link>
-//           <Link href="/privacy" className="hover:underline">{t.privacy}</Link>
-//         </div>
-//       </footer>
-//     </div>
-//   )
-// }
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
+import { Button } from "@/components/ui/button"
+import { dict, useLanguage } from "@/lib/i18n"
+import { LanguageToggle } from "@/components/LanguageToggle"
+import { useEffect, useState } from "react"
+import { motion } from "framer-motion"
+import { Heart, Shield, Clock, Users, MessageCircle, Brain, ArrowRight, Mic2, FileText, Sparkles, CheckCircle } from "lucide-react"
 
 export default function HomePage() {
+  const lang = useLanguage()
+  const t = dict[lang]
+  const isUrdu = lang === "ur"
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return null
+
   return (
-    <div
-      className="min-h-screen w-full bg-fixed bg-cover bg-center text-gray-800"
-      style={{ backgroundImage: "url('/img1.jpg')" }}
-    >
-      {/* ===== OVERLAY (for readability) ===== */}
-      <div className="bg-white/80 backdrop-blur-sm min-h-screen w-full">
-        {/* ===== HEADER ===== */}
-        <header className="fixed top-0 left-0 w-full bg-white/60 backdrop-blur-md flex justify-between items-center px-10 py-4 z-50 shadow-sm">
-          <h1 className="text-2xl font-bold text-blue-600">MindEase</h1>
-          <nav className="space-x-4">
-            <Link
-              href="/login"
-              className="px-4 py-2 rounded-md border border-blue-600 text-blue-600 hover:bg-blue-50"
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-purple-50 via-blue-50 to-pink-50 dark:from-slate-950 dark:via-purple-950/20 dark:to-pink-950/20">
+      
+      {/* ================= HEADER ================= */}
+      <motion.header 
+        initial={{ opacity: 0, y: -50 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="fixed top-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-purple-100 dark:border-purple-900/30 shadow-sm"
+      >
+        <div className="mx-auto max-w-7xl px-6 py-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 group">
+            <motion.div
+              whileHover={{ scale: 1.1, rotate: 5 }}
+              whileTap={{ scale: 0.95 }}
+              className="relative"
             >
-              Login
+              <div className="absolute inset-0 bg-purple-400 rounded-full blur-md opacity-50 group-hover:opacity-75 transition-opacity"></div>
+              <div className="relative p-2 bg-purple-500 rounded-full shadow-lg group-hover:scale-110 transition-transform duration-300">
+                <Heart className="h-5 w-5 text-white fill-white" />
+              </div>
+            </motion.div>
+            <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-purple-800 bg-clip-text text-transparent">
+              MindEase
+            </span>
+          </Link>
+          
+          <nav className="flex items-center gap-6">
+            <LanguageToggle />
+            <Link href="/login">
+              <Button variant="ghost" className="hidden sm:flex text-purple-700 hover:text-purple-900 hover:bg-purple-50">
+                {t.login}
+              </Button>
             </Link>
-            <Link
-              href="/register"
-              className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-            >
-              Sign Up
+            <Link href="/register">
+              <Button className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white border-0 shadow-lg hover:shadow-xl">
+                {t.register}
+              </Button>
             </Link>
           </nav>
-        </header>
+        </div>
+      </motion.header>
 
-        {/* ===== HERO SECTION ===== */}
-        <section className="w-full h-screen flex flex-col items-center justify-center text-center text-blue-900 px-4">
-          <div className="max-w-3xl mt-20">
-            <h1 className="text-5xl font-extrabold mb-6 drop-shadow-md">
-              Welcome to MindEase
-            </h1>
-            <p className="text-xl mb-8 drop-shadow-sm">
-              Empowering your journey to emotional well-being and mental peace.
-            </p>
-            <Link
-              href="/register"
-              className="bg-blue-600 hover:bg-blue-700 px-8 py-3 text-lg rounded-full font-semibold text-white shadow-lg"
+      {/* ================= HERO SECTION ================= */}
+      <section className="relative min-h-screen flex items-center overflow-hidden pt-32 pb-20">
+        {/* Animated Background Elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <motion.div
+            animate={{ 
+              scale: [1, 1.2, 1],
+              opacity: [0.3, 0.5, 0.3],
+              x: [0, 50, 0],
+              y: [0, 30, 0]
+            }}
+            transition={{ duration: 8, repeat: Infinity }}
+            className="absolute top-0 right-1/4 w-96 h-96 bg-gradient-to-br from-purple-200/30 to-pink-200/30 rounded-full blur-3xl"
+          />
+          <motion.div
+            animate={{ 
+              scale: [1, 1.3, 1],
+              opacity: [0.3, 0.6, 0.3],
+              x: [0, -40, 0],
+              y: [0, -20, 0]
+            }}
+            transition={{ duration: 10, repeat: Infinity, delay: 1 }}
+            className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-gradient-to-tr from-blue-200/30 to-cyan-200/30 rounded-full blur-3xl"
+          />
+          
+          {/* Floating decorative elements */}
+          <motion.div
+            animate={{ y: [0, -20, 0], rotate: [0, 10, 0] }}
+            transition={{ duration: 4, repeat: Infinity }}
+            className="absolute top-1/4 left-10 w-32 h-32 opacity-20"
+          >
+            <svg viewBox="0 0 100 100" className="w-full h-full">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="url(#grad1)" strokeWidth="2" strokeDasharray="4,4" />
+              <defs>
+                <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#a855f7" />
+                  <stop offset="100%" stopColor="#ec4899" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </motion.div>
+          <motion.div
+            animate={{ y: [0, 20, 0], rotate: [0, -10, 0] }}
+            transition={{ duration: 5, repeat: Infinity, delay: 0.5 }}
+            className="absolute bottom-1/3 right-20 w-40 h-40 opacity-15"
+          >
+            <svg viewBox="0 0 100 100" className="w-full h-full">
+              <path d="M20,50 Q50,20 80,50 T20,50" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </motion.div>
+        </div>
+
+        <div className="relative z-10 max-w-7xl mx-auto px-6 grid md:grid-cols-2 gap-12 items-center">
+          
+          {/* Left Content */}
+          <motion.div
+            initial={{ opacity: 0, x: -50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.8 }}
+            className={`${isUrdu ? "md:order-2" : ""}`}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="mb-6"
             >
-              Get Started
-            </Link>
-          </div>
-        </section>
-
-        {/* ===== HOW IT WORKS ===== */}
-        <section className="w-full py-20 bg-white/90 text-center">
-          <h2 className="text-4xl font-bold text-blue-600 mb-12">How It Works</h2>
-          <div className="flex flex-col md:flex-row justify-center gap-12 px-10">
-            <div>
-              <h3 className="text-2xl font-semibold text-blue-600 mb-2">
-                1. Take Assessment
-              </h3>
-              <p>
-                Answer a few simple questions to help us understand your emotional needs.
-              </p>
-            </div>
-            <div>
-              <h3 className="text-2xl font-semibold text-blue-600 mb-2">
-                2. Get Matched
-              </h3>
-              <p>
-                We connect you with the best-suited therapist based on your assessment.
-              </p>
-            </div>
-            <div>
-              <h3 className="text-2xl font-semibold text-blue-600 mb-2">
-                3. Start Healing
-              </h3>
-              <p>
-                Begin your sessions and take the first step towards better mental health.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ===== HELP SECTION ===== */}
-        <section className="w-full py-20 bg-blue-50/90 text-center">
-          <h2 className="text-4xl font-bold text-blue-600 mb-10">
-            We’re Here to Help People With
-          </h2>
-          <div className="flex flex-wrap justify-center gap-6 text-lg">
-            {[
-              "Anxiety",
-              "Depression",
-              "Stress",
-              "Relationship Issues",
-              "Low Self-Esteem",
-              "Burnout",
-            ].map((issue) => (
-              <span
-                key={issue}
-                className="bg-white shadow-md rounded-full px-6 py-3 hover:bg-blue-100 transition"
-              >
-                {issue}
+              <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-sm font-semibold border-2 border-purple-300 dark:border-purple-700">
+                <Heart className="h-4 w-4 fill-purple-600" />
+                {isUrdu ? "آن لائن تھراپی" : "ONLINE THERAPY"}
               </span>
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.3 }}
+              className={`text-6xl sm:text-7xl lg:text-8xl font-extrabold mb-6 leading-[1.1] ${isUrdu ? "font-urdu" : "font-sans"}`}
+              dir={isUrdu ? "rtl" : "ltr"}
+            >
+              <span className="block" style={{ 
+                background: "linear-gradient(135deg, #9333ea 0%, #7c3aed 50%, #6d28d9 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text"
+              }}>
+                {isUrdu ? "وہ مدد حاصل" : "Get"}<br />
+                {isUrdu ? "کریں جو" : "the help"}<br />
+                {isUrdu ? "آپ کو درکار ہے" : "you need"}
+              </span>
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.5 }}
+              className={`text-lg sm:text-xl text-slate-600 dark:text-slate-300 mb-8 leading-relaxed max-w-lg ${isUrdu ? "font-urdu" : ""}`}
+              dir={isUrdu ? "rtl" : "ltr"}
+            >
+              {t.welcomeSubtitle}
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.7 }}
+              className="flex flex-wrap gap-4"
+            >
+              <Link href="/register">
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button 
+                    size="lg" 
+                    className="group bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white text-lg px-8 py-6 rounded-full shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-purple-800"
+                  >
+                    {t.register}
+                    <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                </motion.div>
+              </Link>
+              <Link href="/login">
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button 
+                    size="lg" 
+                    variant="outline"
+                    className="text-lg px-8 py-6 rounded-full border-2 border-purple-300 text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all duration-300"
+                  >
+                    {t.login}
+                  </Button>
+                </motion.div>
+              </Link>
+            </motion.div>
+          </motion.div>
+
+          {/* Right Illustration Area */}
+          <motion.div
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 1, delay: 0.4 }}
+            className={`relative ${isUrdu ? "md:order-1" : ""}`}
+          >
+            <div className="relative">
+              {/* Soft blue background shape with animation */}
+              <motion.div
+                animate={{ 
+                  scale: [1, 1.1, 1],
+                  rotate: [6, 8, 6]
+                }}
+                transition={{ duration: 8, repeat: Infinity }}
+                className="absolute inset-0 bg-gradient-to-br from-sky-200/40 to-cyan-200/30 rounded-[60%] blur-3xl"
+              />
+              
+              {/* Main illustration container */}
+              <div className="relative w-full h-[600px] flex items-center justify-center">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8, y: 50 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ duration: 1, delay: 0.6 }}
+                  whileHover={{ scale: 1.05 }}
+                  className="relative z-10 w-full max-w-2xl"
+                >
+                  <motion.div
+                    animate={{ 
+                      y: [0, -15, 0],
+                      rotate: [0, 2, -2, 0]
+                    }}
+                    transition={{ 
+                      duration: 6, 
+                      repeat: Infinity,
+                      ease: "easeInOut"
+                    }}
+                  >
+                    <Image
+                      src="/landingpage.png"
+                      alt="Mental Health Illustration"
+                      width={800}
+                      height={600}
+                      className="w-full h-auto object-contain drop-shadow-2xl"
+                      priority
+                    />
+                  </motion.div>
+                </motion.div>
+              </div>
+            </div>
+            
+            {/* Decorative elements with animation */}
+            <motion.div
+              animate={{ rotate: [0, 360], scale: [1, 1.2, 1] }}
+              transition={{ duration: 20, repeat: Infinity }}
+              className="absolute top-10 left-10 w-20 h-20 opacity-10"
+            >
+              <Heart className="w-full h-full text-purple-600" fill="currentColor" />
+            </motion.div>
+            <motion.div
+              animate={{ y: [0, -20, 0], rotate: [0, 10, 0] }}
+              transition={{ duration: 5, repeat: Infinity, delay: 1 }}
+              className="absolute bottom-20 right-10 w-16 h-16 opacity-10"
+            >
+              <Brain className="w-full h-full text-pink-600" />
+            </motion.div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ================= TRUST BADGES ================= */}
+      <section className="py-12 px-6 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm border-y border-purple-100 dark:border-purple-900/30">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="flex flex-wrap justify-center items-center gap-8 md:gap-16 text-sm text-slate-600 dark:text-slate-400"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              whileHover={{ scale: 1.1 }}
+              className="flex items-center gap-2 group cursor-pointer"
+            >
+              <Shield className="h-5 w-5 text-purple-600 group-hover:scale-125 transition-transform" />
+              <span className="font-medium">Secure & Confidential</span>
+            </motion.div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.2 }}
+              whileHover={{ scale: 1.1 }}
+              className="flex items-center gap-2 group cursor-pointer"
+            >
+              <Users className="h-5 w-5 text-blue-600 group-hover:scale-125 transition-transform" />
+              <span className="font-medium">Expert Support</span>
+            </motion.div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.3 }}
+              whileHover={{ scale: 1.1 }}
+              className="flex items-center gap-2 group cursor-pointer"
+            >
+              <Clock className="h-5 w-5 text-pink-600 group-hover:scale-125 transition-transform" />
+              <span className="font-medium">Available 24/7</span>
+            </motion.div>
+          </motion.div>
+          </div>
+        </section>
+
+      {/* ================= HOW IT WORKS SECTION ================= */}
+      <section className="py-24 px-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-50/50 to-blue-50/50 dark:from-purple-950/10 dark:to-blue-950/10"></div>
+        
+        <div className="relative z-10 max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.8 }}
+            className="text-center mb-16"
+          >
+            <h2 
+              className={`text-4xl sm:text-5xl font-bold mb-4 ${isUrdu ? "font-urdu" : ""}`}
+              dir={isUrdu ? "rtl" : "ltr"}
+            >
+              {isUrdu ? "یہ کیسے کام کرتا ہے؟" : "How It Works"}
+            </h2>
+            <p className="text-xl text-slate-600 dark:text-slate-400">
+              {isUrdu ? "صرف تین آسان مراحل میں شروع کریں" : "Get started in just three simple steps"}
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-3 gap-12">
+            {[
+              {
+                number: "01",
+                title: isUrdu ? "تشخیص لیں" : "Take Assessment",
+                desc: isUrdu ? "آپ کی جذباتی ضروریات کو سمجھنے میں مدد کے لیے کچھ سادہ سوالات کے جوابات دیں۔" : "Answer a few simple questions to help us understand your emotional needs.",
+                icon: Brain,
+                color: "from-purple-500 to-pink-600",
+                delay: 0
+              },
+              {
+                number: "02",
+                title: isUrdu ? "رسائی حاصل کریں" : "Get Access",
+                desc: isUrdu ? "ہم آپ کو ٹیکسٹ اور آواز کی بنیاد پر بات چیت کی سہولیات فراہم کرتے ہیں۔" : "We provide you with both text-based and voice-based communication options.",
+                icon: MessageCircle,
+                color: "from-blue-500 to-cyan-600",
+                delay: 0.2
+              },
+              {
+                number: "03",
+                title: isUrdu ? "شفا شروع کریں" : "Start Healing",
+                desc: isUrdu ? "اپنے سیشن شروع کریں اور بہتر ذہنی صحت کی طرف پہلا قدم اٹھائیں۔" : "Begin your sessions and take the first step towards better mental health.",
+                icon: Heart,
+                color: "from-emerald-500 to-teal-600",
+                delay: 0.4
+              }
+            ].map((step, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: i % 2 === 0 ? -30 : 30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.8, delay: step.delay }}
+                whileHover={{ scale: 1.05, y: -10 }}
+                className="relative"
+              >
+                <div className="relative z-10 bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-xl hover:shadow-2xl transition-all duration-500 border-2 border-transparent hover:border-purple-200 dark:hover:border-purple-800">
+                  <motion.div
+                    animate={{ rotate: [0, 10, -10, 0] }}
+                    transition={{ duration: 3, repeat: Infinity, delay: step.delay }}
+                    className={`absolute -top-6 -right-6 w-24 h-24 bg-gradient-to-br ${step.color} rounded-2xl flex items-center justify-center shadow-2xl text-3xl font-extrabold text-white drop-shadow-md`}
+                  >
+                    {step.number}
+                  </motion.div>
+                  
+                  <motion.div
+                    whileHover={{ scale: 1.2, rotate: 10 }}
+                    className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${step.color} mb-6`}
+                  >
+                    <step.icon className="h-6 w-6 text-white" />
+                  </motion.div>
+                  
+                  <h3 
+                    className={`text-2xl font-bold mb-3 text-slate-900 dark:text-white ${isUrdu ? "font-urdu" : ""}`}
+                    dir={isUrdu ? "rtl" : "ltr"}
+                  >
+                    {step.title}
+              </h3>
+                  
+                  <p 
+                    className={`text-slate-600 dark:text-slate-400 leading-relaxed ${isUrdu ? "font-urdu" : ""}`}
+                    dir={isUrdu ? "rtl" : "ltr"}
+                  >
+                    {step.desc}
+              </p>
+            </div>
+              </motion.div>
+            ))}
+            </div>
+          </div>
+        </section>
+
+      {/* ================= FEATURES SECTION ================= */}
+      <section className="py-24 px-6 relative">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.8 }}
+            className="text-center mb-16"
+          >
+            <h2 
+              className={`text-4xl sm:text-5xl font-bold mb-4 ${isUrdu ? "font-urdu" : ""}`}
+              dir={isUrdu ? "rtl" : "ltr"}
+            >
+              {t.whyChooseTitle}
+          </h2>
+          </motion.div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                icon: Heart,
+                title: t.personalizedCare,
+                desc: t.personalizedCareDesc,
+                gradient: "from-pink-500 to-rose-600",
+                bg: "bg-pink-50 dark:bg-pink-900/10"
+              },
+              {
+                icon: Shield,
+                title: t.safeSecure,
+                desc: t.safeSecureDesc,
+                gradient: "from-blue-500 to-indigo-600",
+                bg: "bg-blue-50 dark:bg-blue-900/10"
+              },
+              {
+                icon: Clock,
+                title: t.support247,
+                desc: t.support247Desc,
+                gradient: "from-purple-500 to-purple-600",
+                bg: "bg-purple-50 dark:bg-purple-900/10"
+              }
+            ].map((feature, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.8, delay: i * 0.2 }}
+                whileHover={{ scale: 1.05, y: -10 }}
+                className={`group relative overflow-hidden rounded-3xl p-8 ${feature.bg} border-2 border-transparent hover:border-purple-200 dark:hover:border-purple-800 transition-all duration-500 hover:shadow-2xl`}
+              >
+                <div className="relative z-10">
+                  <motion.div
+                    whileHover={{ scale: 1.2, rotate: 10 }}
+                    className={`inline-flex p-4 rounded-2xl bg-gradient-to-br ${feature.gradient} shadow-lg mb-6`}
+                  >
+                    <feature.icon className="h-8 w-8 text-white" />
+                  </motion.div>
+                  
+                  <h3 
+                    className={`text-2xl font-bold mb-3 ${isUrdu ? "font-urdu" : ""}`}
+                    dir={isUrdu ? "rtl" : "ltr"}
+                  >
+                    {feature.title}
+                  </h3>
+                  
+                  <p 
+                    className={`text-slate-600 dark:text-slate-400 leading-relaxed ${isUrdu ? "font-urdu" : ""}`}
+                    dir={isUrdu ? "rtl" : "ltr"}
+                  >
+                    {feature.desc}
+                  </p>
+                </div>
+              </motion.div>
             ))}
           </div>
+          </div>
         </section>
 
-        {/* ===== WHY MINDEASE ===== */}
-        <section className="w-full py-20 bg-white/90 text-center">
-          <h2 className="text-4xl font-bold text-blue-600 mb-12">Why MindEase?</h2>
-          <div className="grid md:grid-cols-3 gap-12 px-10">
-            <div>
-              <h3 className="text-2xl font-semibold mb-3">🧑‍⚕️ Expert Therapists</h3>
-              <p>
-                Licensed professionals with experience across diverse fields of mental
-                health.
-              </p>
+      {/* ================= COMMUNICATION OPTIONS ================= */}
+      <section className="py-24 px-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-600 to-pink-600 opacity-5"></div>
+        
+        <div className="relative z-10 max-w-5xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.8 }}
+            className="text-center mb-16"
+          >
+            <h2 
+              className={`text-4xl sm:text-5xl font-bold mb-4 ${isUrdu ? "font-urdu" : ""}`}
+              dir={isUrdu ? "rtl" : "ltr"}
+            >
+              {isUrdu ? "اپنے آرام کے مطابق بات کریں" : "Choose Your Preferred Communication"}
+            </h2>
+            <p className="text-xl text-slate-600 dark:text-slate-400">
+              {isUrdu ? "ٹیکسٹ یا آواز کے ذریعے مدد حاصل کریں" : "Get support through text or voice"}
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-8">
+            {[
+              {
+                icon: MessageCircle,
+                title: isUrdu ? "ٹیکسٹ چیٹ" : "Text Chat",
+                desc: isUrdu ? "لکھ کر بات چیت کریں اور اپنے خیالات کو تحریری شکل میں شیئر کریں۔" : "Communicate through text and share your thoughts in writing.",
+                gradient: "from-blue-500 to-indigo-600",
+                bg: "bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20"
+              },
+              {
+                icon: Mic2,
+                title: isUrdu ? "وائس چیٹ" : "Voice Chat",
+                desc: isUrdu ? "آواز کے ذریعے فوری گفتگو کریں اور اپنی بات بہتر طریقے سے اظہار کریں۔" : "Have real-time voice conversations and express yourself better.",
+                gradient: "from-purple-500 to-pink-600",
+                bg: "bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20"
+              }
+            ].map((option, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.9 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.8, delay: i * 0.2 }}
+                whileHover={{ scale: 1.05, y: -10 }}
+                className={`${option.bg} rounded-3xl p-8 border-2 border-transparent hover:border-purple-300 dark:hover:border-purple-700 transition-all duration-500 shadow-xl hover:shadow-2xl relative overflow-hidden group`}
+              >
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-white/20 to-transparent"></div>
+                
+                <div className="relative z-10">
+                  <motion.div
+                    whileHover={{ scale: 1.2, rotate: -10 }}
+                    className={`inline-flex p-5 rounded-2xl bg-gradient-to-br ${option.gradient} shadow-2xl mb-6`}
+                  >
+                    <option.icon className="h-10 w-10 text-white" />
+                  </motion.div>
+                  
+                  <h3 
+                    className={`text-3xl font-bold mb-3 ${isUrdu ? "font-urdu" : ""}`}
+                    dir={isUrdu ? "rtl" : "ltr"}
+                  >
+                    {option.title}
+                  </h3>
+                  
+                  <p 
+                    className={`text-slate-600 dark:text-slate-400 leading-relaxed text-lg ${isUrdu ? "font-urdu" : ""}`}
+                    dir={isUrdu ? "rtl" : "ltr"}
+                  >
+                    {option.desc}
+                  </p>
+
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    whileInView={{ opacity: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.5 }}
+                    className="mt-6"
+                  >
+                    <div className="flex items-center gap-2 text-sm font-semibold text-purple-700 dark:text-purple-300">
+                      <CheckCircle className="h-5 w-5" />
+                      <span>{isUrdu ? "آسان اور فوری" : "Easy & Quick"}</span>
             </div>
-            <div>
-              <h3 className="text-2xl font-semibold mb-3">💬 Confidential Sessions</h3>
-              <p>
-                Secure and private online sessions that prioritize your comfort and safety.
-              </p>
+                  </motion.div>
             </div>
-            <div>
-              <h3 className="text-2xl font-semibold mb-3">⚡ Personalized Support</h3>
-              <p>Therapy tailored to your individual goals and emotional journey.</p>
+              </motion.div>
+            ))}
             </div>
           </div>
         </section>
 
-        {/* ===== FOOTER ===== */}
-        <footer className="w-full bg-blue-600 text-white text-center py-6">
-          <p>© {new Date().getFullYear()} MindEase. All rights reserved.</p>
-        </footer>
+      {/* ================= CTA SECTION ================= */}
+      <section className="py-24 px-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-600 to-pink-600 opacity-5"></div>
+        
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8 }}
+          className="relative z-10 max-w-4xl mx-auto text-center"
+        >
+          <motion.div
+            animate={{ y: [0, -10, 0] }}
+            transition={{ duration: 3, repeat: Infinity }}
+          >
+            <Sparkles className="h-16 w-16 mx-auto mb-6 text-purple-600 opacity-50" />
+          </motion.div>
+
+          <h2 
+            className={`text-4xl sm:text-5xl font-bold mb-6 ${isUrdu ? "font-urdu" : ""}`}
+            dir={isUrdu ? "rtl" : "ltr"}
+          >
+            {isUrdu ? "آج ہی اپنی ذہنی صحت کی سفر شروع کریں" : "Start Your Mental Wellness Journey Today"}
+          </h2>
+          
+          <div className="flex flex-wrap justify-center gap-4">
+            <Link href="/register">
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Button 
+                  size="lg" 
+                  className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white text-lg px-8 py-6 rounded-full shadow-2xl hover:shadow-purple-500/50 transition-all duration-300 border-0"
+                >
+                  {t.register}
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </motion.div>
+            </Link>
+          </div>
+        </motion.div>
+      </section>
+
+      {/* ================= FOOTER ================= */}
+      <motion.footer
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        className="py-12 px-6 bg-slate-900 text-slate-400"
+      >
+        <div className="max-w-7xl mx-auto text-center">
+          <motion.div
+            whileHover={{ scale: 1.1 }}
+            className="flex items-center justify-center gap-2 mb-4"
+          >
+            <Heart className="h-5 w-5 text-purple-400 fill-purple-400" />
+            <span className="text-lg font-bold text-white">MindEase</span>
+          </motion.div>
+          <p className="text-sm mb-4">© {new Date().getFullYear()} MindEase. {t.allRightsReserved}</p>
+          <div className="flex flex-wrap justify-center gap-6 text-sm">
+            <Link href="/about" className="hover:text-white transition-colors">
+              {t.aboutUs}
+            </Link>
+            <Link href="/contact" className="hover:text-white transition-colors">
+              {t.contact}
+            </Link>
+            <Link href="/privacy" className="hover:text-white transition-colors">
+              {t.privacy}
+            </Link>
       </div>
+        </div>
+      </motion.footer>
     </div>
   )
 }

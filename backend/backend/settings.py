@@ -78,7 +78,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'mindease_db',        # your existing database name
         'USER': 'root',               # your MySQL username
-        'PASSWORD': 'admin123',      # your MySQL password
+        'PASSWORD': 'pakistan1953',      # your MySQL password
         'HOST': '127.0.0.1',          # or 'localhost'
         'PORT': '3306',
         'OPTIONS': {
@@ -120,3 +120,16 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+# -------------------------------------------------------------------
+# Email Configuration
+# -------------------------------------------------------------------
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Console backend for development
+# For production with Gmail SMTP, use:
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.gmail.com'
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = 'your-email@gmail.com'
+# EMAIL_HOST_PASSWORD = 'your-app-password'
+DEFAULT_FROM_EMAIL = 'noreply@mindease.com'

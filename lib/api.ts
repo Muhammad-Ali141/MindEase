@@ -2,6 +2,60 @@
 
 const BASE_URL = "http://127.0.0.1:8000/api";
 
+// Send OTP for email verification
+export const apiSendOtp = async (email: string) => {
+  const res = await fetch("http://localhost:8000/api/send-otp/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.error || "Failed to send OTP");
+  }
+
+  return res.json();
+};
+
+// Verify OTP
+export const apiVerifyOtp = async (email: string, otp: string) => {
+  const res = await fetch("http://localhost:8000/api/verify-otp/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, otp }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.error || "Failed to verify OTP");
+  }
+
+  return res.json();
+};
+
+// Check if email exists
+export const apiCheckEmail = async (email: string) => {
+  const res = await fetch("http://localhost:8000/api/check-email/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.error || "Failed to check email");
+  }
+
+  return res.json();
+};
+
 // lib/api.ts
 export const apiRegister = async (data: any) => {
   const res = await fetch("http://localhost:8000/api/register/", { // ✅ Django backend URL

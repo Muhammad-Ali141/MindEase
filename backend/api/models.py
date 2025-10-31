@@ -112,3 +112,15 @@ class User(models.Model):
     class Meta:
         managed = False
         db_table = 'user'
+
+
+class EmailVerification(models.Model):
+    id = models.AutoField(primary_key=True)
+    user_email = models.CharField(max_length=100, db_column='user_email')
+    otp_code = models.CharField(max_length=6, db_column='otp_code')
+    created_at = models.DateTimeField(auto_now_add=True, db_column='created_at')
+    is_verified = models.BooleanField(default=False, db_column='is_verified')
+
+    class Meta:
+        managed = True  # Django will manage this table
+        db_table = 'emailverification'

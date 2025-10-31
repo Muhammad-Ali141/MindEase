@@ -3,7 +3,6 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from "@/context/AuthContext"
-import { AppShell } from "@/components/AppShell"
 import "./globals.css"
 
 const inter = Inter({
@@ -27,7 +26,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`font-sans ${inter.variable}`}>
         <AuthProvider>
-          <AppShell>{children}</AppShell>
+          {children}
         </AuthProvider>
         <Toaster />
       </body>
