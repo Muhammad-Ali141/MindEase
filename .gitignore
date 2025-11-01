@@ -53,3 +53,34 @@ db.sqlite3-journal
 # OS
 .DS_Store
 Thumbs.db
+
+# ML/Chatbot
+backend/chatbot/chroma_db/
+*.pkl
+*.h5
+*.pt
+*.pth
+
+# Large model files (keep structure, exclude weights)
+deberta_best/*.safetensors
+deberta_best/*.bin
+deberta_best/*.pt
+deberta_best/*.pth
+
+# Dataset (may be large - partner should download separately)
+dataset/MentalChat16K.csv
+
+# Environment variables
+.env
+backend/chatbot/.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# PostgreSQL dumps
+*.sql.dump
+*.backup
