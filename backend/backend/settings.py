@@ -78,7 +78,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'mindease_db',        # your existing database name
         'USER': 'root',               # your MySQL username
-        'PASSWORD': 'pakistan1953',      # your MySQL password
+        'PASSWORD': 'admin123',      # your MySQL password
         'HOST': '127.0.0.1',          # or 'localhost'
         'PORT': '3306',
         'OPTIONS': {

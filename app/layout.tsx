@@ -12,9 +12,8 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: "v0 App",
-  description: "Created with v0",
-  generator: "v0.app",
+  title: "MindEase",
+  description: "Bilingual mental health and wellness platform with AI-powered therapy sessions",
 }
 
 export default function RootLayout({
