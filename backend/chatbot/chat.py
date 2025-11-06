@@ -23,8 +23,14 @@ from chatbot.config import DB_CONFIG
 class MindEaseChat:
     """Clean chat interface for MindEase therapy chatbot"""
     
-    def __init__(self):
-        """Initialize chatbot with all components (silent initialization)"""
+    def __init__(self, user_first_name: str = None):
+        """
+        Initialize chatbot with all components (silent initialization)
+        
+        Args:
+            user_first_name: User's first name for personalized responses
+        """
+        self.user_first_name = user_first_name
         self._initialize_components()
         self.memory = ConversationMemory(max_history_length=20)
         
@@ -58,7 +64,10 @@ class MindEaseChat:
     
     def _print_welcome(self):
         """Print welcome message from therapist"""
-        welcome_msg = "Welcome to MindEase. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+        if self.user_first_name:
+            welcome_msg = f"Welcome to MindEase, {self.user_first_name}. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+        else:
+            welcome_msg = "Welcome to MindEase. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
         
         self._display_response(welcome_msg)
     
@@ -88,7 +97,8 @@ class MindEaseChat:
                 user_message=user_input,
                 emotions=emotions_str,
                 context=context_str,
-                conversation_history=conversation_history
+                conversation_history=conversation_history,
+                user_first_name=self.user_first_name
             )
             
             # Update memory
@@ -225,7 +235,7 @@ I'm here to listen and support you. Feel free to share what's on your mind."""
                     print("\n" + "═" * 75)
                     
                     # Show conversation summary (LLM-generated)
-                    print(self.memory.get_conversation_summary(llm_client=self.llm_client))
+                    print(self.memory.get_conversation_summary(llm_client=self.llm_client, user_first_name=self.user_first_name))
                     break
                 
                 if user_input_lower == 'clear':

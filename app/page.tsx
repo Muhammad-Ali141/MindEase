@@ -8,6 +8,7 @@ import { LanguageToggle } from "@/components/LanguageToggle"
 import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
 import { Heart, Shield, Clock, Users, MessageCircle, Brain, ArrowRight, Mic2, FileText, Sparkles, CheckCircle } from "lucide-react"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 export default function HomePage() {
   const lang = useLanguage()
@@ -47,8 +48,9 @@ export default function HomePage() {
           
           <nav className="flex items-center gap-6">
             <LanguageToggle />
+            <ThemeToggle />
             <Link href="/login">
-              <Button variant="ghost" className="hidden sm:flex text-purple-700 hover:text-purple-900 hover:bg-purple-50">
+              <Button variant="ghost" className="hidden sm:flex text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-100 hover:bg-purple-50 dark:hover:bg-purple-900/30">
                 {t.login}
               </Button>
             </Link>

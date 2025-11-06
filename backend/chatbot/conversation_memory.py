@@ -194,7 +194,7 @@ class ConversationMemory:
             'has_summary': self.session_summary is not None
         }
     
-    def get_conversation_summary(self, llm_client=None) -> str:
+    def get_conversation_summary(self, llm_client=None, user_first_name: str = None, user_gender: str = None) -> str:
         """
         Generate an LLM-powered summary of the entire conversation in paragraph form
         
@@ -220,23 +220,48 @@ class ConversationMemory:
                     return "No conversation to summarize."
                 
                 # Build conversation history text for summary
+                user_label = user_first_name if user_first_name else "User"
                 conversation_text = ""
                 for msg in history:
                     role = msg.get('role', '')
                     content = msg.get('content', '')
                     if role == 'user':
-                        conversation_text += f"User: {content}\n\n"
+                        conversation_text += f"{user_label}: {content}\n\n"
                     elif role == 'assistant':
                         conversation_text += f"Therapist: {content}\n\n"
                 
+                # Determine pronouns based on gender
+                pronouns = {"he": "he", "him": "him", "his": "his", "himself": "himself"}
+                if user_gender:
+                    gender_lower = user_gender.lower()
+                    if gender_lower == "female":
+                        pronouns = {"he": "she", "him": "her", "his": "her", "himself": "herself"}
+                    elif gender_lower == "male":
+                        pronouns = {"he": "he", "him": "him", "his": "his", "himself": "himself"}
+                    else:
+                        # For "Other" or unknown, use "they"
+                        pronouns = {"he": "they", "him": "them", "his": "their", "himself": "themselves"}
+                else:
+                    # Default to "they" if gender not provided
+                    pronouns = {"he": "they", "him": "them", "his": "their", "himself": "themselves"}
+                
                 # Create summary prompt
-                summary_prompt = f"""Please provide a brief, empathetic summary of this therapy session conversation in paragraph form (2-3 paragraphs).
+                user_label = user_first_name if user_first_name else "the user"
+                pronoun_text = f"Use {pronouns['he']}/{pronouns['him']}/{pronouns['his']} pronouns for {user_label} throughout the summary. For example: '{user_first_name if user_first_name else 'The user'} shared that {pronouns['he']} feels anxious. {pronouns['his']} concerns were...'"
+                
+                summary_prompt = f"""Please provide a comprehensive, well-written summary of this therapy session conversation in paragraph form (2-3 paragraphs).
 
-First paragraph should summarize what the user shared - their situation, feelings, and key concerns.
-Second paragraph should describe how the therapist responded and provided support.
-Optional third paragraph: Brief reflection on the session.
+CRITICAL: Only summarize what was ACTUALLY said in the conversation below. Do NOT add, infer, or assume any details that were not explicitly mentioned. If something was not discussed, do not mention it.
 
-Write in a warm, understanding tone. Be specific about what was discussed. Write in flowing paragraph form, not as a list or bullet points.
+IMPORTANT PRONOUN USAGE: {pronoun_text}
+IMPORTANT NAME USAGE: Use {user_label}'s name ({user_first_name if user_first_name else 'the user'}) instead of saying "the user" or "user" in the summary. For example, say "{user_first_name if user_first_name else 'The user'} shared that..." instead of "The user shared that...".
+
+Structure:
+- First paragraph: What {user_label} actually shared - {pronouns['his']} exact feelings, concerns, or situation as stated in the conversation. Be specific about what {pronouns['he']} said and how {pronouns['he']} expressed {pronouns['his']} emotions.
+- Second paragraph: How the therapist responded - what questions were asked, what support was provided, and any coping techniques or strategies that were explicitly suggested. Describe the therapeutic approach and how the therapist helped {user_label}.
+- Optional third paragraph: Brief reflection on the session's progress and key takeaways (only if there was substantial conversation)
+
+Write in a warm, understanding, and professional tone. Be specific and factual. Write in flowing paragraph form, not as a list or bullet points. Make it read like a professional therapy session summary.
 
 Conversation:
 {conversation_text}
@@ -244,14 +269,22 @@ Conversation:
 Session Summary:"""
                 
                 # Use a special system prompt for summary generation
-                summary_system_prompt = """You are summarizing a therapy session conversation. Write a warm, empathetic summary in paragraph form (2-3 paragraphs). 
+                summary_system_prompt = f"""You are summarizing a therapy session conversation. Write a warm, empathetic, and professional summary in paragraph form (2-3 paragraphs).
+
+CRITICAL RULES:
+1. ONLY summarize what was ACTUALLY said in the conversation. Do NOT add, infer, or assume any details that were not explicitly mentioned.
+2. If {user_label} only said "I feel anxious" and nothing else, only mention that {pronouns['he']} said {pronouns['he']} feels anxious - do NOT add details about work, relationships, or other causes unless they were explicitly mentioned.
+3. Only mention coping techniques or strategies if the therapist explicitly suggested them in the conversation.
+4. Be factual and specific - stick to what was actually discussed.
+5. IMPORTANT PRONOUN USAGE: Use {pronouns['he']}/{pronouns['him']}/{pronouns['his']} pronouns for {user_label} throughout. For example: "{user_first_name if user_first_name else 'The user'} shared that {pronouns['he']} feels anxious. {pronouns['his']} concerns were..."
+6. IMPORTANT NAME USAGE: Use {user_label}'s name ({user_first_name if user_first_name else 'the user'}) instead of saying "the user" or "user" in the summary.
 
 Focus on:
-1. What the user shared - their situation, feelings, and key concerns
-2. How the therapist responded and provided support
-3. Brief reflection on the session (optional third paragraph)
+- What {user_label} actually shared ({pronouns['his']} exact words/feelings as stated)
+- How the therapist responded (questions asked, support provided, techniques suggested - only if explicitly mentioned)
+- Brief reflection on the session's value and progress (optional, only if substantial conversation occurred)
 
-Write naturally in flowing paragraph form, not as a list or bullet points. Be specific about what was discussed."""
+Write naturally in flowing paragraph form, not as a list or bullet points. Make it read like a professional therapy session summary. Do not hallucinate or add information."""
                 
                 # Generate summary using LLM with custom system prompt
                 try:

@@ -132,3 +132,321 @@ export async function apiUpdateMe(token: string, data: Partial<UserProfile>): Pr
   return mockUser
 }
 
+// Chat API functions
+export type ChatMessage = {
+  role: "user" | "assistant"
+  content: string
+}
+
+export type ChatResponse = {
+  response: string
+  emotions: Array<{ emotion: string; score: number }>
+  user_id: string
+  conversation_history: ChatMessage[]
+}
+
+export async function apiChatMessage(
+  message: string,
+  user_id: string,
+  user_first_name: string | null,
+  user_gender: string | null,
+  conversation_history: ChatMessage[]
+): Promise<ChatResponse> {
+  const res = await fetch("http://localhost:8000/api/chat/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      user_id,
+      user_first_name,
+      user_gender,
+      conversation_history,
+    }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to send message")
+  }
+
+  return res.json()
+}
+
+export type WelcomeResponse = {
+  welcome_message: string
+  user_id: string
+}
+
+export async function apiChatWelcome(
+  user_id: string,
+  user_first_name: string | null
+): Promise<WelcomeResponse> {
+  const res = await fetch("http://localhost:8000/api/chat/welcome/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_id,
+      user_first_name,
+    }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to get welcome message")
+  }
+
+  return res.json()
+}
+
+export type SummaryResponse = {
+  summary: string
+  user_id: string
+}
+
+export async function apiChatSummary(
+  user_id: string,
+  user_first_name: string | null,
+  user_gender: string | null,
+  conversation_history: ChatMessage[]
+): Promise<SummaryResponse> {
+  const res = await fetch("http://localhost:8000/api/chat/summary/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_id,
+      user_first_name,
+      user_gender,
+      conversation_history,
+    }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to get summary")
+  }
+
+  return res.json()
+}
+
+export type SessionCountResponse = {
+  session_count: number
+  user_id: string
+}
+
+export async function apiGetSessionCount(user_id: string): Promise<SessionCountResponse> {
+  const res = await fetch("http://localhost:8000/api/sessions/count/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to get session count")
+  }
+
+  return res.json()
+}
+
+export async function apiIncrementSessionCount(user_id: string): Promise<SessionCountResponse> {
+  const res = await fetch("http://localhost:8000/api/sessions/increment/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to increment session count")
+  }
+
+  return res.json()
+}
+
+export type Session = {
+  session_id: string
+  title: string
+  messages: ChatMessage[]
+  summary: string
+  created_at: string
+  updated_at: string
+}
+
+export type SessionPreview = {
+  session_id: string
+  title: string
+  summary: string
+  short_summary?: string
+  created_at: string
+  updated_at: string
+}
+
+export type SaveSessionResponse = {
+  session: Session
+  user_id: string
+}
+
+export async function apiSaveSession(
+  user_id: string,
+  conversation_history: ChatMessage[],
+  summary: string,
+  session_id?: string,
+  user_first_name?: string | null,
+  user_gender?: string | null
+): Promise<SaveSessionResponse> {
+  const res = await fetch("http://localhost:8000/api/sessions/save/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_id,
+      conversation_history,
+      summary,
+      session_id,
+      user_first_name,
+      user_gender,
+    }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to save session")
+  }
+
+  return res.json()
+}
+
+export type RecentSessionsResponse = {
+  sessions: SessionPreview[]
+  total: number
+  user_id: string
+}
+
+export async function apiGetRecentSessions(
+  user_id: string,
+  limit: number = 3
+): Promise<RecentSessionsResponse> {
+  const res = await fetch("http://localhost:8000/api/sessions/recent/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id, limit }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to get recent sessions")
+  }
+
+  return res.json()
+}
+
+export type GetSessionResponse = {
+  session: Session
+  user_id: string
+}
+
+export async function apiGetSessionById(
+  user_id: string,
+  session_id: string
+): Promise<GetSessionResponse> {
+  const res = await fetch("http://localhost:8000/api/sessions/get/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id, session_id }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to get session")
+  }
+
+  return res.json()
+}
+
+export type UserProfileData = {
+  user_id: number
+  email: string
+  first_name: string
+  last_name: string
+  dob: string
+  gender: string
+  lang_pref: string
+  created_at: string | null
+}
+
+export async function apiGetUserProfile(user_id: string): Promise<UserProfileData> {
+  const res = await fetch("http://localhost:8000/api/profile/get/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to get user profile")
+  }
+
+  return res.json()
+}
+
+export type UpdateProfileData = {
+  first_name?: string
+  last_name?: string
+  email?: string
+  dob?: string
+  gender?: "Male" | "Female" | "Other"
+  lang_pref?: "en" | "ur"
+  password?: string
+}
+
+export type UpdateProfileResponse = {
+  message: string
+  user_id: number
+  email: string
+  first_name: string
+  last_name: string
+  dob: string
+  gender: string
+  lang_pref: string
+}
+
+export async function apiUpdateUserProfile(
+  user_id: string,
+  data: UpdateProfileData
+): Promise<UpdateProfileResponse> {
+  const res = await fetch("http://localhost:8000/api/profile/update/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_id,
+      ...data,
+    }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to update user profile")
+  }
+
+  return res.json()
+}
+

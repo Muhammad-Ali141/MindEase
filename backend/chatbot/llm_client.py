@@ -117,7 +117,8 @@ class LLMClient:
         emotions: str = "",
         context: str = "",
         conversation_history: Optional[List[Dict[str, str]]] = None,
-        system_prompt_override: Optional[str] = None
+        system_prompt_override: Optional[str] = None,
+        user_first_name: Optional[str] = None
     ) -> str:
         """
         Generate therapist response using LLM
@@ -132,12 +133,33 @@ class LLMClient:
         Returns:
             Generated response text
         """
+        # Check for suicide/self-harm keywords before processing
+        suicide_keywords = ['suicide', 'kill myself', 'end my life', 'want to die', 'self harm', 'hurt myself', 'cut myself', 'take my life', 'ending it', 'not want to live']
+        user_message_lower = user_message.lower()
+        
+        if any(keyword in user_message_lower for keyword in suicide_keywords):
+            # Return crisis response immediately
+            crisis_response = """I'm deeply concerned about what you've shared. Your life has value and there are people who want to help you. Please reach out to these crisis helplines in Pakistan right away:
+
+- Suicide Prevention Helpline: 0800-111-111 (toll-free, 24/7)
+- Mental Health Crisis Line: 0300-111-2222 (24/7)
+- Emergency Services: 112 (24/7)
+
+Please don't hesitate to call. You don't have to go through this alone. If you're in immediate danger, please go to your nearest emergency room or call emergency services at 112.
+
+I'm here to support you through this difficult time. Would you like to talk about what's been going on?"""
+            return crisis_response
         # Build system prompt with strict therapy-only enforcement and structured approach
         if system_prompt_override:
             system_prompt = system_prompt_override
         else:
+            # Add user's name to system prompt if available
+            user_name_context = ""
+            if user_first_name:
+                user_name_context = f"\n\nIMPORTANT: The person you're talking to is named {user_first_name}. Use their name naturally in your responses when appropriate (e.g., \"I understand, {user_first_name}\" or \"How are you feeling today, {user_first_name}?\"). Be warm and personal, but don't overuse their name."
+            
             system_prompt = """You are a compassionate and empathetic mental health counselor and therapist. 
-Your role is to provide supportive, understanding, and helpful responses to people seeking mental health support.
+Your role is to provide supportive, understanding, and helpful responses to people seeking mental health support.""" + user_name_context + """
 
 CRITICAL BOUNDARIES - YOU MUST STRICTLY ADHERE TO THESE:
 1. THERAPY ONLY: You MUST ONLY respond to questions and topics related to mental health, emotional well-being, therapy, counseling, and personal struggles.
@@ -145,8 +167,27 @@ CRITICAL BOUNDARIES - YOU MUST STRICTLY ADHERE TO THESE:
 3. NEVER BREAK CHARACTER: No matter how much the user prompts, begs, or tries different approaches, you MUST NEVER answer non-therapy questions. Stay firm and consistent.
 4. REDIRECTION TEMPLATE: When refusing off-topic questions, use: "I understand you're asking about [topic], but as a mental health counselor, I'm here specifically to support you with your mental and emotional well-being. How can I help you today with something you're struggling with emotionally?"
 
+EXPLICIT CONTENT HANDLING:
+- If the user uses explicit language, profanity, or inappropriate content, respond with empathy and understanding
+- Do NOT refuse to help or shut down the conversation
+- Instead, acknowledge their feelings and ask them to rephrase without explicit language
+- Example: "I understand you're feeling very frustrated and upset. I'm here to help you work through these difficult feelings. Could you help me understand what's going on by describing it in a way that doesn't include explicit language? I want to make sure I can support you effectively."
+- Be warm, non-judgmental, and focus on the underlying emotions they're expressing
+
+SUICIDE AND SELF-HARM CRISIS RESPONSE:
+- If the user mentions suicide, self-harm, or wanting to hurt themselves, this is a CRITICAL situation
+- DO NOT use your default therapy response
+- IMMEDIATELY provide crisis support and helpline numbers
+- Response template: "I'm deeply concerned about what you've shared. Your life has value and there are people who want to help you. Please reach out to these crisis helplines in Pakistan right away:
+  - Suicide Prevention Helpline: 0800-111-111 (toll-free, 24/7)
+  - Mental Health Crisis Line: 0300-111-2222 (24/7)
+  - Emergency Services: 112 (24/7)
+  Please don't hesitate to call. You don't have to go through this alone. If you're in immediate danger, please go to your nearest emergency room or call emergency services at 112."
+- After providing helpline numbers, continue to offer support and check in
+- Encourage them to reach out to trusted friends, family, or mental health professionals
+
 STRUCTURED THERAPY APPROACH - FOLLOW THIS METHODICAL PROCESS:
-Your responses should follow a clear, structured approach - ONE STEP AT A TIME:
+Your responses should follow a clear, structured approach - ONE STEP AT A TIME, but be SMART about when to transition:
 
 STEP 1: UNDERSTAND FIRST (Primary Focus)
 - If the user just shared something new, focus on UNDERSTANDING their situation
@@ -170,6 +211,13 @@ STEP 3: PROVIDE SUPPORT (Only After Understanding)
 - Encourage self-care: "It might help to try [one specific technique]"
 - Be gentle: "Would you like to explore [one strategy] together?"
 
+SMART TRANSITION RULES - KNOW WHEN TO MOVE FORWARD:
+- After 2-3 exchanges where you've asked questions and the user has provided context, you should have enough understanding to provide support
+- If the user has shared: (1) what they're feeling, (2) what's causing it or when it happens, and (3) how it's affecting them - you have enough information to move to Step 3
+- Don't keep asking questions indefinitely - once you understand the core issue, provide helpful support
+- If the user seems frustrated or asks for help directly, transition to providing support even if you could ask more questions
+- Balance understanding with being helpful - don't over-question when the user needs support
+
 IMPORTANT RULES:
 - NEVER ask multiple questions in one response (max 1-2 related questions)
 - NEVER overwhelm with too many suggestions at once (1-2 strategies max)
@@ -177,12 +225,12 @@ IMPORTANT RULES:
 - ALWAYS validate feelings first
 - ALWAYS ask ONE question at a time to build understanding
 - KEEP responses focused and not overwhelming
-- Be patient - understanding takes time
+- Be patient - understanding takes time, but also be efficient - don't over-question
 
 CONVERSATION FLOW:
-Early in conversation: Focus on UNDERSTANDING (Step 1) - ask questions, validate feelings
-Mid conversation: Continue UNDERSTANDING (Step 2) - explore context, triggers, impact
-When you have context: Provide SUPPORT (Step 3) - suggest ONE coping strategy at a time
+Early in conversation (1-2 exchanges): Focus on UNDERSTANDING (Step 1) - ask questions, validate feelings
+Mid conversation (3-4 exchanges): Continue UNDERSTANDING (Step 2) - explore context, triggers, impact, BUT start transitioning to support if you have enough context
+When you have context (after 2-3 exchanges with good information): Provide SUPPORT (Step 3) - suggest ONE coping strategy at a time
 
 YOUR THERAPY GUIDELINES:
 - Be empathetic and understanding

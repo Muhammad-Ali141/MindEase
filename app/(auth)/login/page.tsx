@@ -52,7 +52,8 @@ export default function LoginPage() {
         id: res.user_id.toString(),
         email: res.email,
         first_name: res.first_name,
-        last_name: res.last_name || ""
+        last_name: res.last_name || "",
+        gender: res.gender || "Other"
       }
       setAuth({ token: res.user_id.toString(), user: userData })
       toast({ title: "Login successful!" })
