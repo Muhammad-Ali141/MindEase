@@ -1,259 +1,225 @@
-# Setup Guide for Partner
+# Setup Guide for Partners (Cursor-Friendly)
 
-This guide helps you set up the MindEase chatbot on your local machine after cloning the repository.
+You (or Cursor) can copy/paste these steps exactly. Every command block is ready to run, and the only file you should personalise is `backend/chatbot/.env`.
 
-## Prerequisites
+---
 
-1. **Python 3.8+** installed
-2. **PostgreSQL** installed with `pgvector` extension
-3. **Ollama** installed and running
-4. **Git** installed
+## 1. Verify prerequisites
 
-## Step 1: Clone Repository
+Make sure these tools are available:
+
+- Git
+- Node.js 18+ (ships with npm)
+- Python 3.10+
+- pip
+- PostgreSQL 14+ with the `pgvector` extension
+- MySQL 8+
+- Ollama CLI / desktop app
+
+Quick confirmations:
 
 ```bash
-git clone <repository-url>
+node -v
+python --version
+psql --version
+ollama --version
+```
+
+---
+
+## 2. Sync the repository
+
+```bash
+git clone https://github.com/Hasnain2430/MindEase.git
 cd MindEase
+git fetch origin
+git checkout main
+git pull origin main
 ```
 
-## Step 2: Install Dependencies
+Stay on `main` unless we coordinate a feature branch.
+
+---
+
+## 3. Install frontend dependencies
 
 ```bash
-# Create virtual environment
-python -m venv venv
+cd MindEase
+npm install
+```
 
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
+The frontend already points to `http://127.0.0.1:8000/api`, so no `.env.local` is needed yet.
 
-# Install Python dependencies
+---
+
+## 4. Set up the backend virtual environment
+
+```bash
 cd backend
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS / Linux
+
 pip install -r requirements.txt
+pip install python-dotenv    # only if it is missing
 ```
 
-**Note**: You may also need to install `python-dotenv` for environment variable support:
+The Django app consumes the chatbot package and the shared MySQL schema.
+
+---
+
+## 5. Create and customise `.env`
+
+### 5.1 Copy the template (Cursor-ready commands)
+
 ```bash
-pip install python-dotenv
+cd backend/chatbot
+copy env.example .env        # Windows
 ```
 
-## Step 3: Setup Environment Variables
+```bash
+cd backend/chatbot
+cp env.example .env          # macOS / Linux
+```
 
-1. Copy the example environment file:
-   ```bash
-   cd backend/chatbot
-   cp env.example .env
-   ```
+### 5.2 Update values (hand this patch to Cursor and replace the placeholder)
 
-2. Edit `.env` file and update:
-   - `DB_PASSWORD`: Your PostgreSQL password
-   - `DB_NAME`: Database name (default: mentalhealthdb)
-   - Other values if different from defaults
+```text
+<apply_patch>
+*** Begin Patch
+*** Update File: backend/chatbot/.env
+@@
+-DB_PASSWORD=your_password_here
++DB_PASSWORD=REPLACE_WITH_POSTGRES_PASSWORD
+@@
+-# DEBERTA_MODEL_PATH=/path/to/deberta_best
+-# DATASET_PATH=/path/to/dataset/MentalChat16K.csv
++# DEBERTA_MODEL_PATH=/absolute/path/to/deberta_best
++# DATASET_PATH=/absolute/path/to/dataset/MentalChat16K.csv
+*** End Patch
+```
 
-3. Or set environment variables directly (Windows PowerShell):
-   ```powershell
-   $env:DB_PASSWORD="your_password"
-   $env:DB_NAME="mentalhealthdb"
-   ```
+Before running the patch:
 
-## Step 4: Setup PostgreSQL Database
+- Swap `REPLACE_WITH_POSTGRES_PASSWORD` for your local PostgreSQL password.
+- Uncomment and edit the optional path variables only if your assets live outside the repo (use absolute paths).
+- Keep `OLLAMA_MODEL` unchanged unless you have a differently named local model.
 
-1. **Create Database**:
+No other repository files should be edited.
+
+---
+
+## 6. Prepare databases and embeddings
+
+1. **PostgreSQL setup**
    ```sql
    CREATE DATABASE mentalhealthdb;
-   ```
-
-2. **Install pgvector Extension**:
-   ```sql
    \c mentalhealthdb
    CREATE EXTENSION IF NOT EXISTS vector;
    ```
-
-3. **Create Tables** (run the schema file):
+2. **Copy large assets (not tracked in git)**
+   - `deberta_best/model.safetensors`
+   - `dataset/MentalChat16K.csv`
+3. **Build the vector store** (only if you do not already have embeddings locally)
    ```bash
-   psql -U postgres -d mentalhealthdb -f backend/chatbot/postgresql_schema.sql
+   cd backend/chatbot
+   python build_database.py
    ```
+   This loads the dataset, chunks text, and stores embeddings in PostgreSQL.
 
-See `POSTGRESQL_SETUP.md` for detailed instructions.
+---
 
-## Step 5: Download Required Files
-
-These files are **NOT** in git due to size:
-
-### A. DeBERTa Model Files
-
-The model structure is in `deberta_best/` but weights are excluded. You have two options:
-
-**Option 1: If partner has model files**
-- Copy `model.safetensors` to `deberta_best/` folder
-- Other files should already be in git
-
-**Option 2: Re-download/fine-tune**
-- Download DeBERTa v3 Large from Hugging Face
-- Fine-tune on your dataset (if you have the training setup)
-
-### B. MentalChat16K Dataset
-
-The dataset is **NOT** in git (~44 MB). You need to:
-
-1. Download from the original source: https://arxiv.org/abs/2503.13509
-2. Or ask your partner to share via cloud storage (Google Drive, etc.)
-3. Place it in: `dataset/MentalChat16K.csv`
-
-## Step 6: Build Database
-
-Once you have the dataset:
+## 7. Pull the Ollama model
 
 ```bash
-# From project root
-cd backend/chatbot
-python build_database.py
+ollama pull llama3.1:8b-instruct
+# optional alternatives:
+# ollama pull llama3.1:8b
+# ollama pull llama3.1:8b-instruct-q4_K_M
 ```
 
-This will:
-- Load the CSV file
-- Chunk the data
-- Generate embeddings
-- Insert into PostgreSQL
+`python manage.py runserver` now auto-starts `ollama serve`, so no separate command is needed.
 
-This may take 10-30 minutes depending on your hardware.
+---
 
-## Step 7: Setup Ollama
+## 8. Run backend and frontend
 
-1. **Install Ollama**: https://ollama.ai/download
+Open two terminals in the project root.
 
-2. **Start Ollama**:
-   ```bash
-   ollama serve
-   ```
-
-3. **Download Model**:
-   ```bash
-   ollama pull llama3.1:8b-instruct
-   ```
-
-Or if using quantized version:
-   ```bash
-   ollama pull llama3.1:8b
-   ```
-
-## Step 8: Verify Setup
-
-Run the Phase 1 test to verify database setup:
-
+**Backend**
 ```bash
-cd backend/chatbot
-python tests/test_phase1.py
-```
-
-If all tests pass, you're ready!
-
-## Step 9: Run the Chatbot
-
-**Option 1: Clean Chat Interface (Recommended)**
-```bash
-# Windows
-backend\chatbot\run_chat.bat
-
-# Linux/Mac
-bash backend/chatbot/run_chat.sh
-
-# Or directly
 cd backend
-python -m chatbot.chat
+venv\Scripts\activate        # or source venv/bin/activate
+python manage.py runserver
 ```
+- Serves Django at `http://127.0.0.1:8000/`.
+- Automatically checks and launches `ollama serve` if it is not already running.
 
-**Option 2: Debug Version (with verbose output)**
+**Frontend**
 ```bash
-# Windows
-backend\chatbot\run_main.bat
-
-# Linux/Mac
-bash backend/chatbot/run_main.sh
-
-# Or directly
-cd backend
-python -m chatbot.main
+cd MindEase
+npm run dev
 ```
+- Next.js runs at `http://localhost:3000/`.
+- Routes guarded by Auth require you to log in first.
 
-## Troubleshooting
+---
 
-### Database Connection Errors
+## 9. Verify everything works
 
-- Check PostgreSQL is running: `psql -U postgres`
-- Verify password in `.env` file
-- Check database exists: `\l` in psql
+1. Visit `http://localhost:3000/` and toggle dark/light mode.
+2. Log in and confirm the dashboard shows “Sessions Completed” and “Recent Sessions”.
+3. Start `Quick Check-in → Text Chat`, send at least one message, end the chat, and ensure:
+   - The summary uses the user’s first name and correct pronouns.
+   - Session count increments only on new sessions.
+   - Recent sessions list an LLM-generated title.
+4. Open `View All Sessions`, resume an older session, and end it to see an updated summary.
 
-### Model Not Found
+---
 
-- Ensure `deberta_best/model.safetensors` exists
-- Check path in config (should be auto-detected)
+## 10. Troubleshooting tips
 
-### Dataset Not Found
+- **PostgreSQL errors**: verify credentials in `.env`, ensure `pgvector` exists, and confirm the embeddings tables were created.
+- **MySQL access issues**: adjust credentials in `backend/backend/settings.py` only if your local schema differs.
+- **Missing Ollama model**: run `ollama list` and re-pull if necessary.
+- **Slow first LLM reply**: make sure the model is downloaded; the server now auto-starts Ollama but still loads the model on demand.
+- **Frontend 401/403 responses**: confirm you are logged in—JWT auth protects chat routes.
 
-- Verify `dataset/MentalChat16K.csv` exists
-- Check file path is correct
+---
 
-### Ollama Connection Errors
-
-- Ensure `ollama serve` is running
-- Check model is downloaded: `ollama list`
-- Verify model name matches in `.env`
-
-### Import Errors
-
-- Ensure virtual environment is activated
-- Install all dependencies: `pip install -r requirements.txt`
-- Try: `pip install python-dotenv` if env loading fails
-
-## File Structure
+## 11. Project structure (high level)
 
 ```
 MindEase/
+├── app/                     # Next.js routes (dashboard, chat, sessions, profile, auth)
+├── components/              # UI building blocks (theme toggle, chat UI, stats, etc.)
+├── context/                 # React contexts (Auth)
+├── lib/api.ts               # Frontend API client talking to Django
 ├── backend/
-│   ├── chatbot/
-│   │   ├── config.py              # Configuration (uses env vars)
-│   │   ├── env.example            # Template for .env
-│   │   ├── .env                   # Your config (NOT in git)
-│   │   ├── main.py                # Main chatbot script
-│   │   ├── build_database.py      # Database builder
-│   │   ├── tests/                 # All test files
-│   │   └── ...                    # Other chatbot files
-│   └── requirements.txt
-├── deberta_best/                   # Model folder (weights excluded from git)
-│   ├── config.json                # ✅ In git
-│   ├── tokenizer.json             # ✅ In git
-│   └── model.safetensors          # ❌ NOT in git (large file)
-├── dataset/
-│   └── MentalChat16K.csv          # ❌ NOT in git (large file)
-└── .gitignore                     # Controls what's excluded
+│   ├── api/                 # Django views + serializers
+│   ├── chatbot/             # Emotion detector, RAG, LLM client, memory
+│   ├── backend/             # Django project settings/urls
+│   └── manage.py            # Auto-starts Ollama when runserver executes
+├── dataset/                 # Bring your own MentalChat16K.csv
+├── deberta_best/            # Bring your own model.safetensors
+└── SETUP_FOR_PARTNER.md     # This guide
 ```
 
-## What's NOT in Git (and why)
+---
 
-1. **`.env` files** - Contains passwords (security)
-2. **`model.safetensors`** - Large model file (~500MB+)
-3. **`dataset/MentalChat16K.csv`** - Large dataset (~44MB)
-4. **`venv/`** - Virtual environment (recreated locally)
-5. **`__pycache__/`** - Python cache files (auto-generated)
+## 12. Quick checklist
 
-## Quick Setup Checklist
+- [ ] `git pull origin main`
+- [ ] `npm install`
+- [ ] Python virtualenv created & activated
+- [ ] `pip install -r backend/requirements.txt`
+- [ ] `.env` created in `backend/chatbot`
+- [ ] PostgreSQL database + pgvector ready
+- [ ] DeBERTa weights & dataset copied locally
+- [ ] `python build_database.py` executed (if needed)
+- [ ] `ollama pull llama3.1:8b-instruct`
+- [ ] `python manage.py runserver`
+- [ ] `npm run dev`
 
-- [ ] Cloned repository
-- [ ] Created and activated virtual environment
-- [ ] Installed dependencies
-- [ ] Created `.env` file with database password
-- [ ] PostgreSQL installed and running
-- [ ] Database created (`mentalhealthdb`)
-- [ ] pgvector extension installed
-- [ ] Tables created (schema applied)
-- [ ] DeBERTa model files downloaded/copied
-- [ ] MentalChat16K dataset downloaded
-- [ ] Database built (`build_database.py` run successfully)
-- [ ] Ollama installed and running
-- [ ] Llama model downloaded
-- [ ] Tests passing (`test_phase1.py`)
-
-Once all checked, you're ready to use the chatbot!
+Once everything above is checked, you should be able to run the project exactly like the owner—only the environment values differ per machine. Happy building!
 

@@ -1,4 +1,4 @@
-# Chatbot Frontend Integration Plan
+image.png# Chatbot Frontend Integration Plan
 
 ## Overview
 This document outlines the plan to integrate the terminal-based MindEase chatbot (`backend/chatbot/chat.py`) into the Next.js frontend application, allowing users to chat with the AI therapist through a web interface.
