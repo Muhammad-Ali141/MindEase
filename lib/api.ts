@@ -68,6 +68,8 @@ export const apiRegister = async (data: any) => {
       last_name: data.last_name,
       email: data.email,
       password: data.password,
+      city: data.city,
+      nearest_major_city: data.nearest_major_city,
       dob: data.dob,
       gender: data.gender,
       lang_pref: data.preferred_language,
@@ -386,6 +388,8 @@ export type UserProfileData = {
   dob: string
   gender: string
   lang_pref: string
+  city: string
+  nearest_major_city: string
   created_at: string | null
 }
 
@@ -413,6 +417,8 @@ export type UpdateProfileData = {
   dob?: string
   gender?: "Male" | "Female" | "Other"
   lang_pref?: "en" | "ur"
+  city?: string
+  nearest_major_city?: string
   password?: string
 }
 
@@ -425,6 +431,8 @@ export type UpdateProfileResponse = {
   dob: string
   gender: string
   lang_pref: string
+  city: string
+  nearest_major_city: string
 }
 
 export async function apiUpdateUserProfile(

@@ -44,13 +44,15 @@ def register(request):
             dob = data.get("dob")
             gender = data.get("gender")
             lang_pref = data.get("lang_pref")
+            city = data.get("city")
+            nearest_major_city = data.get("nearest_major_city")
             if lang_pref == "en":
                 lang_pref = "english"
             elif lang_pref == "ur":
                 lang_pref = "urdu"
 
             # Check for missing fields
-            if not all([first_name, last_name, email, password, dob, gender, lang_pref]):
+            if not all([first_name, last_name, email, password, dob, gender, lang_pref, city, nearest_major_city]):
                 return JsonResponse({"error": "All fields are required."}, status=400)
 
             # Normalize email to lowercase for case-insensitive comparison
@@ -66,6 +68,10 @@ def register(request):
             except EmailVerification.DoesNotExist:
                 return JsonResponse({"error": "Please verify your email first."}, status=400)
 
+            nearest_major_city_clean = nearest_major_city.strip() if nearest_major_city else ""
+            if not nearest_major_city_clean:
+                return JsonResponse({"error": "Nearest major city is required."}, status=400)
+
             # Parse and validate DOB
             dob_parsed = parse_date(dob)
             if not dob_parsed:
@@ -80,6 +86,8 @@ def register(request):
                 dob=dob_parsed,
                 gender=gender,
                 lang_pref=lang_pref,  # ✅ correct field name
+                city=city.strip() if city else None,
+                nearest_major_city=nearest_major_city_clean,
             )
 
             return JsonResponse({
@@ -275,7 +283,9 @@ def login(request):
                 "last_name": user.last_name,
                 "email": user.email,
                 "gender": user.gender or "Other",
-                "lang_pref": user.lang_pref  # ✅ consistent field name
+                "lang_pref": user.lang_pref,  # ✅ consistent field name
+                "city": user.city or "",
+                "nearest_major_city": user.nearest_major_city or "",
             }, status=200)
 
         except Exception as e:
@@ -858,6 +868,8 @@ def get_user_profile(request):
                 "dob": user.dob.isoformat() if user.dob else None,
                 "gender": user.gender or "Other",
                 "lang_pref": lang_pref,
+                "city": user.city or "",
+                "nearest_major_city": user.nearest_major_city or "",
                 "created_at": user.created_at.isoformat() if user.created_at else None,
             }, status=200)
             
@@ -925,6 +937,16 @@ def update_user_profile(request):
                     lang_pref = "urdu"
                 user.lang_pref = lang_pref
                 updated_fields.append("lang_pref")
+
+            if "city" in data:
+                city_value = data.get("city")
+                user.city = city_value.strip() if city_value else None
+                updated_fields.append("city")
+
+            if "nearest_major_city" in data:
+                nearest_value = data.get("nearest_major_city")
+                user.nearest_major_city = nearest_value.strip() if nearest_value else None
+                updated_fields.append("nearest_major_city")
             
             if "password" in data and data.get("password"):
                 # Update password if provided
@@ -954,6 +976,8 @@ def update_user_profile(request):
                 "dob": user.dob.isoformat() if user.dob else None,
                 "gender": user.gender or "Other",
                 "lang_pref": lang_pref,
+                "city": user.city or "",
+                "nearest_major_city": user.nearest_major_city or "",
             }, status=200)
             
         except Exception as e:

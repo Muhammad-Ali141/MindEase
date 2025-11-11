@@ -84,3 +84,4 @@ __pycache__/
 # PostgreSQL dumps
 *.sql.dump
 *.backup
+backups/

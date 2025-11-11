@@ -22,10 +22,10 @@ def start_ollama_if_needed():
     # Only start Ollama if we're running the server
     if len(sys.argv) > 1 and sys.argv[1] == 'runserver':
         if check_ollama_running():
-            print("✅ Ollama is already running!")
+            print("Ollama is already running!")
             return None
         
-        print("🦙 Starting Ollama server...")
+        print("Starting Ollama server...")
         
         # Determine the command based on OS
         if platform.system() == "Windows":
@@ -46,15 +46,15 @@ def start_ollama_if_needed():
             )
         
         # Wait a bit for Ollama to start
-        print("⏳ Waiting for Ollama to initialize...")
+        print("Waiting for Ollama to initialize...")
         for i in range(10):  # Wait up to 10 seconds
             time.sleep(1)
             if check_ollama_running():
-                print("✅ Ollama server started successfully!")
+                print("Ollama server started successfully!")
                 return process
             print(f"   Still waiting... ({i+1}/10)")
         
-        print("⚠️  Warning: Ollama may not have started properly. Continuing anyway...")
+        print("Warning: Ollama may not have started properly. Continuing anyway...")
         return process
     
     return None

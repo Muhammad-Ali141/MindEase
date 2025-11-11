@@ -1,6 +1,18 @@
+import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables if .env files are present
+for candidate in [
+    BASE_DIR / '.env',
+    BASE_DIR.parent / '.env',
+    BASE_DIR / 'backend' / '.env',
+]:
+    if candidate.exists():
+        load_dotenv(candidate, override=False)
 
 SECRET_KEY = 'django-insecure-replace-this-with-your-own-secret-key'
 DEBUG = True  # ✅ Keep True for development
@@ -23,8 +35,7 @@ INSTALLED_APPS = [
     'api',  # your backend app
 ]
 
-# ⚠️ Do NOT define AUTH_USER_MODEL since you’re using an existing MySQL table
-# AUTH_USER_MODEL = 'api.User'
+# ⚠️ Do NOT define AUTH_USER_MODEL since you’re using the default User table
 
 # -------------------------------------------------------------------
 # Middleware
@@ -71,19 +82,16 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend.wsgi.application'
 
 # -------------------------------------------------------------------
-# Database (✅ Using your existing MySQL database)
+# Database
 # -------------------------------------------------------------------
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'mindease_db',        # your existing database name
-        'USER': 'root',               # your MySQL username
-        'PASSWORD': 'admin123',      # your MySQL password
-        'HOST': '127.0.0.1',          # or 'localhost'
-        'PORT': '3306',
-        'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
+        'ENGINE': os.getenv('DJANGO_DB_ENGINE', 'django.db.backends.postgresql'),
+        'NAME': os.getenv('DB_NAME', 'mentalhealthdb'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
 

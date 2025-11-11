@@ -8,6 +8,8 @@ type User = {
   first_name: string; 
   last_name?: string;
   gender?: string;
+  city?: string;
+  nearest_major_city?: string;
 }
 type AuthState = {
   token: string | null
