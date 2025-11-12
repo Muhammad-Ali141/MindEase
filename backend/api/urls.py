@@ -11,10 +11,10 @@ urlpatterns = [
     path("chat/welcome/", views.chat_welcome, name="chat_welcome"),
     path("chat/summary/", views.chat_summary, name="chat_summary"),
     path("sessions/count/", views.get_session_count, name="get_session_count"),
-    path("sessions/increment/", views.increment_session_count, name="increment_session_count"),
     path("sessions/save/", views.save_session, name="save_session"),
     path("sessions/recent/", views.get_recent_sessions, name="get_recent_sessions"),
     path("sessions/get/", views.get_session_by_id, name="get_session_by_id"),
+    path("sessions/star/", views.toggle_session_star, name="toggle_session_star"),
     path("profile/get/", views.get_user_profile, name="get_user_profile"),
     path("profile/update/", views.update_user_profile, name="update_user_profile"),
 ]

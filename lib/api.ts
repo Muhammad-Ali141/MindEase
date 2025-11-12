@@ -138,6 +138,10 @@ export async function apiUpdateMe(token: string, data: Partial<UserProfile>): Pr
 export type ChatMessage = {
   role: "user" | "assistant"
   content: string
+  emotion_label?: string
+  emotion_score?: number
+  metadata?: Record<string, unknown>
+  content_type?: "text" | "audio"
 }
 
 export type ChatResponse = {
@@ -258,37 +262,38 @@ export async function apiGetSessionCount(user_id: string): Promise<SessionCountR
   return res.json()
 }
 
-export async function apiIncrementSessionCount(user_id: string): Promise<SessionCountResponse> {
-  const res = await fetch("http://localhost:8000/api/sessions/increment/", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ user_id }),
-  })
+export type SessionState = "full" | "pending_archive" | "summary_only"
 
-  if (!res.ok) {
-    const errorData = await res.json()
-    throw new Error(errorData.error || "Failed to increment session count")
-  }
-
-  return res.json()
+export type StoredChatMessage = ChatMessage & {
+  sequence?: number | null
+  metadata?: Record<string, unknown>
+  created_at?: string | null
 }
 
 export type Session = {
   session_id: string
   title: string
-  messages: ChatMessage[]
+  messages: StoredChatMessage[]
   summary: string
+  short_summary: string
+  resume_message?: string
+  state: SessionState
+  is_starred: boolean
+  has_full_transcript: boolean
   created_at: string
   updated_at: string
+  resume_context?: Record<string, unknown>
 }
 
 export type SessionPreview = {
   session_id: string
   title: string
   summary: string
-  short_summary?: string
+  short_summary: string
+  resume_message?: string
+  state: SessionState
+  is_starred: boolean
+  has_full_transcript: boolean
   created_at: string
   updated_at: string
 }
@@ -306,6 +311,17 @@ export async function apiSaveSession(
   user_first_name?: string | null,
   user_gender?: string | null
 ): Promise<SaveSessionResponse> {
+  const formattedHistory = conversation_history.map((message, index) => ({
+    role: message.role,
+    sender: message.role,
+    content: message.content,
+    content_type: message.content_type ?? "text",
+    sequence: index,
+    emotion_label: message.emotion_label,
+    emotion_score: message.emotion_score,
+    metadata: message.metadata ?? {},
+  }))
+
   const res = await fetch("http://localhost:8000/api/sessions/save/", {
     method: "POST",
     headers: {
@@ -313,7 +329,7 @@ export async function apiSaveSession(
     },
     body: JSON.stringify({
       user_id,
-      conversation_history,
+      conversation_history: formattedHistory,
       summary,
       session_id,
       user_first_name,
@@ -375,6 +391,32 @@ export async function apiGetSessionById(
   if (!res.ok) {
     const errorData = await res.json()
     throw new Error(errorData.error || "Failed to get session")
+  }
+
+  return res.json()
+}
+
+export type ToggleStarResponse = {
+  session: SessionPreview
+  user_id: string
+}
+
+export async function apiToggleSessionStar(
+  user_id: string,
+  session_id: string,
+  star: boolean
+): Promise<ToggleStarResponse> {
+  const res = await fetch("http://localhost:8000/api/sessions/star/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id, session_id, star }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to update session star")
   }
 
   return res.json()

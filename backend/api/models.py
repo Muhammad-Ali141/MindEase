@@ -5,6 +5,8 @@
 #   * Make sure each ForeignKey and OneToOneField has `on_delete` set to the desired behavior
 #   * Remove `managed = False` lines if you wish to allow Django to create, modify, and delete the table
 # Feel free to rename the models, but don't rename db_table values or field names.
+import uuid
+
 from django.db import models
 from django.utils import timezone
 
@@ -72,20 +74,36 @@ class User(models.Model):
 
 
 class Session(models.Model):
-    class SessionType(models.TextChoices):
-        TEXT = 'text', 'Text'
-        VOICE = 'voice', 'Voice'
+    class SessionState(models.TextChoices):
+        FULL = 'full', 'Full Transcript'
+        PENDING_ARCHIVE = 'pending_archive', 'Pending Archive'
+        SUMMARY_ONLY = 'summary_only', 'Summary Only'
 
     session_id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sessions')
-    session_type = models.CharField(max_length=5, choices=SessionType.choices, default=SessionType.TEXT)
-    emotional_tone = models.CharField(max_length=50, blank=True, null=True)
+    session_uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    title = models.CharField(max_length=150, blank=True, default='')
+    short_summary = models.TextField(blank=True, default='')
+    full_summary = models.TextField(blank=True, default='')
+    state = models.CharField(max_length=20, choices=SessionState.choices, default=SessionState.FULL)
+    is_starred = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(blank=True, null=True)
+    continuation_context = models.JSONField(blank=True, null=True, default=dict)
     started_at = models.DateTimeField(default=timezone.now)
     ended_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+    resume_message = models.TextField(blank=True, default='')
 
     class Meta:
         db_table = 'session'
         ordering = ['-started_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'session_uuid'],
+                name='unique_session_uuid_per_user',
+            )
+        ]
 
     def __str__(self) -> str:
         return f"Session #{self.pk} ({self.user.email})"
@@ -102,28 +120,47 @@ class Message(models.Model):
 
     message_id = models.AutoField(primary_key=True)
     session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='messages')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='messages')
     sender = models.CharField(max_length=4, choices=Sender.choices)
     content_type = models.CharField(max_length=5, choices=ContentType.choices, default=ContentType.TEXT)
-    message_text = models.TextField(blank=True, null=True)
-    audio_file_path = models.CharField(max_length=255, blank=True, null=True)
+    sequence = models.PositiveIntegerField(null=True, blank=True)
+    content = models.TextField(blank=True, null=True)
+    emotion_label = models.CharField(max_length=50, blank=True, null=True)
+    emotion_score = models.FloatField(blank=True, null=True)
+    metadata = models.JSONField(blank=True, default=dict)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
 
     class Meta:
         db_table = 'message'
-        ordering = ['pk']
+        ordering = ['sequence']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['session', 'sequence'],
+                name='unique_message_sequence_per_session',
+                condition=models.Q(sequence__isnull=False)
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.get_sender_display()} message in session {self.session_id}"
 
 
 class Summary(models.Model):
+    class SummaryType(models.TextChoices):
+        FULL = 'full', 'Full'
+        SHORT = 'short', 'Short'
+        ARCHIVE = 'archive', 'Archive'
+
     summary_id = models.AutoField(primary_key=True)
     session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='summaries')
-    keypoints = models.TextField()
-    generated_at = models.DateTimeField(default=timezone.now)
+    type = models.CharField(max_length=20, choices=SummaryType.choices, default=SummaryType.FULL)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
 
     class Meta:
         db_table = 'summary'
-        ordering = ['-generated_at']
+        ordering = ['-created_at']
 
     def __str__(self) -> str:
         return f"Summary for session {self.session_id}"
@@ -185,3 +222,27 @@ class EmailVerification(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_email} ({'verified' if self.is_verified else 'pending'})"
+
+
+class SessionArchiveJob(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        IN_PROGRESS = 'in_progress', 'In Progress'
+        COMPLETED = 'completed', 'Completed'
+        FAILED = 'failed', 'Failed'
+
+    job_id = models.AutoField(primary_key=True)
+    session = models.OneToOneField(Session, on_delete=models.CASCADE, related_name='archive_job')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    attempts = models.PositiveIntegerField(default=0)
+    scheduled_at = models.DateTimeField(default=timezone.now)
+    last_error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'session_archive_job'
+        ordering = ['status', '-scheduled_at']
+
+    def __str__(self) -> str:
+        return f"Archive job for session {self.session.session_id} ({self.status})"

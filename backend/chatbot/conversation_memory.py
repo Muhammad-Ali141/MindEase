@@ -230,77 +230,42 @@ class ConversationMemory:
                     elif role == 'assistant':
                         conversation_text += f"Therapist: {content}\n\n"
                 
-                # Determine pronouns based on gender
-                pronouns = {"he": "he", "him": "him", "his": "his", "himself": "himself"}
-                if user_gender:
-                    gender_lower = user_gender.lower()
-                    if gender_lower == "female":
-                        pronouns = {"he": "she", "him": "her", "his": "her", "himself": "herself"}
-                    elif gender_lower == "male":
-                        pronouns = {"he": "he", "him": "him", "his": "his", "himself": "himself"}
-                    else:
-                        # For "Other" or unknown, use "they"
-                        pronouns = {"he": "they", "him": "them", "his": "their", "himself": "themselves"}
-                else:
-                    # Default to "they" if gender not provided
-                    pronouns = {"he": "they", "him": "them", "his": "their", "himself": "themselves"}
-                
                 # Create summary prompt
                 user_label = user_first_name if user_first_name else "the user"
-                pronoun_text = f"Use {pronouns['he']}/{pronouns['him']}/{pronouns['his']} pronouns for {user_label} throughout the summary. For example: '{user_first_name if user_first_name else 'The user'} shared that {pronouns['he']} feels anxious. {pronouns['his']} concerns were...'"
                 
-                summary_prompt = f"""Please provide a comprehensive, well-written summary of this therapy session conversation in paragraph form (2-3 paragraphs).
+                summary_prompt = f"""Write a short recap of this therapy chat addressed directly to {user_label} as "you".
 
-CRITICAL: Only summarize what was ACTUALLY said in the conversation below. Do NOT add, infer, or assume any details that were not explicitly mentioned. If something was not discussed, do not mention it.
+Rules:
+- Reference ONLY what was actually said. If the exchange was brief, keep the recap equally brief (even 1–2 sentences).
+- Summarise how you felt or what you shared, in your own words.
+- Mention how the therapist responded or supported you only if it truly happened in the transcript.
+- Close with a gentle invitation or reassurance when appropriate.
 
-IMPORTANT PRONOUN USAGE: {pronoun_text}
-IMPORTANT NAME USAGE: Use {user_label}'s name ({user_first_name if user_first_name else 'the user'}) instead of saying "the user" or "user" in the summary. For example, say "{user_first_name if user_first_name else 'The user'} shared that..." instead of "The user shared that...".
-
-Structure:
-- First paragraph: What {user_label} actually shared - {pronouns['his']} exact feelings, concerns, or situation as stated in the conversation. Be specific about what {pronouns['he']} said and how {pronouns['he']} expressed {pronouns['his']} emotions.
-- Second paragraph: How the therapist responded - what questions were asked, what support was provided, and any coping techniques or strategies that were explicitly suggested. Describe the therapeutic approach and how the therapist helped {user_label}.
-- Optional third paragraph: Brief reflection on the session's progress and key takeaways (only if there was substantial conversation)
-
-Write in a warm, understanding, and professional tone. Be specific and factual. Write in flowing paragraph form, not as a list or bullet points. Make it read like a professional therapy session summary.
+Tone: warm, validating, professional. Maximum length: 5 sentences.
 
 Conversation:
 {conversation_text}
 
-Session Summary:"""
-                
-                # Use a special system prompt for summary generation
-                summary_system_prompt = f"""You are summarizing a therapy session conversation. Write a warm, empathetic, and professional summary in paragraph form (2-3 paragraphs).
+Session recap:"""
 
-CRITICAL RULES:
-1. ONLY summarize what was ACTUALLY said in the conversation. Do NOT add, infer, or assume any details that were not explicitly mentioned.
-2. If {user_label} only said "I feel anxious" and nothing else, only mention that {pronouns['he']} said {pronouns['he']} feels anxious - do NOT add details about work, relationships, or other causes unless they were explicitly mentioned.
-3. Only mention coping techniques or strategies if the therapist explicitly suggested them in the conversation.
-4. Be factual and specific - stick to what was actually discussed.
-5. IMPORTANT PRONOUN USAGE: Use {pronouns['he']}/{pronouns['him']}/{pronouns['his']} pronouns for {user_label} throughout. For example: "{user_first_name if user_first_name else 'The user'} shared that {pronouns['he']} feels anxious. {pronouns['his']} concerns were..."
-6. IMPORTANT NAME USAGE: Use {user_label}'s name ({user_first_name if user_first_name else 'the user'}) instead of saying "the user" or "user" in the summary.
+                summary_system_prompt = (
+                    "You summarise therapy conversations for the client. "
+                    "Respond with 2–5 sentences written in the second person (\"you\"), accurately reflecting only the transcript. "
+                    "If the discussion was very short, keep the recap short. Mention therapist responses only when they appear, and end with an encouraging invitation when it fits. Do not invent details."
+                )
 
-Focus on:
-- What {user_label} actually shared ({pronouns['his']} exact words/feelings as stated)
-- How the therapist responded (questions asked, support provided, techniques suggested - only if explicitly mentioned)
-- Brief reflection on the session's value and progress (optional, only if substantial conversation occurred)
-
-Write naturally in flowing paragraph form, not as a list or bullet points. Make it read like a professional therapy session summary. Do not hallucinate or add information."""
-                
-                # Generate summary using LLM with custom system prompt
                 try:
                     summary = llm_client.generate_response(
                         user_message=summary_prompt,
                         emotions="",
                         context="",
                         conversation_history=[],  # Empty history, everything is in the prompt
-                        system_prompt_override=summary_system_prompt
+                        system_prompt_override=summary_system_prompt,
                     )
                 except Exception as e:
                     raise e
-                
-                # Format the summary nicely
-                formatted_summary = self._format_summary(summary)
-                return formatted_summary
+
+                return self._normalise_summary_text(summary)
                 
             except Exception as e:
                 # Fall back to basic summary if LLM fails
@@ -315,35 +280,14 @@ Write naturally in flowing paragraph form, not as a list or bullet points. Make 
         if not self.conversation_history:
             return "No conversation history available."
         
-        summary_lines = []
-        summary_lines.append("\n" + "=" * 80)
-        summary_lines.append(" CONVERSATION SUMMARY")
-        summary_lines.append("=" * 80)
-        summary_lines.append("")
-        summary_lines.append("This session included your conversation with the therapist.")
-        summary_lines.append("All messages have been saved in the conversation history.")
-        summary_lines.append("")
-        summary_lines.append("=" * 80)
-        
-        return "\n".join(summary_lines)
+        return (
+            "We had a very brief check-in, and there were no detailed messages to summarise. "
+            "Feel free to continue whenever you’re ready."
+        )
     
     def _format_summary(self, summary: str) -> str:
         """Format the LLM-generated summary nicely"""
-        summary_lines = []
-        summary_lines.append("\n" + "=" * 80)
-        summary_lines.append(" SESSION SUMMARY")
-        summary_lines.append("=" * 80)
-        summary_lines.append("")
-        
-        # Wrap and format the summary
-        wrapped_lines = self._wrap_text(summary.strip(), width=76)
-        for line in wrapped_lines:
-            summary_lines.append(f"   {line}")
-        
-        summary_lines.append("")
-        summary_lines.append("=" * 80)
-        
-        return "\n".join(summary_lines)
+        return self._normalise_summary_text(summary)
     
     def _wrap_text(self, text: str, width: int = 76) -> list:
         """Helper method to wrap text"""
@@ -366,6 +310,15 @@ Write naturally in flowing paragraph form, not as a list or bullet points. Make 
             lines.append(' '.join(current_line))
         
         return lines
+
+    def _normalise_summary_text(self, value: str) -> str:
+        text = value.strip()
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        return "\n\n".join(
+            paragraph.strip()
+            for paragraph in text.split("\n\n")
+            if paragraph.strip()
+        )
 
 
 if __name__ == "__main__":

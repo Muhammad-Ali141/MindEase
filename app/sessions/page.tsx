@@ -6,15 +6,17 @@ import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
-import { apiGetRecentSessions, type SessionPreview } from "@/lib/api"
-import { MessageCircle, ArrowLeft } from "lucide-react"
+import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from "@/lib/api"
+import { MessageCircle, ArrowLeft, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useToast } from "@/hooks/use-toast"
 
 export default function SessionsPage() {
   const router = useRouter()
   const { user } = useAuth()
   const [sessions, setSessions] = useState<SessionPreview[]>([])
   const [loading, setLoading] = useState(true)
+  const { toast } = useToast()
 
   useEffect(() => {
     if (user?.id) {
@@ -58,7 +60,39 @@ export default function SessionsPage() {
     }
   }
 
-  // No need for truncation - we'll use short_summary directly
+  const toggleStar = async (session: SessionPreview) => {
+    if (!user) return
+
+    if (session.state !== "full" && !session.is_starred) {
+      toast({
+        title: "Cannot star session",
+        description: "Archived sessions cannot be starred because the detailed transcript is no longer available.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await apiToggleSessionStar(user.id, session.session_id, !session.is_starred)
+      setSessions((prev) =>
+        prev.map((item) =>
+          item.session_id === session.session_id ? { ...item, ...response.session } : item
+        )
+      )
+      toast({
+        title: response.session.is_starred ? "Session starred" : "Session unstarred",
+        description: response.session.is_starred
+          ? "We'll keep this session available in detail for you."
+          : "This session may be archived if newer sessions are created.",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Unable to update session",
+        description: error.message || "Please try again later.",
+        variant: "destructive",
+      })
+    }
+  }
 
   return (
     <AuthGuard>
@@ -94,30 +128,55 @@ export default function SessionsPage() {
                 ) : (
                   <div className="space-y-4">
                     {sessions.map((session) => (
-                      <button
+                      <div
                         key={session.session_id}
-                        onClick={() => handleSessionClick(session.session_id)}
-                        className="w-full text-left p-6 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition cursor-pointer group"
+                        className="w-full p-6 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition"
                       >
                         <div className="flex items-start gap-4">
-                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
-                            <MessageCircle className="h-6 w-6 text-white" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-lg text-gray-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition mb-2">
-                              {session.title}
-                            </h3>
-                            {(session.short_summary || session.summary) && (
-                              <p className="text-sm text-gray-600 dark:text-gray-300 mb-2 leading-relaxed">
-                                {session.short_summary || session.summary}
+                          <button
+                            onClick={() => handleSessionClick(session.session_id)}
+                            className="flex-1 text-left flex gap-4"
+                          >
+                            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
+                              <MessageCircle className="h-6 w-6 text-white" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-lg text-gray-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition mb-2">
+                                {session.title}
+                              </h3>
+                              {(session.short_summary || session.summary) && (
+                                <p className="text-sm text-gray-600 dark:text-gray-300 mb-2 leading-relaxed line-clamp-3">
+                                  {session.short_summary || session.summary}
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {formatDate(session.updated_at)}
                               </p>
-                            )}
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {formatDate(session.updated_at)}
-                            </p>
-                          </div>
+                              {!session.has_full_transcript && (
+                                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                                  Summary view only
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleStar(session)}
+                            className={`mt-1 inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-medium transition ${
+                              session.is_starred
+                                ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-700/60"
+                            }`}
+                          >
+                            <Star
+                              className="h-4 w-4 mr-2"
+                              strokeWidth={1.5}
+                              fill={session.is_starred ? "currentColor" : "none"}
+                            />
+                            {session.is_starred ? "Starred" : "Star"}
+                          </button>
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 )}

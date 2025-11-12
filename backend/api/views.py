@@ -1,30 +1,44 @@
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.hashers import make_password, check_password
-from django.utils.dateparse import parse_date
-from django.utils import timezone
-from django.core.mail import send_mail
-from django.conf import settings
-from .models import User, EmailVerification
 import json
 import random
+import uuid
 from datetime import timedelta
 
-# In-memory session tracking (temporary until DB implementation)
-# Dictionary: {user_id: session_count}
-SESSION_COUNTS = {}
+from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
+from django.core.mail import send_mail
+from django.http import JsonResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_date
+from django.views.decorators.csrf import csrf_exempt
 
-# In-memory session storage (temporary until DB implementation)
-# Dictionary: {user_id: [session1, session2, ...]}
-# Each session: {
-#   "session_id": str,
-#   "title": str,
-#   "messages": [ChatMessage],
-#   "summary": str,
-#   "created_at": str,
-#   "updated_at": str
-# }
-USER_SESSIONS = {}
+from api.models import EmailVerification, Message, Session, User
+from api.services.session_service import SessionService
+from chatbot.conversation_memory import ConversationMemory
+from chatbot.llm_client import LLMClient
+
+# Legacy in-memory caches removed; persistence handled by SessionService.
+
+
+def _resolve_session_for_user(user_id, identifier):
+    """
+    Resolve a session for the given user. Accepts either UUID strings or integer IDs.
+    Raises ValueError for invalid identifiers and Session.DoesNotExist when not found.
+    """
+    if identifier is None:
+        raise ValueError("invalid_session_identifier")
+
+    session_qs = Session.objects.filter(user_id=user_id)
+
+    try:
+        session_uuid = uuid.UUID(str(identifier))
+    except (ValueError, TypeError):
+        try:
+            session_id_int = int(identifier)
+        except (ValueError, TypeError):
+            raise ValueError("invalid_session_identifier") from None
+        return session_qs.get(session_id=session_id_int)
+
+    return session_qs.get(session_uuid=session_uuid)
 
 
 # -------------------------
@@ -434,16 +448,6 @@ def chat_summary(request):
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
-            # Import chatbot
-            import sys
-            import os
-            chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'chatbot')
-            if chatbot_dir not in sys.path:
-                sys.path.insert(0, chatbot_dir)
-            
-            from chatbot.conversation_memory import ConversationMemory
-            from chatbot.llm_client import LLMClient
-            
             # Create memory instance and populate with history
             memory = ConversationMemory(max_history_length=20)
             for msg in conversation_history:
@@ -488,42 +492,10 @@ def get_session_count(request):
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
-            # Get session count for user (default to 0 if not found)
-            session_count = SESSION_COUNTS.get(str(user_id), 0)
+            session_count = SessionService.get_session_count(user_id)
 
             return JsonResponse({
                 "session_count": session_count,
-                "user_id": user_id
-            }, status=200)
-
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
-
-    return JsonResponse({"error": "Invalid request method."}, status=405)
-
-
-# -------------------------
-# INCREMENT SESSION COUNT
-# -------------------------
-@csrf_exempt
-def increment_session_count(request):
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            user_id = data.get("user_id")
-
-            if not user_id:
-                return JsonResponse({"error": "User ID is required."}, status=400)
-
-            # Increment session count for user
-            user_id_str = str(user_id)
-            if user_id_str not in SESSION_COUNTS:
-                SESSION_COUNTS[user_id_str] = 0
-            
-            SESSION_COUNTS[user_id_str] += 1
-
-            return JsonResponse({
-                "session_count": SESSION_COUNTS[user_id_str],
                 "user_id": user_id
             }, status=200)
 
@@ -675,78 +647,84 @@ def save_session(request):
             user_id = data.get("user_id")
             conversation_history = data.get("conversation_history", [])
             summary = data.get("summary", "")
-            session_id = data.get("session_id")  # If provided, update existing session
-            
+            session_identifier = data.get("session_id")  # UUID hex if updating
+
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
-            
+
             if not conversation_history:
                 return JsonResponse({"error": "Conversation history is required."}, status=400)
-            
-            user_id_str = str(user_id)
-            
-            # Initialize user sessions if not exists
-            if user_id_str not in USER_SESSIONS:
-                USER_SESSIONS[user_id_str] = []
-            
-            # Generate title and short summary using LLM
-            from chatbot.llm_client import LLMClient
+
             llm_client = LLMClient()
             user_first_name = data.get("user_first_name")
             user_gender = data.get("user_gender")
             title = _generate_session_title(conversation_history, llm_client, user_first_name)
             short_summary = _generate_short_summary(conversation_history, llm_client, user_first_name, user_gender)
-            
-            from datetime import datetime
-            now = datetime.now().isoformat()
-            
-            if session_id:
-                # Update existing session
-                sessions = USER_SESSIONS[user_id_str]
-                session_index = next(
-                    (i for i, s in enumerate(sessions) if s.get("session_id") == session_id),
-                    None
-                )
-                
-                if session_index is not None:
-                    # Regenerate short summary for updated session
-                    short_summary = _generate_short_summary(conversation_history, llm_client, user_first_name, user_gender)
-                    # Update existing session
-                    USER_SESSIONS[user_id_str][session_index].update({
-                        "messages": conversation_history,
-                        "summary": summary,
-                        "short_summary": short_summary,
-                        "updated_at": now
-                    })
-                    session = USER_SESSIONS[user_id_str][session_index]
-                else:
-                    return JsonResponse({"error": "Session not found."}, status=404)
-            else:
-                # Create new session
-                import uuid
-                new_session_id = str(uuid.uuid4())
-                session = {
-                    "session_id": new_session_id,
-                    "title": title,
-                    "messages": conversation_history,
-                    "summary": summary,
-                    "short_summary": short_summary,
-                    "created_at": now,
-                    "updated_at": now
+
+            messages_payload = []
+            for index, msg in enumerate(conversation_history):
+                payload = {
+                    "role": msg.get("role"),
+                    "sender": msg.get("role"),
+                    "content": msg.get("content"),
+                    "content_type": msg.get("content_type") or "text",
+                    "emotion_label": msg.get("emotion_label"),
+                    "emotion_score": msg.get("emotion_score"),
+                    "metadata": msg.get("metadata", {}),
+                    "sequence": msg.get("sequence", index),
                 }
-                # Add to beginning of list (most recent first)
-                USER_SESSIONS[user_id_str].insert(0, session)
-            
+                messages_payload.append(payload)
+
+            if session_identifier:
+                try:
+                    session = _resolve_session_for_user(user_id, session_identifier)
+                except ValueError:
+                    return JsonResponse({"error": "Invalid session identifier."}, status=400)
+                except Session.DoesNotExist:
+                    return JsonResponse({"error": "Session not found."}, status=404)
+
+                result = SessionService.update_session(
+                    session=session,
+                    messages=messages_payload,
+                    short_summary=short_summary,
+                    full_summary=summary,
+                    ended_at=timezone.now(),
+                )
+            else:
+                result = SessionService.create_session(
+                    user_id=user_id,
+                    title=title,
+                    messages=messages_payload,
+                    short_summary=short_summary,
+                    full_summary=summary,
+                    ended_at=timezone.now(),
+                )
+
+            session = result.session
+
+            response_payload = {
+                "session_id": session.session_uuid.hex,
+                "title": session.title or "Therapy Session",
+                "messages": conversation_history,
+                "summary": session.full_summary or "",
+                "short_summary": session.short_summary or session.full_summary or "",
+                "resume_message": session.resume_message or "",
+                "state": session.state,
+                "is_starred": session.is_starred,
+                "created_at": session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                "updated_at": session.updated_at.isoformat() if session.updated_at else session.ended_at.isoformat() if session.ended_at else session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+            }
+
             return JsonResponse({
-                "session": session,
+                "session": response_payload,
                 "user_id": user_id
             }, status=200)
-            
+
         except Exception as e:
             import traceback
             traceback.print_exc()
             return JsonResponse({"error": str(e)}, status=500)
-    
+
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
@@ -759,43 +737,39 @@ def get_recent_sessions(request):
         try:
             data = json.loads(request.body)
             user_id = data.get("user_id")
-            limit = data.get("limit", 3)  # Default to 3
-            
+            limit = data.get("limit")
+
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
-            
-            user_id_str = str(user_id)
-            sessions = USER_SESSIONS.get(user_id_str, [])
-            
-            # Return limited sessions (most recent first)
-            # If limit is 0 or not provided, return all sessions
-            if limit and limit > 0:
-                recent_sessions = sessions[:limit]
-            else:
-                recent_sessions = sessions
-            
-            # Return only essential info (not full messages)
+
+            sessions = SessionService.get_recent_sessions(user_id, limit)
+
             sessions_list = [
                 {
-                    "session_id": s.get("session_id"),
-                    "title": s.get("title"),
-                    "summary": s.get("summary", ""),
-                    "short_summary": s.get("short_summary", s.get("summary", "")),  # Fallback to full summary if short_summary doesn't exist
-                    "created_at": s.get("created_at"),
-                    "updated_at": s.get("updated_at")
+                    "session_id": session.session_uuid.hex,
+                    "title": session.title or "Therapy Session",
+                    "summary": session.full_summary or "",
+                    "short_summary": session.short_summary or session.full_summary or "",
+                    "created_at": session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat() if session.updated_at else session.ended_at.isoformat() if session.ended_at else session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                    "state": session.state,
+                    "is_starred": session.is_starred,
+                    "has_full_transcript": session.state == Session.SessionState.FULL,
                 }
-                for s in recent_sessions
+                for session in sessions
             ]
-            
+
+            total = Session.objects.filter(user_id=user_id).count()
+
             return JsonResponse({
                 "sessions": sessions_list,
-                "total": len(sessions),
+                "total": total,
                 "user_id": user_id
             }, status=200)
-            
+
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
-    
+
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
@@ -808,30 +782,130 @@ def get_session_by_id(request):
         try:
             data = json.loads(request.body)
             user_id = data.get("user_id")
-            session_id = data.get("session_id")
-            
-            if not user_id or not session_id:
+            session_identifier = data.get("session_id")
+
+            if not user_id or not session_identifier:
                 return JsonResponse({"error": "User ID and Session ID are required."}, status=400)
-            
-            user_id_str = str(user_id)
-            sessions = USER_SESSIONS.get(user_id_str, [])
-            
-            session = next(
-                (s for s in sessions if s.get("session_id") == session_id),
-                None
-            )
-            
-            if not session:
+
+            try:
+                session = _resolve_session_for_user(user_id, session_identifier)
+            except ValueError:
+                return JsonResponse({"error": "Invalid session identifier."}, status=400)
+            except Session.DoesNotExist:
                 return JsonResponse({"error": "Session not found."}, status=404)
-            
+
+            payload = {
+                "session_id": session.session_uuid.hex,
+                "title": session.title or "Therapy Session",
+                "summary": session.full_summary or "",
+                "short_summary": session.short_summary or session.full_summary or "",
+                "resume_message": session.resume_message or "",
+                "state": session.state,
+                "is_starred": session.is_starred,
+                "created_at": session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                "updated_at": session.updated_at.isoformat() if session.updated_at else session.ended_at.isoformat() if session.ended_at else session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                "messages": [],
+                "resume_context": session.continuation_context or {},
+                "has_full_transcript": session.state == Session.SessionState.FULL,
+            }
+
+            if session.state == Session.SessionState.FULL:
+                messages = session.messages.order_by('sequence', 'message_id')
+                payload["messages"] = [
+                    {
+                        "role": msg.metadata.get('role') or ('assistant' if msg.sender == Message.Sender.AI else 'user'),
+                        "sender": msg.sender,
+                        "content": msg.content,
+                        "content_type": msg.content_type,
+                        "emotion_label": msg.emotion_label,
+                        "emotion_score": msg.emotion_score,
+                        "sequence": msg.sequence,
+                        "metadata": msg.metadata,
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    }
+                    for msg in messages
+                ]
+            else:
+                reminder = session.resume_message or session.short_summary or session.full_summary or "Welcome back! Let's continue whenever you're ready."
+                payload["messages"] = [
+                    {
+                        "role": "assistant",
+                        "sender": Message.Sender.AI,
+                        "content": reminder,
+                        "content_type": Message.ContentType.TEXT,
+                        "emotion_label": None,
+                        "emotion_score": None,
+                        "sequence": None,
+                        "metadata": {},
+                        "created_at": timezone.now().isoformat(),
+                    }
+                ]
+
             return JsonResponse({
-                "session": session,
+                "session": payload,
                 "user_id": user_id
             }, status=200)
-            
+
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
-    
+
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# TOGGLE SESSION STAR
+# -------------------------
+@csrf_exempt
+def toggle_session_star(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+            session_identifier = data.get("session_id")
+            star = data.get("star")
+
+            if not user_id or session_identifier is None or star is None:
+                return JsonResponse({"error": "User ID, session ID, and star value are required."}, status=400)
+
+            try:
+                session = _resolve_session_for_user(user_id, session_identifier)
+            except ValueError:
+                return JsonResponse({"error": "Invalid session identifier."}, status=400)
+            except Session.DoesNotExist:
+                return JsonResponse({"error": "Session not found."}, status=404)
+
+            try:
+                updated_session = SessionService.set_starred(session, bool(star))
+            except ValueError as exc:
+                error_code = str(exc)
+                message = "Unable to update star status."
+                if error_code == "star_limit":
+                    message = "You can star up to three sessions at a time. Unstar another session first."
+                elif error_code == "archived_session":
+                    message = "Archived sessions cannot be starred."
+                return JsonResponse({"error": message}, status=400)
+
+            payload = {
+                "session_id": updated_session.session_uuid.hex,
+                "title": updated_session.title or "Therapy Session",
+                "summary": updated_session.full_summary or "",
+                "short_summary": updated_session.short_summary or updated_session.full_summary or "",
+                "resume_message": updated_session.resume_message or "",
+                "state": updated_session.state,
+                "is_starred": updated_session.is_starred,
+                "has_full_transcript": updated_session.state == Session.SessionState.FULL,
+                "created_at": updated_session.created_at.isoformat() if updated_session.created_at else updated_session.started_at.isoformat(),
+                "updated_at": updated_session.updated_at.isoformat() if updated_session.updated_at else updated_session.ended_at.isoformat() if updated_session.ended_at else updated_session.created_at.isoformat() if updated_session.created_at else updated_session.started_at.isoformat(),
+            }
+
+            return JsonResponse({
+                "session": payload,
+                "user_id": user_id,
+            }, status=200)
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 

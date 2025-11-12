@@ -12,12 +12,15 @@ Follow these steps to convert your local setup so that Django and the chatbot bo
    .\venv\Scripts\Activate.ps1
    ```
 2. **Install/confirm dependencies**
+
    ```powershell
    pip install -r backend\requirements.txt
    ```
+
    (Notice `mysqlclient` is no longer required; `psycopg2-binary` is the DB driver.)
 
 3. **Install PostgreSQL 18+ with pgvector extension**
+
    - Use the official installer (https://www.postgresql.org/download/).
    - During install, enable the **pgvector** extension if prompted (or add it manually later).
 
@@ -31,6 +34,7 @@ Follow these steps to convert your local setup so that Django and the chatbot bo
 ### 2. Configure Environment Variables (.env Recommended)
 
 Create `backend/.env` (or update it) with the new database credentials:
+
 ```env
 DJANGO_DB_ENGINE=django.db.backends.postgresql
 DB_NAME=mentalhealthdb
@@ -39,6 +43,7 @@ DB_PASSWORD=<your-postgres-password>
 DB_HOST=localhost
 DB_PORT=5432
 ```
+
 Because `backend/backend/settings.py` now loads these via `dotenv`, Django will automatically use PostgreSQL after you save this file.
 
 > Alternatively, you can export the same variables in the shell before running Django, but the shared approach is to keep them in `backend/.env`.
@@ -63,11 +68,13 @@ Because `backend/backend/settings.py` now loads these via `dotenv`, Django will 
 ### 4. Apply Django Migrations
 
 From the repo root (venv still active):
+
 ```powershell
 cd backend
 python manage.py migrate
 cd ..
 ```
+
 This creates all application tables (`user`, `session`, `message`, etc.) plus pgvector tables for RAG.
 
 ---
@@ -75,6 +82,7 @@ This creates all application tables (`user`, `session`, `message`, etc.) plus pg
 ### 5. Import Data From the Old MySQL Dump (Optional but Recommended)
 
 If you already have MySQL TSV exports (check `backups/`), use the helper script:
+
 1. Place the TSV exports in `backups/`.
 2. Run the importer via Django shell:
    ```powershell
@@ -95,10 +103,12 @@ If you already have MySQL TSV exports (check `backups/`), use the helper script:
 ### 6. Verify RAG Database Still Works
 
 Ensure the vector tables are present:
+
 ```powershell
 $env:PYTHONPATH = 'B:\Uni\FYP\Implementation\MindEase\MindEase\backend'
 python backend\chatbot\tests\test_phase1.py
 ```
+
 All tests should pass.
 
 ---
@@ -139,14 +149,30 @@ Thanks to `.gitignore`, the `backups/` directory is ignored. Keep your dumps/TSV
 
 ---
 
-### 10. Future Enhancements
+### 10. Session Persistence & Maintenance
 
-- Session/chat transcripts remain in memory intentionally; persistent storage will be added later.
-- When adding new tables, run `python manage.py makemigrations` / `migrate` to update the PostgreSQL schema.
+- Chat transcripts now persist to PostgreSQL (`session`, `message`, `summary`, `session_archive_job`). After pulling, always run `python manage.py migrate` so migrations `0007_session_schema_overhaul.py`, `0008_message_user_cleanup.py`, `0009_session_uuid_per_user.py`, and `0010_session_resume_message.py` apply.
+- When adding new tables or columns, run `python manage.py makemigrations` / `migrate` to update the PostgreSQL schema.
 - Regular backups:
   ```powershell
   "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe" -h localhost -U postgres -d mentalhealthdb -Fc -f backups\postgres_mindease_<date>.dump
   ```
+
+#### Session Persistence Quick Check (after the first run)
+
+1. **Apply migrations** – `python manage.py migrate` (already covered above).
+2. **Smoke-test the chat flow** – start a brief session, end it, and confirm:
+   - the dashboard counter increments;
+   - the new session tile shows a short summary;
+   - `session` and `message` tables reflect the transcript in PostgreSQL.
+3. **Exercise rotation (optional but recommended)** – create four non-starred chats and ensure the oldest one flips to `summary_only` with a “Welcome back” reminder. To process pending archive jobs immediately, run:
+   ```powershell
+   cd backend
+   python manage.py process_session_archives --batch-size 10
+   cd ..
+   ```
+   The background worker now triggers automatically after each save, but this command is handy if you want to bootstrap an existing database.
+4. **Frontend resume behaviour** – reopen a `summary_only` session and verify the chat opens with the saved reminder instead of the full transcript.
 
 Following this guide ensures everyone runs solely on PostgreSQL with the same settings, imports legacy data, and confirms the OTP emails are still visible in the console during development. When you’re done, stop the dev server with `CTRL+C` just like before.
 
@@ -156,12 +182,15 @@ Following this guide ensures everyone runs solely on PostgreSQL with the same se
 
 - **Database schema**
   - Added `city` and free-text `nearest_major_city` fields to the `user` table with auto-managed timestamps (`api/migrations/0005_user_location_fields.py`, `0006_expand_major_city_field.py`).
+  - Overhauled chat persistence schema (`api/migrations/0007_session_schema_overhaul.py`, `0008_message_user_cleanup.py`, `0009_session_uuid_per_user.py`) to store transcripts, summaries, and deferred rotation jobs in PostgreSQL.
   - Updated `api/models.py` and `api/views.py` so registration/profile APIs require and persist the new location fields.
 - **Backend behavior**
   - Registration/login/profile endpoints now return the user’s location data and keep `updated_at` in sync on profile edits.
+  - Chat APIs save messages (with emotion metadata), summaries, and session metadata directly to PostgreSQL. Deferred rotation jobs can be processed via `python manage.py process_session_archives`.
 - **Frontend updates**
   - Registration and profile forms capture `City` plus `Nearest Major City` via text input with suggestions (no hardcoded dropdown).
   - Auth context includes the new fields so subsequent API calls have the correct user metadata.
+  - Chat/session UIs consume the new UUID-based session IDs, star toggles, and summary-only indicators.
 - **Migrations to run**
   - After pulling, activate `venv`, then execute:
     ```powershell
@@ -172,4 +201,4 @@ Following this guide ensures everyone runs solely on PostgreSQL with the same se
 - **Testing performed**
   - Ran `python manage.py migrate` locally to apply the new migrations.
   - Verified registration/profile flows accept custom nearest-major-city input.
-
+  - Exercised chat workflows end-to-end (message persistence, summaries, star toggles).
