@@ -42,6 +42,209 @@
   --brand-mint: #99f6e4;
 }
 
+[data-tour-highlight="true"] {
+  position: relative;
+  box-shadow:
+    0 0 0 6px rgba(59, 130, 246, 0.55),
+    0 28px 60px rgba(59, 130, 246, 0.35);
+  border-radius: 18px !important;
+  transform: translateZ(0) scale(1.01);
+  transition: box-shadow 0.22s ease, transform 0.22s ease;
+  outline: 0;
+}
+
+.tour-overlay-root {
+  pointer-events: none;
+}
+
+.tour-overlay-dim {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.tour-overlay-segment {
+  position: fixed;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.tour-highlight-ring {
+  pointer-events: none;
+  position: fixed;
+  border-radius: 22px;
+  border: 2px solid rgba(96, 165, 250, 0.8);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(96, 165, 250, 0.15));
+  box-shadow:
+    0 18px 45px rgba(37, 99, 235, 0.35),
+    0 4px 0 rgba(59, 130, 246, 0.25) inset;
+  transition: all 0.22s ease;
+}
+
+.tour-tooltip-card {
+  pointer-events: auto;
+  position: fixed;
+  max-width: 360px;
+  padding: 1.25rem 1.5rem;
+  border-radius: 18px;
+  border: 1px solid rgba(191, 219, 254, 0.7);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(241, 245, 249, 0.96) 100%);
+  box-shadow:
+    0 25px 60px rgba(15, 23, 42, 0.35),
+    0 0 0 1px rgba(148, 163, 184, 0.15);
+}
+
+.dark .tour-tooltip-card {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
+  box-shadow:
+    0 25px 60px rgba(15, 23, 42, 0.6),
+    0 0 0 1px rgba(30, 64, 175, 0.3);
+}
+
+.tour-tooltip-card::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+}
+
+.tour-tooltip-card[data-placement="bottom"]::after {
+  top: -18px;
+  left: calc(50% - 12px);
+  border-bottom: 18px solid rgba(255, 255, 255, 0.95);
+}
+
+.tour-tooltip-card[data-placement="top"]::after {
+  bottom: -18px;
+  left: calc(50% - 12px);
+  border-top: 18px solid rgba(255, 255, 255, 0.95);
+}
+
+.dark .tour-tooltip-card[data-placement="bottom"]::after {
+  border-bottom-color: rgba(15, 23, 42, 0.95);
+}
+
+.dark .tour-tooltip-card[data-placement="top"]::after {
+  border-top-color: rgba(15, 23, 42, 0.95);
+}
+
+.tour-tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #1d4ed8;
+}
+
+.dark .tour-tooltip-header {
+  color: #93c5fd;
+}
+
+.tour-tooltip-step {
+  opacity: 0.85;
+}
+
+.tour-tooltip-skip {
+  font-size: 0.75rem;
+  text-transform: none;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 4px;
+  transition: color 0.15s ease;
+}
+
+.tour-tooltip-skip:hover {
+  color: #1e3a8a;
+}
+
+.dark .tour-tooltip-skip:hover {
+  color: #bfdbfe;
+}
+
+.tour-tooltip-title {
+  margin-top: 0.75rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.dark .tour-tooltip-title {
+  color: #f8fafc;
+}
+
+.tour-tooltip-body {
+  margin-top: 0.5rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #1f2937;
+}
+
+.dark .tour-tooltip-body {
+  color: #e2e8f0;
+}
+
+.tour-tooltip-warning {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  background: rgba(254, 243, 199, 0.65);
+  font-size: 0.75rem;
+  color: #9a3412;
+}
+
+.dark .tour-tooltip-warning {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.15);
+  color: #fcd34d;
+}
+
+.tour-tooltip-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.tour-tooltip-secondary {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e3a8a;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  transition: color 0.15s ease;
+}
+
+.tour-tooltip-secondary:hover {
+  color: #1d4ed8;
+}
+
+.dark .tour-tooltip-secondary {
+  color: #bfdbfe;
+}
+
+.dark .tour-tooltip-secondary:hover {
+  color: #e0f2fe;
+}
+
+.tour-tooltip-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);

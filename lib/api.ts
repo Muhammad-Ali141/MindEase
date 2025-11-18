@@ -101,6 +101,24 @@ export async function apiLogin(body: { email: string; password: string }) {
   return data;
 }
 
+export async function apiUpdateDashboardTour(user_id: string, seen: boolean) {
+  const response = await fetch("http://localhost:8000/api/users/dashboard-tour/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id, seen }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to update tutorial status");
+  }
+
+  return data;
+}
+
 // lib/api.ts
 export type UserProfile = {
   display_name: string

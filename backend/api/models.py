@@ -62,6 +62,7 @@ class User(models.Model):
     lang_pref = models.CharField(max_length=7, choices=Language.choices, default=Language.ENGLISH)
     city = models.CharField(max_length=100, blank=True, null=True)
     nearest_major_city = models.CharField(max_length=100, blank=True, null=True)
+    dashboard_tour_seen = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

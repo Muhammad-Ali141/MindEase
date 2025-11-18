@@ -151,7 +151,7 @@ Thanks to `.gitignore`, the `backups/` directory is ignored. Keep your dumps/TSV
 
 ### 10. Session Persistence & Maintenance
 
-- Chat transcripts now persist to PostgreSQL (`session`, `message`, `summary`, `session_archive_job`). After pulling, always run `python manage.py migrate` so migrations `0007_session_schema_overhaul.py`, `0008_message_user_cleanup.py`, `0009_session_uuid_per_user.py`, and `0010_session_resume_message.py` apply.
+- Chat transcripts now persist to PostgreSQL (`session`, `message`, `summary`, `session_archive_job`). After pulling, always run `python manage.py migrate` so migrations `0007_session_schema_overhaul.py`, `0008_message_user_cleanup.py`, `0009_session_uuid_per_user.py`, `0010_session_resume_message.py`, and `0011_user_dashboard_tour_flag.py` apply.
 - When adding new tables or columns, run `python manage.py makemigrations` / `migrate` to update the PostgreSQL schema.
 - Regular backups:
   ```powershell
@@ -178,11 +178,12 @@ Following this guide ensures everyone runs solely on PostgreSQL with the same se
 
 ---
 
-### Appendix: Code Changes Since Latest Repo Fetch (Nov 11 2025)
+### Appendix: Code Changes Since Latest Repo Fetch (Nov 11 2025)
 
 - **Database schema**
   - Added `city` and free-text `nearest_major_city` fields to the `user` table with auto-managed timestamps (`api/migrations/0005_user_location_fields.py`, `0006_expand_major_city_field.py`).
   - Overhauled chat persistence schema (`api/migrations/0007_session_schema_overhaul.py`, `0008_message_user_cleanup.py`, `0009_session_uuid_per_user.py`) to store transcripts, summaries, and deferred rotation jobs in PostgreSQL.
+  - Added `dashboard_tour_seen` boolean field to the `user` table (`api/migrations/0011_user_dashboard_tour_flag.py`) to track whether a user has seen the onboarding tutorial.
   - Updated `api/models.py` and `api/views.py` so registration/profile APIs require and persist the new location fields.
 - **Backend behavior**
   - Registration/login/profile endpoints now return the user’s location data and keep `updated_at` in sync on profile edits.
@@ -191,6 +192,7 @@ Following this guide ensures everyone runs solely on PostgreSQL with the same se
   - Registration and profile forms capture `City` plus `Nearest Major City` via text input with suggestions (no hardcoded dropdown).
   - Auth context includes the new fields so subsequent API calls have the correct user metadata.
   - Chat/session UIs consume the new UUID-based session IDs, star toggles, and summary-only indicators.
+  - **Dashboard onboarding tutorial**: First-time users see an interactive overlay tour that highlights key dashboard features. The tutorial auto-plays once on first login and can be replayed anytime via the "Tutorial" button in the header (replaces the notification bell). See `docs/dashboard_onboarding_tour_plan.md` for implementation details.
 - **Migrations to run**
   - After pulling, activate `venv`, then execute:
     ```powershell

@@ -300,6 +300,7 @@ def login(request):
                 "lang_pref": user.lang_pref,  # ✅ consistent field name
                 "city": user.city or "",
                 "nearest_major_city": user.nearest_major_city or "",
+                "dashboard_tour_seen": user.dashboard_tour_seen,
             }, status=200)
 
         except Exception as e:
@@ -945,6 +946,7 @@ def get_user_profile(request):
                 "city": user.city or "",
                 "nearest_major_city": user.nearest_major_city or "",
                 "created_at": user.created_at.isoformat() if user.created_at else None,
+                "dashboard_tour_seen": user.dashboard_tour_seen,
             }, status=200)
             
         except Exception as e:
@@ -1052,6 +1054,7 @@ def update_user_profile(request):
                 "lang_pref": lang_pref,
                 "city": user.city or "",
                 "nearest_major_city": user.nearest_major_city or "",
+                "dashboard_tour_seen": user.dashboard_tour_seen,
             }, status=200)
             
         except Exception as e:
@@ -1059,4 +1062,42 @@ def update_user_profile(request):
             traceback.print_exc()
             return JsonResponse({"error": str(e)}, status=500)
     
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# UPDATE DASHBOARD TOUR STATUS
+# -------------------------
+@csrf_exempt
+def update_dashboard_tour(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+            seen = data.get("seen")
+
+            if user_id is None or seen is None:
+                return JsonResponse({"error": "User ID and seen flag are required."}, status=400)
+
+            try:
+                user = User.objects.get(user_id=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"error": "User not found."}, status=404)
+
+            seen_bool = bool(seen)
+
+            if user.dashboard_tour_seen != seen_bool:
+                user.dashboard_tour_seen = seen_bool
+                user.updated_at = timezone.now()
+                user.save(update_fields=["dashboard_tour_seen", "updated_at"])
+
+            return JsonResponse({
+                "dashboard_tour_seen": user.dashboard_tour_seen,
+                "user_id": user.user_id,
+            }, status=200)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+
     return JsonResponse({"error": "Invalid request method."}, status=405)

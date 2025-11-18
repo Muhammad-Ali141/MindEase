@@ -56,6 +56,7 @@ export default function LoginPage() {
         gender: res.gender || "Other",
         city: res.city || "",
         nearest_major_city: res.nearest_major_city || "",
+        dashboard_tour_seen: Boolean(res.dashboard_tour_seen),
       }
       setAuth({ token: res.user_id.toString(), user: userData })
       toast({ title: "Login successful!" })

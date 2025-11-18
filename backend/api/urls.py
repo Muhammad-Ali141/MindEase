@@ -17,4 +17,5 @@ urlpatterns = [
     path("sessions/star/", views.toggle_session_star, name="toggle_session_star"),
     path("profile/get/", views.get_user_profile, name="get_user_profile"),
     path("profile/update/", views.update_user_profile, name="update_user_profile"),
+    path("users/dashboard-tour/", views.update_dashboard_tour, name="update_dashboard_tour"),
 ]

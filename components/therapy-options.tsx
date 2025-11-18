@@ -13,7 +13,10 @@ export function TherapyOptions() {
   return (
     <div className="grid grid-cols-3 gap-6">
       {/* Quick Check-in Option - Blue */}
-      <div className="bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-700/80 dark:to-blue-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg">
+      <div
+        data-tour-target="quick-check-in"
+        className="bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-700/80 dark:to-blue-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
+      >
         <div className="flex items-center justify-between mb-4">
           <Zap size={32} className="group-hover:scale-110 transition" />
         </div>
@@ -25,7 +28,10 @@ export function TherapyOptions() {
       </div>
 
       {/* Text Chat Option - Purple */}
-      <div className="bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-700/80 dark:to-purple-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg">
+      <div
+        data-tour-target="text-chat"
+        className="bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-700/80 dark:to-purple-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
+      >
         <div className="flex items-center justify-between mb-4">
           <MessageCircle size={32} className="group-hover:scale-110 transition" />
         </div>
@@ -42,7 +48,10 @@ export function TherapyOptions() {
       </div>
 
       {/* Voice Call Option - Green */}
-      <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-700/80 dark:to-emerald-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg">
+      <div
+        data-tour-target="voice-chat"
+        className="bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-700/80 dark:to-emerald-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
+      >
         <div className="flex items-center justify-between mb-4">
           <Mic2 size={32} className="group-hover:scale-110 transition" />
         </div>

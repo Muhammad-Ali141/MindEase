@@ -104,7 +104,10 @@ export function SessionHistory() {
   }
 
   return (
-    <div className="bg-white dark:bg-slate-800 overflow-hidden h-full flex flex-col rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm">
+    <div
+      data-tour-target="recent-sessions"
+      className="bg-white dark:bg-slate-800 overflow-hidden h-full flex flex-col rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm"
+    >
       <div className="p-6 border-b border-gray-100 dark:border-slate-700">
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Recent Sessions</h2>
       </div>

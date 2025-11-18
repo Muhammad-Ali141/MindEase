@@ -138,7 +138,22 @@ Or if using quantized version:
    ollama pull llama3.1:8b
    ```
 
-## Step 8: Verify Setup
+## Step 8: Apply Django Migrations
+
+After setting up PostgreSQL, you need to apply Django migrations to create all application tables:
+
+```bash
+cd backend
+python manage.py migrate
+cd ..
+```
+
+This will create all necessary tables including:
+- User authentication tables
+- Session and message storage tables
+- Dashboard tour tracking (for first-time user onboarding)
+
+## Step 9: Verify Setup
 
 Run the Phase 1 test to verify database setup:
 
@@ -149,7 +164,35 @@ python tests/test_phase1.py
 
 If all tests pass, you're ready!
 
-## Step 9: Run the Chatbot
+## Step 10: Run the Application
+
+### Start Django Backend
+
+In one terminal:
+
+```bash
+cd backend
+python manage.py runserver
+```
+
+The backend will run on `http://127.0.0.1:8000`
+
+### Start Next.js Frontend
+
+In another terminal:
+
+```bash
+npm install  # First time only
+npm run dev
+```
+
+The frontend will run on `http://localhost:3000`
+
+### First-Time User Experience
+
+When a new user registers and logs in for the first time, they will see an interactive onboarding tutorial that guides them through the dashboard features. The tutorial can be replayed anytime by clicking the "Tutorial" button (sparkles icon) in the header.
+
+## Step 11: Run the Chatbot (Standalone)
 
 **Option 1: Clean Chat Interface (Recommended)**
 ```bash
@@ -251,9 +294,12 @@ MindEase/
 - [ ] DeBERTa model files downloaded/copied
 - [ ] MentalChat16K dataset downloaded
 - [ ] Database built (`build_database.py` run successfully)
+- [ ] Django migrations applied (`python manage.py migrate`)
 - [ ] Ollama installed and running
 - [ ] Llama model downloaded
 - [ ] Tests passing (`test_phase1.py`)
+- [ ] Django backend running (`python manage.py runserver`)
+- [ ] Next.js frontend running (`npm run dev`)
 
 Once all checked, you're ready to use the chatbot!
 
