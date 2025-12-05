@@ -32,6 +32,11 @@ const createSchema = (t: any) =>
       confirmPassword: z.string().min(8, t.passwordTooShort || "Password must be at least 8 characters"),
       first_name: z.string().min(1, "First name is required"),
       last_name: z.string().min(1, "Last name is required"),
+      city: z.string().min(1, "City is required"),
+      nearest_major_city: z
+        .string()
+        .min(1, "Nearest major city is required")
+        .max(100, "Nearest major city must be less than 100 characters"),
       dob: z.string().nonempty("Date of birth is required"),
       gender: z.string().nonempty("Gender is required"),
       preferred_language: z.string().nonempty("Preferred language is required"),
@@ -57,6 +62,14 @@ export default function RegisterPage() {
 
   const schema = createSchema(t)
   type FormValues = z.infer<typeof schema>
+  const majorCitySuggestions = [
+    { value: "Islamabad", labelUr: "اسلام آباد" },
+    { value: "Lahore", labelUr: "لاہور" },
+    { value: "Karachi", labelUr: "کراچی" },
+    { value: "Multan", labelUr: "ملتان" },
+    { value: "Peshawar", labelUr: "پشاور" },
+    { value: "Faisalabad", labelUr: "فیصل آباد" },
+  ]
 
   const {
     handleSubmit,
@@ -366,6 +379,33 @@ export default function RegisterPage() {
               <Label htmlFor="last_name">{isUrdu ? "آخری نام" : "Last Name"}</Label>
               <Input id="last_name" type="text" {...register("last_name")} disabled={!otpVerified} />
               {errors.last_name?.message && <FormError message={errors.last_name.message} />}
+            </div>
+
+            {/* City */}
+            <div className="grid gap-2">
+              <Label htmlFor="city">{isUrdu ? t.city : t.city}</Label>
+              <Input id="city" type="text" {...register("city")} disabled={!otpVerified} />
+              {errors.city?.message && <FormError message={errors.city.message} />}
+            </div>
+
+            {/* Nearest Major City */}
+            <div className="grid gap-2">
+              <Label htmlFor="nearest_major_city">{isUrdu ? t.nearestMajorCity : t.nearestMajorCity}</Label>
+              <Input
+                id="nearest_major_city"
+                list="major-city-suggestions"
+                placeholder={isUrdu ? t.selectNearestMajorCity : t.selectNearestMajorCity}
+                {...register("nearest_major_city")}
+                disabled={!otpVerified}
+              />
+              <datalist id="major-city-suggestions">
+                {majorCitySuggestions.map((cityOption) => (
+                  <option key={cityOption.value} value={cityOption.value}>
+                    {isUrdu ? cityOption.labelUr : cityOption.value}
+                  </option>
+                ))}
+              </datalist>
+              {errors.nearest_major_city?.message && <FormError message={errors.nearest_major_city.message} />}
             </div>
 
             {/* Date of Birth */}

@@ -274,7 +274,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 2. ✅ **ACID Compliance**: Full transactional support
 3. ✅ **Scalability**: Handles large datasets efficiently
 4. ✅ **Hierarchical Retrieval**: Easy joins between input and output chunks
-5. ✅ **Integration**: Works seamlessly with existing Django/MySQL setup
+5. ✅ **Integration**: Works seamlessly with existing Django/PostgreSQL setup
 6. ✅ **Queries**: Powerful SQL queries for analysis and debugging
 7. ✅ **Indexes**: Optimized vector indexes for fast similarity search
 8. ✅ **Relationships**: Foreign key constraints ensure data integrity

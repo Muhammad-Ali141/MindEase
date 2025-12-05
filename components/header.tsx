@@ -1,12 +1,16 @@
 "use client"
 
-import { Bell, User, ChevronDown } from "lucide-react"
+import { Sparkles, User, ChevronDown } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
 
-export function Header() {
+type HeaderProps = {
+  onStartTutorial?: () => void
+}
+
+export function Header({ onStartTutorial }: HeaderProps) {
   const { user, logout } = useAuth()
   const router = useRouter()
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -51,18 +55,29 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-6">
-        <button className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50 transition">
-          <Bell size={20} className="text-blue-600 dark:text-blue-400" />
+        <button
+          type="button"
+          onClick={() => onStartTutorial?.()}
+          className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50 transition focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-500"
+          aria-label="Start dashboard tutorial"
+          data-tour-target="tutorial-button"
+        >
+          <Sparkles size={20} className="text-blue-600 dark:text-blue-400" />
         </button>
         
         {/* Theme Toggle */}
-        <ThemeToggle />
+        <div data-tour-target="theme-toggle">
+          <ThemeToggle />
+        </div>
         
         {/* Profile Dropdown */}
         <div className="relative" ref={dropdownRef}>
           <button 
             onClick={() => setIsProfileOpen(!isProfileOpen)}
-            className="flex items-center gap-2 p-3 bg-purple-50 dark:bg-purple-900/30 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900/50 transition"
+            className="flex items-center gap-2 p-3 bg-purple-50 dark:bg-purple-900/30 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900/50 transition focus:outline-none focus:ring-2 focus:ring-purple-400 dark:focus:ring-purple-500"
+            data-tour-target="profile-menu"
+            aria-haspopup="menu"
+            aria-expanded={isProfileOpen}
           >
             <User size={20} className="text-purple-600 dark:text-purple-400" />
             <ChevronDown size={16} className="text-purple-600 dark:text-purple-400" />

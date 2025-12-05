@@ -359,7 +359,7 @@ python -m chatbot.run_all_tests
 - ✅ Foreign key relationships ensure data integrity
 
 ### Integration
-- ✅ Works seamlessly with Django/MySQL setup
+- ✅ Works seamlessly with Django/PostgreSQL setup
 - ✅ Easy to extend and maintain
 - ✅ Standard SQL queries for analysis
 

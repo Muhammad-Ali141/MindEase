@@ -2,7 +2,10 @@ import { MapPin, Phone, Star } from "lucide-react"
 
 export function TherapistDirectory() {
   return (
-    <div className="bg-white dark:bg-slate-800 overflow-hidden h-full flex flex-col rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm">
+    <div
+      data-tour-target="find-therapist"
+      className="bg-white dark:bg-slate-800 overflow-hidden h-full flex flex-col rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm"
+    >
       <div className="p-6 border-b border-gray-100 dark:border-slate-700">
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Find a Professional Therapist</h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Connect with licensed mental health professionals in your area</p>

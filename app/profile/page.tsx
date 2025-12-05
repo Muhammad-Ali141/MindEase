@@ -15,7 +15,9 @@ import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetUserProfile, apiUpdateUserProfile } from "@/lib/api"
-import { ArrowLeft, Loader2, User, Mail, Calendar, Languages, Lock, Edit2, Save, X } from "lucide-react"
+import { ArrowLeft, Loader2, User, Mail, Calendar, Languages, Lock, Edit2, Save, X, MapPin } from "lucide-react"
+
+const majorCitySuggestions = ["Islamabad", "Lahore", "Karachi", "Multan", "Peshawar", "Faisalabad"]
 
 const profileSchema = z.object({
   first_name: z.string().min(1, "First name is required").max(100, "First name must be less than 100 characters"),
@@ -24,6 +26,8 @@ const profileSchema = z.object({
   dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
   gender: z.enum(["Male", "Female", "Other"], { required_error: "Please select a gender" }),
   lang_pref: z.enum(["en", "ur"], { required_error: "Please select a language" }),
+  city: z.string().min(1, "City is required").max(100, "City must be less than 100 characters"),
+  nearest_major_city: z.string().min(1, "Nearest major city is required").max(100, "Nearest major city must be less than 100 characters"),
   password: z.string().min(8, "Password must be at least 8 characters").optional().or(z.literal("")),
   confirm_password: z.string().optional(),
 }).refine((data) => {
@@ -85,6 +89,8 @@ export default function ProfilePage() {
         dob: dobFormatted,
         gender: (data.gender as "Male" | "Female" | "Other") || "Other",
         lang_pref: (data.lang_pref as "en" | "ur") || "en",
+        city: data.city || "",
+        nearest_major_city: data.nearest_major_city || "",
         password: "",
         confirm_password: "",
       })
@@ -110,6 +116,8 @@ export default function ProfilePage() {
         dob: values.dob,
         gender: values.gender,
         lang_pref: values.lang_pref,
+        city: values.city,
+        nearest_major_city: values.nearest_major_city,
       }
       
       // Only include password if it was provided
@@ -129,6 +137,8 @@ export default function ProfilePage() {
             first_name: updated.first_name,
             last_name: updated.last_name || "",
             gender: updated.gender || "Other",
+            city: updated.city || "",
+            nearest_major_city: updated.nearest_major_city || "",
           },
         })
       }
@@ -280,6 +290,48 @@ export default function ProfilePage() {
                     <p className="text-white/70 text-sm mt-1">
                       Member since {profileData?.created_at ? new Date(profileData.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Recently'}
                     </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <ProfileField
+                      label="City"
+                      value={watch("city") || ""}
+                      fieldName="city"
+                      icon={MapPin}
+                    >
+                      <Input
+                        {...register("city")}
+                        className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                        placeholder="Enter your city"
+                        autoFocus
+                      />
+                      {errors.city && (
+                        <p className="text-sm text-red-500">{errors.city.message}</p>
+                      )}
+                    </ProfileField>
+
+                    <ProfileField
+                      label="Nearest Major City"
+                      value={watch("nearest_major_city") || ""}
+                      fieldName="nearest_major_city"
+                      icon={MapPin}
+                    >
+                      <Input
+                        list="profile-major-city-suggestions"
+                        {...register("nearest_major_city")}
+                        className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                        placeholder="Enter nearest major city"
+                        autoFocus
+                      />
+                      <datalist id="profile-major-city-suggestions">
+                        {majorCitySuggestions.map((city) => (
+                          <option key={city} value={city} />
+                        ))}
+                      </datalist>
+                      {errors.nearest_major_city && (
+                        <p className="text-sm text-red-500">{errors.nearest_major_city.message}</p>
+                      )}
+                    </ProfileField>
                   </div>
                 </div>
               </div>

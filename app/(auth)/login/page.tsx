@@ -53,7 +53,10 @@ export default function LoginPage() {
         email: res.email,
         first_name: res.first_name,
         last_name: res.last_name || "",
-        gender: res.gender || "Other"
+        gender: res.gender || "Other",
+        city: res.city || "",
+        nearest_major_city: res.nearest_major_city || "",
+        dashboard_tour_seen: Boolean(res.dashboard_tour_seen),
       }
       setAuth({ token: res.user_id.toString(), user: userData })
       toast({ title: "Login successful!" })

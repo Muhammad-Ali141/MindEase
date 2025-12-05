@@ -1,0 +1,19 @@
+# Speech-to-Text Module Dependencies
+# Install in a virtual environment: pip install -r requirements.txt
+
+# Core STT library
+faster-whisper>=1.0.0
+
+# Audio capture and processing
+sounddevice>=0.4.6
+soundfile>=0.12.1
+resampy>=0.4.2
+pydub>=0.25.1  # For WebM/MP4 audio conversion (requires ffmpeg)
+
+# Numerical processing
+numpy>=1.24.0
+
+# Utilities
+tqdm>=4.65.0
+python-dotenv>=1.0.0
+

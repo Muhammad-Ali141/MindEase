@@ -8,6 +8,9 @@ type User = {
   first_name: string; 
   last_name?: string;
   gender?: string;
+  city?: string;
+  nearest_major_city?: string;
+  dashboard_tour_seen: boolean;
 }
 type AuthState = {
   token: string | null
@@ -24,6 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ token: null, user: null })
   const [isLoading, setIsLoading] = useState(true)
 
+  const normalizeUser = (user: User | null): User | null => {
+    if (!user) return null
+    return {
+      dashboard_tour_seen: false,
+      ...user,
+      dashboard_tour_seen: typeof user.dashboard_tour_seen === "boolean" ? user.dashboard_tour_seen : false,
+    }
+  }
+
   // Load auth state from localStorage on mount
   useEffect(() => {
     const storedToken = localStorage.getItem('auth_token')
@@ -31,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     if (storedToken && storedUser) {
       try {
-        const userData = JSON.parse(storedUser)
+        const userData = normalizeUser(JSON.parse(storedUser))
         setState({ token: storedToken, user: userData })
       } catch (error) {
         // Clear invalid data
@@ -50,11 +62,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const setAuth = (authState: AuthState) => {
-    setState(authState)
+    const normalizedUser = normalizeUser(authState.user)
+    const nextState: AuthState = { token: authState.token, user: normalizedUser }
+    setState(nextState)
     // Store auth data in localStorage
-    if (authState.token && authState.user) {
-      localStorage.setItem('auth_token', authState.token)
-      localStorage.setItem('user_data', JSON.stringify(authState.user))
+    if (nextState.token && nextState.user) {
+      localStorage.setItem('auth_token', nextState.token)
+      localStorage.setItem('user_data', JSON.stringify(nextState.user))
     }
   }
 

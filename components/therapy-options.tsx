@@ -13,7 +13,10 @@ export function TherapyOptions() {
   return (
     <div className="grid grid-cols-3 gap-6">
       {/* Quick Check-in Option - Blue */}
-      <div className="bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-700/80 dark:to-blue-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg">
+      <div
+        data-tour-target="quick-check-in"
+        className="bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-700/80 dark:to-blue-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
+      >
         <div className="flex items-center justify-between mb-4">
           <Zap size={32} className="group-hover:scale-110 transition" />
         </div>
@@ -25,7 +28,10 @@ export function TherapyOptions() {
       </div>
 
       {/* Text Chat Option - Purple */}
-      <div className="bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-700/80 dark:to-purple-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg">
+      <div
+        data-tour-target="text-chat"
+        className="bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-700/80 dark:to-purple-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
+      >
         <div className="flex items-center justify-between mb-4">
           <MessageCircle size={32} className="group-hover:scale-110 transition" />
         </div>
@@ -42,7 +48,10 @@ export function TherapyOptions() {
       </div>
 
       {/* Voice Call Option - Green */}
-      <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-700/80 dark:to-emerald-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg">
+      <div
+        data-tour-target="voice-chat"
+        className="bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-700/80 dark:to-emerald-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
+      >
         <div className="flex items-center justify-between mb-4">
           <Mic2 size={32} className="group-hover:scale-110 transition" />
         </div>
@@ -50,7 +59,10 @@ export function TherapyOptions() {
         <p className="text-emerald-100 dark:text-emerald-200/80 mb-6">
           Have a natural conversation
         </p>
-        <button className="w-full bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-300 font-semibold py-3 rounded-lg hover:bg-white dark:hover:bg-slate-700 hover:ring-2 hover:ring-emerald-300 dark:hover:ring-emerald-500 hover:ring-offset-2 dark:hover:ring-offset-emerald-900/50 transition border-2 border-transparent hover:border-emerald-200 dark:hover:border-emerald-600/50">
+        <button 
+          onClick={() => router.push("/voice-chat")}
+          className="w-full bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-300 font-semibold py-3 rounded-lg hover:bg-white dark:hover:bg-slate-700 hover:ring-2 hover:ring-emerald-300 dark:hover:ring-emerald-500 hover:ring-offset-2 dark:hover:ring-offset-emerald-900/50 transition border-2 border-transparent hover:border-emerald-200 dark:hover:border-emerald-600/50"
+        >
           Start Call
         </button>
       </div>

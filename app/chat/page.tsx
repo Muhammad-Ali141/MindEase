@@ -6,9 +6,9 @@ import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
-import { apiChatMessage, apiChatWelcome, apiChatSummary, apiIncrementSessionCount, apiSaveSession, apiGetSessionById, type ChatMessage } from "@/lib/api"
+import { apiChatMessage, apiChatWelcome, apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar, type ChatMessage, type Session } from "@/lib/api"
 import { ChatInterface } from "@/components/chat-interface"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import { ArrowLeft, Loader2, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 
@@ -21,8 +21,10 @@ export default function ChatPage() {
   const [welcomeLoading, setWelcomeLoading] = useState(true)
   const [showSummary, setShowSummary] = useState(false)
   const [summary, setSummary] = useState<string>("")
+  const [savedSession, setSavedSession] = useState<Session | null>(null)
   const [isEnding, setIsEnding] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [baselineUserMessageCount, setBaselineUserMessageCount] = useState(0)
 
   // Check for session_id in URL query params
   useEffect(() => {
@@ -43,6 +45,9 @@ export default function ChatPage() {
   const loadWelcomeMessage = async () => {
     try {
       setWelcomeLoading(true)
+      setSavedSession(null)
+      setShowSummary(false)
+      setSummary("")
       const response = await apiChatWelcome(
         user!.id,
         user!.first_name || null
@@ -53,9 +58,11 @@ export default function ChatPage() {
         {
           role: "assistant",
           content: response.welcome_message,
+          content_type: "text",
         },
       ])
       setCurrentSessionId(null) // New session
+      setBaselineUserMessageCount(0)
     } catch (error: any) {
       toast({
         title: "Error",
@@ -73,8 +80,42 @@ export default function ChatPage() {
       const response = await apiGetSessionById(user!.id, sessionId)
       
       // Load messages from session
-      setMessages(response.session.messages)
-      setCurrentSessionId(sessionId)
+      const session = response.session
+      setCurrentSessionId(session.session_id)
+      setSavedSession(session)
+      setBaselineUserMessageCount(
+        session.has_full_transcript
+          ? session.messages.filter((msg) => msg.role === "user").length
+          : 0
+      )
+
+      let initialMessages: ChatMessage[] = []
+
+      if (session.has_full_transcript && session.messages.length > 0) {
+        initialMessages = session.messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+          emotion_label: msg.emotion_label,
+          emotion_score: msg.emotion_score,
+          metadata: msg.metadata,
+          content_type: msg.content_type,
+        }))
+      } else {
+        const reminder = session.resume_message
+          ? session.resume_message
+          : session.summary
+            ? `${session.summary}\n\nLet's pick up from where we left off. How are you feeling now?`
+            : "Let's continue from our previous conversation. How are you feeling now?"
+        initialMessages = [
+          {
+            role: "assistant",
+            content: reminder,
+            content_type: "text",
+          },
+        ]
+      }
+
+      setMessages(initialMessages)
     } catch (error: any) {
       toast({
         title: "Error",
@@ -95,8 +136,10 @@ export default function ChatPage() {
     const userMessage: ChatMessage = {
       role: "user",
       content: message,
+      content_type: "text",
     }
-    setMessages((prev) => [...prev, userMessage])
+    const historyForRequest = [...messages, userMessage]
+    setMessages(historyForRequest)
     setLoading(true)
 
     try {
@@ -105,15 +148,35 @@ export default function ChatPage() {
         user.id,
         user.first_name || null,
         user.gender || null,
-        messages
+        historyForRequest
       )
+
+      const primaryEmotion = response.emotions?.[0]
 
       // Add assistant response
       const assistantMessage: ChatMessage = {
         role: "assistant",
         content: response.response,
+        content_type: "text",
       }
-      setMessages((prev) => [...prev, assistantMessage])
+      setMessages((prev) => {
+        const updated = [...prev]
+        if (primaryEmotion) {
+          for (let i = updated.length - 1; i >= 0; i--) {
+            const msg = updated[i]
+            if (msg.role === "user") {
+              updated[i] = {
+                ...msg,
+                emotion_label: primaryEmotion.emotion,
+                emotion_score: primaryEmotion.score,
+              }
+              break
+            }
+          }
+        }
+        updated.push(assistantMessage)
+        return updated
+      })
     } catch (error: any) {
       toast({
         title: "Error",
@@ -130,10 +193,8 @@ export default function ChatPage() {
   const handleEndChat = async () => {
     if (isEnding || !user || !token || messages.length === 0) return
 
-    // Check if there's actual conversation (more than just welcome message)
-    const userMessages = messages.filter(msg => msg.role === "user")
-    if (userMessages.length === 0) {
-      // No actual conversation, just go back to dashboard
+    const currentUserMessages = messages.filter((msg) => msg.role === "user").length
+    if (currentUserMessages <= baselineUserMessageCount) {
       router.push("/dashboard")
       return
     }
@@ -157,25 +218,20 @@ export default function ChatPage() {
         return
       }
       
-      // Increment session count only if this is a NEW session (not continuing an old one)
-      if (!currentSessionId) {
-        try {
-          await apiIncrementSessionCount(user.id)
-        } catch (error) {
-          // Log error but don't block summary display
-          console.error("Failed to increment session count:", error)
-        }
-      }
-      
       // Save session (create new or update existing)
       try {
-        await apiSaveSession(
+        const saveResponse = await apiSaveSession(
           user.id,
           messages,
           response.summary,
           currentSessionId || undefined,
           user.first_name || null,
           user.gender || null
+        )
+        setSavedSession(saveResponse.session)
+        setCurrentSessionId(saveResponse.session.session_id)
+        setBaselineUserMessageCount(
+          saveResponse.session.messages.filter((msg) => msg.role === "user").length
         )
       } catch (error) {
         // Log error but don't block summary display
@@ -202,6 +258,46 @@ export default function ChatPage() {
     router.push("/dashboard")
   }
 
+  const handleToggleStar = async () => {
+    if (!user || !savedSession) return
+
+    if (savedSession.state !== "full" && !savedSession.is_starred) {
+      toast({
+        title: "Cannot star this session",
+        description: "Archived sessions cannot be starred because the detailed transcript is no longer available.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await apiToggleSessionStar(user.id, savedSession.session_id, !savedSession.is_starred)
+      setSavedSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              is_starred: response.session.is_starred,
+              state: response.session.state,
+              has_full_transcript: response.session.has_full_transcript,
+              resume_message: response.session.resume_message ?? prev.resume_message,
+            }
+          : prev
+      )
+      toast({
+        title: response.session.is_starred ? "Session starred" : "Session unstarred",
+        description: response.session.is_starred
+          ? "We'll keep this session in full detail for you."
+          : "This session may be archived if newer ones are created.",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Unable to update star",
+        description: error.message || "Please try again later.",
+        variant: "destructive",
+      })
+    }
+  }
+
   if (showSummary) {
     return (
       <AuthGuard>
@@ -224,9 +320,37 @@ export default function ChatPage() {
                   <h2 className="text-3xl font-bold mb-6 bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
                     Session Summary
                   </h2>
+                {savedSession && (
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {new Date(savedSession.updated_at).toLocaleString()}
+                      </p>
+                      <p className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+                        {savedSession.title || "Therapy Session"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleStar}
+                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${
+                        savedSession.is_starred
+                          ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          : "border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-slate-600 dark:text-gray-200 dark:hover:bg-slate-700/60"
+                      }`}
+                    >
+                      <StarIcon filled={savedSession.is_starred} />
+                      {savedSession.is_starred ? "Starred" : "Star Session"}
+                    </button>
+                  </div>
+                )}
                   <div className="prose prose-lg max-w-none dark:prose-invert">
-                    <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300 leading-relaxed">
-                      {summary}
+                    <div className="space-y-3 text-gray-700 dark:text-gray-300 leading-relaxed">
+                      {summary.split(/\n{2,}/).map((paragraph, index) => (
+                        <p key={index} className="whitespace-pre-line">
+                          {paragraph.trim()}
+                        </p>
+                      ))}
                     </div>
                   </div>
                   <div className="mt-8 flex justify-end">
@@ -292,6 +416,16 @@ export default function ChatPage() {
         </div>
       </div>
     </AuthGuard>
+  )
+}
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <Star
+      className="h-4 w-4"
+      strokeWidth={1.5}
+      fill={filled ? "currentColor" : "none"}
+    />
   )
 }
 

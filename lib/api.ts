@@ -68,6 +68,8 @@ export const apiRegister = async (data: any) => {
       last_name: data.last_name,
       email: data.email,
       password: data.password,
+      city: data.city,
+      nearest_major_city: data.nearest_major_city,
       dob: data.dob,
       gender: data.gender,
       lang_pref: data.preferred_language,
@@ -94,6 +96,24 @@ export async function apiLogin(body: { email: string; password: string }) {
 
   if (!response.ok) {
     throw new Error(data.error || "Login failed");
+  }
+
+  return data;
+}
+
+export async function apiUpdateDashboardTour(user_id: string, seen: boolean) {
+  const response = await fetch("http://localhost:8000/api/users/dashboard-tour/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id, seen }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to update tutorial status");
   }
 
   return data;
@@ -136,6 +156,10 @@ export async function apiUpdateMe(token: string, data: Partial<UserProfile>): Pr
 export type ChatMessage = {
   role: "user" | "assistant"
   content: string
+  emotion_label?: string
+  emotion_score?: number
+  metadata?: Record<string, unknown>
+  content_type?: "text" | "audio"
 }
 
 export type ChatResponse = {
@@ -256,37 +280,38 @@ export async function apiGetSessionCount(user_id: string): Promise<SessionCountR
   return res.json()
 }
 
-export async function apiIncrementSessionCount(user_id: string): Promise<SessionCountResponse> {
-  const res = await fetch("http://localhost:8000/api/sessions/increment/", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ user_id }),
-  })
+export type SessionState = "full" | "pending_archive" | "summary_only"
 
-  if (!res.ok) {
-    const errorData = await res.json()
-    throw new Error(errorData.error || "Failed to increment session count")
-  }
-
-  return res.json()
+export type StoredChatMessage = ChatMessage & {
+  sequence?: number | null
+  metadata?: Record<string, unknown>
+  created_at?: string | null
 }
 
 export type Session = {
   session_id: string
   title: string
-  messages: ChatMessage[]
+  messages: StoredChatMessage[]
   summary: string
+  short_summary: string
+  resume_message?: string
+  state: SessionState
+  is_starred: boolean
+  has_full_transcript: boolean
   created_at: string
   updated_at: string
+  resume_context?: Record<string, unknown>
 }
 
 export type SessionPreview = {
   session_id: string
   title: string
   summary: string
-  short_summary?: string
+  short_summary: string
+  resume_message?: string
+  state: SessionState
+  is_starred: boolean
+  has_full_transcript: boolean
   created_at: string
   updated_at: string
 }
@@ -304,6 +329,17 @@ export async function apiSaveSession(
   user_first_name?: string | null,
   user_gender?: string | null
 ): Promise<SaveSessionResponse> {
+  const formattedHistory = conversation_history.map((message, index) => ({
+    role: message.role,
+    sender: message.role,
+    content: message.content,
+    content_type: message.content_type ?? "text",
+    sequence: index,
+    emotion_label: message.emotion_label,
+    emotion_score: message.emotion_score,
+    metadata: message.metadata ?? {},
+  }))
+
   const res = await fetch("http://localhost:8000/api/sessions/save/", {
     method: "POST",
     headers: {
@@ -311,7 +347,7 @@ export async function apiSaveSession(
     },
     body: JSON.stringify({
       user_id,
-      conversation_history,
+      conversation_history: formattedHistory,
       summary,
       session_id,
       user_first_name,
@@ -378,6 +414,32 @@ export async function apiGetSessionById(
   return res.json()
 }
 
+export type ToggleStarResponse = {
+  session: SessionPreview
+  user_id: string
+}
+
+export async function apiToggleSessionStar(
+  user_id: string,
+  session_id: string,
+  star: boolean
+): Promise<ToggleStarResponse> {
+  const res = await fetch("http://localhost:8000/api/sessions/star/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id, session_id, star }),
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json()
+    throw new Error(errorData.error || "Failed to update session star")
+  }
+
+  return res.json()
+}
+
 export type UserProfileData = {
   user_id: number
   email: string
@@ -386,6 +448,8 @@ export type UserProfileData = {
   dob: string
   gender: string
   lang_pref: string
+  city: string
+  nearest_major_city: string
   created_at: string | null
 }
 
@@ -413,6 +477,8 @@ export type UpdateProfileData = {
   dob?: string
   gender?: "Male" | "Female" | "Other"
   lang_pref?: "en" | "ur"
+  city?: string
+  nearest_major_city?: string
   password?: string
 }
 
@@ -425,6 +491,8 @@ export type UpdateProfileResponse = {
   dob: string
   gender: string
   lang_pref: string
+  city: string
+  nearest_major_city: string
 }
 
 export async function apiUpdateUserProfile(
@@ -448,5 +516,100 @@ export async function apiUpdateUserProfile(
   }
 
   return res.json()
+}
+
+// STT (Speech-to-Text) API functions
+
+export type STTTranscribeResponse = {
+  transcript: string
+  language: string
+  confidence: number
+}
+
+/**
+ * Transcribe audio file to text using the STT service.
+ * 
+ * @param audioBlob - Audio blob from MediaRecorder (WebM format)
+ * @param language - Language code (default: "en")
+ * @returns Promise with transcript, language, and confidence
+ */
+export async function apiSTTTranscribe(
+  audioBlob: Blob,
+  language: string = "en"
+): Promise<STTTranscribeResponse> {
+  // Create FormData to send audio file
+  const formData = new FormData()
+  formData.append("audio", audioBlob, "recording.webm")
+  formData.append("language", language)
+
+  const res = await fetch("http://localhost:8000/api/stt/transcribe/", {
+    method: "POST",
+    body: formData,
+    // Don't set Content-Type header - browser will set it with boundary for FormData
+  })
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ error: "Failed to transcribe audio" }))
+    throw new Error(errorData.error || "Failed to transcribe audio")
+  }
+
+  const data = await res.json()
+  
+  // Handle case where no speech was detected
+  if (!data.transcript || data.transcript.trim() === "") {
+    throw new Error("No speech detected in the audio. Please try speaking again.")
+  }
+
+  return data
+}
+
+// TTS (Text-to-Speech) API functions
+
+/**
+ * Synthesize text to speech using the TTS service.
+ * 
+ * @param text - Text to synthesize to speech
+ * @param language - Language code (default: "en")
+ * @returns Promise with audio Blob
+ */
+export async function apiTTSSynthesize(
+  text: string,
+  language: string = "en"
+): Promise<Blob> {
+  if (!text || !text.trim()) {
+    throw new Error("Text cannot be empty")
+  }
+
+  const res = await fetch("http://localhost:8000/api/tts/synthesize/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text: text.trim(),
+      language: language,
+    }),
+  })
+
+  if (!res.ok) {
+    // Try to parse error message from JSON response
+    try {
+      const errorData = await res.json()
+      throw new Error(errorData.error || "Failed to synthesize speech")
+    } catch {
+      // If not JSON, use status text
+      throw new Error(`TTS synthesis failed: ${res.statusText}`)
+    }
+  }
+
+  // Return audio Blob
+  const audioBlob = await res.blob()
+  
+  // Verify it's an audio file
+  if (!audioBlob.type.startsWith("audio/") && audioBlob.size === 0) {
+    throw new Error("Invalid audio response from TTS service")
+  }
+
+  return audioBlob
 }
 

@@ -46,7 +46,10 @@ export function QuickStats() {
   return (
     <div className="grid grid-cols-3 gap-6">
       {/* Sessions Completed */}
-      <div className="bg-white dark:bg-slate-800 p-6 h-full rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm">
+      <div
+        data-tour-target="sessions-completed"
+        className="bg-white dark:bg-slate-800 p-6 h-full rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm"
+      >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-gray-600 dark:text-gray-300 font-semibold">Sessions Completed</h3>
           <Calendar size={20} className="text-blue-500 dark:text-blue-400" />
@@ -66,7 +69,10 @@ export function QuickStats() {
       </div>
 
       {/* Mood Trend */}
-      <div className="bg-white dark:bg-slate-800 p-6 h-full rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm">
+      <div
+        data-tour-target="mood-trend"
+        className="bg-white dark:bg-slate-800 p-6 h-full rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm"
+      >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-gray-600 dark:text-gray-300 font-semibold">Mood Trend</h3>
           <TrendingUp size={20} className="text-purple-500 dark:text-purple-400" />
@@ -78,7 +84,10 @@ export function QuickStats() {
       </div>
 
       {/* Streak */}
-      <div className="bg-white dark:bg-slate-800 p-6 h-full rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm">
+      <div
+        data-tour-target="current-streak"
+        className="bg-white dark:bg-slate-800 p-6 h-full rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm"
+      >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-gray-600 dark:text-gray-300 font-semibold">Current Streak</h3>
           <Award size={20} className="text-amber-500 dark:text-amber-400" />

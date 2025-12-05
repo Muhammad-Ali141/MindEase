@@ -24,6 +24,7 @@ cd MindEase
 **See [SETUP_FOR_PARTNER.md](SETUP_FOR_PARTNER.md) for complete detailed setup instructions.**
 
 Quick steps:
+
 1. Create virtual environment: `python -m venv venv`
 2. Activate: `venv\Scripts\activate` (Windows) or `source venv/bin/activate` (Linux/Mac)
 3. Install dependencies: `pip install -r backend/requirements.txt`
@@ -60,6 +61,7 @@ python build_database.py
 ### 7. Run the Chatbot
 
 **Option 1: Clean Chat Interface (Recommended)**
+
 ```bash
 python -m chatbot.chat
 # or
@@ -68,6 +70,7 @@ bash backend/chatbot/run_chat.sh  # Linux/Mac
 ```
 
 **Option 2: Debug Version (with verbose output)**
+
 ```bash
 python -m chatbot.main
 # or
@@ -82,6 +85,7 @@ bash backend/chatbot/run_main.sh  # Linux/Mac
 - **[CHATBOT_SETUP.md](CHATBOT_SETUP.md)** - Chatbot component details
 - **[GIT_PUSH_GUIDE.md](GIT_PUSH_GUIDE.md)** - What to push and what NOT to push
 - **[GIT_CHECKLIST.md](GIT_CHECKLIST.md)** - Pre-push verification checklist
+- **[postgresql_app_migration_plan.md](postgresql_app_migration_plan.md)** - Consolidating legacy MySQL tables into PostgreSQL (session/chat memory remains intentionally in RAM until after migration validation)
 
 ## Project Structure
 
@@ -131,15 +135,18 @@ See `backend/chatbot/TESTING_PROGRESS.md` for test results.
 ## Troubleshooting
 
 ### Database Connection Issues
+
 - Check PostgreSQL is running
 - Verify `.env` file has correct password
 - Ensure database exists: `psql -U postgres -l`
 
 ### Model Not Found
+
 - Ensure `deberta_best/model.safetensors` exists
 - Check path in config (auto-detected)
 
 ### Ollama Issues
+
 - Ensure `ollama serve` is running
 - Verify model downloaded: `ollama list`
 - Check model name matches in config

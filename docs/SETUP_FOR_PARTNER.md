@@ -142,7 +142,37 @@ ollama pull llama3.1:8b-instruct
 
 ---
 
-## 8. Run backend and frontend
+## 8. Apply Django Migrations
+
+After setting up PostgreSQL, you need to apply Django migrations to create all application tables:
+
+```bash
+cd backend
+python manage.py migrate
+cd ..
+```
+
+This will create all necessary tables including:
+- User authentication tables
+- Session and message storage tables
+- Dashboard tour tracking (for first-time user onboarding)
+
+---
+
+## 9. Verify Setup
+
+Run the Phase 1 test to verify database setup:
+
+```bash
+cd backend/chatbot
+python tests/test_phase1.py
+```
+
+If all tests pass, you're ready!
+
+---
+
+## 10. Run backend and frontend
 
 Open two terminals in the project root.
 
@@ -163,9 +193,13 @@ npm run dev
 - Next.js runs at `http://localhost:3000/`.
 - Routes guarded by Auth require you to log in first.
 
+### First-Time User Experience
+
+When a new user registers and logs in for the first time, they will see an interactive onboarding tutorial that guides them through the dashboard features. The tutorial can be replayed anytime by clicking the "Tutorial" button (sparkles icon) in the header.
+
 ---
 
-## 9. Verify everything works
+## 11. Verify everything works
 
 1. Visit `http://localhost:3000/` and toggle dark/light mode.
 2. Log in and confirm the dashboard shows “Sessions Completed” and “Recent Sessions”.
@@ -177,7 +211,7 @@ npm run dev
 
 ---
 
-## 10. Troubleshooting tips
+## 12. Troubleshooting tips
 
 - **PostgreSQL errors**: verify credentials in `.env`, ensure `pgvector` exists, and confirm the embeddings tables were created.
 - **MySQL access issues**: adjust credentials in `backend/backend/settings.py` only if your local schema differs.
@@ -187,7 +221,7 @@ npm run dev
 
 ---
 
-## 11. Project structure (high level)
+## 13. Project structure (high level)
 
 ```
 MindEase/
@@ -207,19 +241,25 @@ MindEase/
 
 ---
 
-## 12. Quick checklist
+## 14. Quick checklist
 
+- [ ] Cloned repository
 - [ ] `git pull origin main`
 - [ ] `npm install`
 - [ ] Python virtualenv created & activated
 - [ ] `pip install -r backend/requirements.txt`
-- [ ] `.env` created in `backend/chatbot`
-- [ ] PostgreSQL database + pgvector ready
-- [ ] DeBERTa weights & dataset copied locally
-- [ ] `python build_database.py` executed (if needed)
+- [ ] `.env` created in `backend/chatbot` with database password
+- [ ] PostgreSQL installed and running
+- [ ] Database created (`mentalhealthdb`)
+- [ ] pgvector extension installed
+- [ ] DeBERTa model files downloaded/copied
+- [ ] MentalChat16K dataset downloaded
+- [ ] Database built (`build_database.py` run successfully)
+- [ ] Django migrations applied (`python manage.py migrate`)
 - [ ] `ollama pull llama3.1:8b-instruct`
-- [ ] `python manage.py runserver`
-- [ ] `npm run dev`
+- [ ] Tests passing (`test_phase1.py`)
+- [ ] Django backend running (`python manage.py runserver`)
+- [ ] Next.js frontend running (`npm run dev`)
 
 Once everything above is checked, you should be able to run the project exactly like the owner—only the environment values differ per machine. Happy building!
 

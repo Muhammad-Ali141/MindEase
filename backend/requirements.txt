@@ -1,23 +1,86 @@
-djangorestframework==3.16.1
-django==5.2.7
-django-cors-headers==4.9.0
-djangorestframework-simplejwt==5.5.1
-mysqlclient==2.2.7
-PyJWT==2.10.1
-asgiref==3.10.0
-sqlparse==0.5.3
-tzdata==2025.2
+# MindEase Backend Requirements
+# Python 3.9-3.11 recommended (TTS requires < 3.12)
+#
+# Installation:
+#   pip install -r requirements.txt
 
-# ML and Chatbot dependencies
-transformers>=4.35.0
-torch>=2.0.0
-sentence-transformers>=2.2.0
-ollama>=0.1.0
-pandas>=2.0.0
-numpy>=1.24.0
+# ============================================
+# Core Django Framework
+# ============================================
+Django==5.2.9
+djangorestframework>=3.14.0
+djangorestframework-simplejwt>=5.3.0
+django-cors-headers>=4.3.0
+
+# ============================================
+# Database
+# ============================================
 psycopg2-binary>=2.9.0
-chromadb>=0.4.0
-scikit-learn>=1.3.0
-tqdm>=4.65.0
+
+# ============================================
+# Environment & Configuration
+# ============================================
 python-dotenv>=1.0.0
 
+# ============================================
+# Machine Learning & NLP
+# ============================================
+transformers==4.33.0
+torch==2.9.1
+torchvision==0.24.1
+sentence-transformers==2.2.2
+numpy==2.3.5
+scipy==1.16.3
+scikit-learn==1.7.2
+
+# ============================================
+# Text-to-Speech (TTS)
+# ============================================
+# Note: TTS requires Python < 3.12
+TTS==0.22.0
+soundfile>=0.12.1
+sounddevice==0.5.3
+pydub>=0.25.1
+
+# ============================================
+# Speech-to-Text (STT)
+# ============================================
+faster-whisper==1.2.1
+resampy>=0.4.2
+
+# ============================================
+# Utilities
+# ============================================
+tqdm==4.67.1
+requests==2.32.5
+PyYAML==6.0.3
+pillow==12.0.0
+nltk==3.9.2
+
+# ============================================
+# Supporting Libraries
+# ============================================
+huggingface-hub==0.16.4
+safetensors==0.7.0
+tokenizers==0.13.3
+sentencepiece==0.2.1
+regex==2025.11.3
+packaging==25.0
+typing_extensions==4.15.0
+filelock==3.20.0
+fsspec==2025.10.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+certifi==2025.11.12
+charset-normalizer==3.4.4
+idna==3.11
+urllib3==2.5.0
+click==8.3.1
+colorama==0.4.6
+joblib==1.5.2
+threadpoolctl==3.6.0
+networkx==3.6
+mpmath==1.3.0
+sympy==1.14.0
+cffi==2.0.0
+pycparser==2.23

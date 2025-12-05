@@ -1,30 +1,77 @@
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.hashers import make_password, check_password
-from django.utils.dateparse import parse_date
-from django.utils import timezone
-from django.core.mail import send_mail
-from django.conf import settings
-from .models import User, EmailVerification
 import json
 import random
+import uuid
 from datetime import timedelta
 
-# In-memory session tracking (temporary until DB implementation)
-# Dictionary: {user_id: session_count}
-SESSION_COUNTS = {}
+from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
+from django.core.mail import send_mail
+from django.http import JsonResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_date
+from django.views.decorators.csrf import csrf_exempt
 
-# In-memory session storage (temporary until DB implementation)
-# Dictionary: {user_id: [session1, session2, ...]}
-# Each session: {
-#   "session_id": str,
-#   "title": str,
-#   "messages": [ChatMessage],
-#   "summary": str,
-#   "created_at": str,
-#   "updated_at": str
-# }
-USER_SESSIONS = {}
+from api.models import EmailVerification, Message, Session, User
+from api.services.session_service import SessionService
+from chatbot.conversation_memory import ConversationMemory
+from chatbot.llm_client import LLMClient
+
+# Legacy in-memory caches removed; persistence handled by SessionService.
+
+# TTS Service cache (singleton pattern for performance)
+_tts_service_cache = None
+_tts_service_lock = None
+
+def _get_tts_service():
+    """Get or create TTS service instance (cached for performance)."""
+    global _tts_service_cache, _tts_service_lock
+    
+    if _tts_service_cache is None:
+        import sys
+        import os
+        import threading
+        
+        if _tts_service_lock is None:
+            _tts_service_lock = threading.Lock()
+        
+        with _tts_service_lock:
+            # Double-check pattern
+            if _tts_service_cache is None:
+                tts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tts')
+                if tts_dir not in sys.path:
+                    sys.path.insert(0, tts_dir)
+                
+                from tts.tts_service import TTSService
+                
+                _tts_service_cache = TTSService(
+                    model_name="tts_models/multilingual/multi-dataset/xtts_v2",
+                    device=None,
+                    gpu=None,
+                )
+    
+    return _tts_service_cache
+
+
+def _resolve_session_for_user(user_id, identifier):
+    """
+    Resolve a session for the given user. Accepts either UUID strings or integer IDs.
+    Raises ValueError for invalid identifiers and Session.DoesNotExist when not found.
+    """
+    if identifier is None:
+        raise ValueError("invalid_session_identifier")
+
+    session_qs = Session.objects.filter(user_id=user_id)
+
+    try:
+        session_uuid = uuid.UUID(str(identifier))
+    except (ValueError, TypeError):
+        try:
+            session_id_int = int(identifier)
+        except (ValueError, TypeError):
+            raise ValueError("invalid_session_identifier") from None
+        return session_qs.get(session_id=session_id_int)
+
+    return session_qs.get(session_uuid=session_uuid)
 
 
 # -------------------------
@@ -44,13 +91,15 @@ def register(request):
             dob = data.get("dob")
             gender = data.get("gender")
             lang_pref = data.get("lang_pref")
+            city = data.get("city")
+            nearest_major_city = data.get("nearest_major_city")
             if lang_pref == "en":
                 lang_pref = "english"
             elif lang_pref == "ur":
                 lang_pref = "urdu"
 
             # Check for missing fields
-            if not all([first_name, last_name, email, password, dob, gender, lang_pref]):
+            if not all([first_name, last_name, email, password, dob, gender, lang_pref, city, nearest_major_city]):
                 return JsonResponse({"error": "All fields are required."}, status=400)
 
             # Normalize email to lowercase for case-insensitive comparison
@@ -66,6 +115,10 @@ def register(request):
             except EmailVerification.DoesNotExist:
                 return JsonResponse({"error": "Please verify your email first."}, status=400)
 
+            nearest_major_city_clean = nearest_major_city.strip() if nearest_major_city else ""
+            if not nearest_major_city_clean:
+                return JsonResponse({"error": "Nearest major city is required."}, status=400)
+
             # Parse and validate DOB
             dob_parsed = parse_date(dob)
             if not dob_parsed:
@@ -80,6 +133,8 @@ def register(request):
                 dob=dob_parsed,
                 gender=gender,
                 lang_pref=lang_pref,  # ✅ correct field name
+                city=city.strip() if city else None,
+                nearest_major_city=nearest_major_city_clean,
             )
 
             return JsonResponse({
@@ -275,7 +330,10 @@ def login(request):
                 "last_name": user.last_name,
                 "email": user.email,
                 "gender": user.gender or "Other",
-                "lang_pref": user.lang_pref  # ✅ consistent field name
+                "lang_pref": user.lang_pref,  # ✅ consistent field name
+                "city": user.city or "",
+                "nearest_major_city": user.nearest_major_city or "",
+                "dashboard_tour_seen": user.dashboard_tour_seen,
             }, status=200)
 
         except Exception as e:
@@ -424,16 +482,6 @@ def chat_summary(request):
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
-            # Import chatbot
-            import sys
-            import os
-            chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'chatbot')
-            if chatbot_dir not in sys.path:
-                sys.path.insert(0, chatbot_dir)
-            
-            from chatbot.conversation_memory import ConversationMemory
-            from chatbot.llm_client import LLMClient
-            
             # Create memory instance and populate with history
             memory = ConversationMemory(max_history_length=20)
             for msg in conversation_history:
@@ -478,42 +526,10 @@ def get_session_count(request):
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
-            # Get session count for user (default to 0 if not found)
-            session_count = SESSION_COUNTS.get(str(user_id), 0)
+            session_count = SessionService.get_session_count(user_id)
 
             return JsonResponse({
                 "session_count": session_count,
-                "user_id": user_id
-            }, status=200)
-
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
-
-    return JsonResponse({"error": "Invalid request method."}, status=405)
-
-
-# -------------------------
-# INCREMENT SESSION COUNT
-# -------------------------
-@csrf_exempt
-def increment_session_count(request):
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            user_id = data.get("user_id")
-
-            if not user_id:
-                return JsonResponse({"error": "User ID is required."}, status=400)
-
-            # Increment session count for user
-            user_id_str = str(user_id)
-            if user_id_str not in SESSION_COUNTS:
-                SESSION_COUNTS[user_id_str] = 0
-            
-            SESSION_COUNTS[user_id_str] += 1
-
-            return JsonResponse({
-                "session_count": SESSION_COUNTS[user_id_str],
                 "user_id": user_id
             }, status=200)
 
@@ -665,78 +681,84 @@ def save_session(request):
             user_id = data.get("user_id")
             conversation_history = data.get("conversation_history", [])
             summary = data.get("summary", "")
-            session_id = data.get("session_id")  # If provided, update existing session
-            
+            session_identifier = data.get("session_id")  # UUID hex if updating
+
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
-            
+
             if not conversation_history:
                 return JsonResponse({"error": "Conversation history is required."}, status=400)
-            
-            user_id_str = str(user_id)
-            
-            # Initialize user sessions if not exists
-            if user_id_str not in USER_SESSIONS:
-                USER_SESSIONS[user_id_str] = []
-            
-            # Generate title and short summary using LLM
-            from chatbot.llm_client import LLMClient
+
             llm_client = LLMClient()
             user_first_name = data.get("user_first_name")
             user_gender = data.get("user_gender")
             title = _generate_session_title(conversation_history, llm_client, user_first_name)
             short_summary = _generate_short_summary(conversation_history, llm_client, user_first_name, user_gender)
-            
-            from datetime import datetime
-            now = datetime.now().isoformat()
-            
-            if session_id:
-                # Update existing session
-                sessions = USER_SESSIONS[user_id_str]
-                session_index = next(
-                    (i for i, s in enumerate(sessions) if s.get("session_id") == session_id),
-                    None
-                )
-                
-                if session_index is not None:
-                    # Regenerate short summary for updated session
-                    short_summary = _generate_short_summary(conversation_history, llm_client, user_first_name, user_gender)
-                    # Update existing session
-                    USER_SESSIONS[user_id_str][session_index].update({
-                        "messages": conversation_history,
-                        "summary": summary,
-                        "short_summary": short_summary,
-                        "updated_at": now
-                    })
-                    session = USER_SESSIONS[user_id_str][session_index]
-                else:
-                    return JsonResponse({"error": "Session not found."}, status=404)
-            else:
-                # Create new session
-                import uuid
-                new_session_id = str(uuid.uuid4())
-                session = {
-                    "session_id": new_session_id,
-                    "title": title,
-                    "messages": conversation_history,
-                    "summary": summary,
-                    "short_summary": short_summary,
-                    "created_at": now,
-                    "updated_at": now
+
+            messages_payload = []
+            for index, msg in enumerate(conversation_history):
+                payload = {
+                    "role": msg.get("role"),
+                    "sender": msg.get("role"),
+                    "content": msg.get("content"),
+                    "content_type": msg.get("content_type") or "text",
+                    "emotion_label": msg.get("emotion_label"),
+                    "emotion_score": msg.get("emotion_score"),
+                    "metadata": msg.get("metadata", {}),
+                    "sequence": msg.get("sequence", index),
                 }
-                # Add to beginning of list (most recent first)
-                USER_SESSIONS[user_id_str].insert(0, session)
-            
+                messages_payload.append(payload)
+
+            if session_identifier:
+                try:
+                    session = _resolve_session_for_user(user_id, session_identifier)
+                except ValueError:
+                    return JsonResponse({"error": "Invalid session identifier."}, status=400)
+                except Session.DoesNotExist:
+                    return JsonResponse({"error": "Session not found."}, status=404)
+
+                result = SessionService.update_session(
+                    session=session,
+                    messages=messages_payload,
+                    short_summary=short_summary,
+                    full_summary=summary,
+                    ended_at=timezone.now(),
+                )
+            else:
+                result = SessionService.create_session(
+                    user_id=user_id,
+                    title=title,
+                    messages=messages_payload,
+                    short_summary=short_summary,
+                    full_summary=summary,
+                    ended_at=timezone.now(),
+                )
+
+            session = result.session
+
+            response_payload = {
+                "session_id": session.session_uuid.hex,
+                "title": session.title or "Therapy Session",
+                "messages": conversation_history,
+                "summary": session.full_summary or "",
+                "short_summary": session.short_summary or session.full_summary or "",
+                "resume_message": session.resume_message or "",
+                "state": session.state,
+                "is_starred": session.is_starred,
+                "created_at": session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                "updated_at": session.updated_at.isoformat() if session.updated_at else session.ended_at.isoformat() if session.ended_at else session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+            }
+
             return JsonResponse({
-                "session": session,
+                "session": response_payload,
                 "user_id": user_id
             }, status=200)
-            
+
         except Exception as e:
             import traceback
             traceback.print_exc()
             return JsonResponse({"error": str(e)}, status=500)
-    
+
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
@@ -749,43 +771,39 @@ def get_recent_sessions(request):
         try:
             data = json.loads(request.body)
             user_id = data.get("user_id")
-            limit = data.get("limit", 3)  # Default to 3
-            
+            limit = data.get("limit")
+
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
-            
-            user_id_str = str(user_id)
-            sessions = USER_SESSIONS.get(user_id_str, [])
-            
-            # Return limited sessions (most recent first)
-            # If limit is 0 or not provided, return all sessions
-            if limit and limit > 0:
-                recent_sessions = sessions[:limit]
-            else:
-                recent_sessions = sessions
-            
-            # Return only essential info (not full messages)
+
+            sessions = SessionService.get_recent_sessions(user_id, limit)
+
             sessions_list = [
                 {
-                    "session_id": s.get("session_id"),
-                    "title": s.get("title"),
-                    "summary": s.get("summary", ""),
-                    "short_summary": s.get("short_summary", s.get("summary", "")),  # Fallback to full summary if short_summary doesn't exist
-                    "created_at": s.get("created_at"),
-                    "updated_at": s.get("updated_at")
+                    "session_id": session.session_uuid.hex,
+                    "title": session.title or "Therapy Session",
+                    "summary": session.full_summary or "",
+                    "short_summary": session.short_summary or session.full_summary or "",
+                    "created_at": session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat() if session.updated_at else session.ended_at.isoformat() if session.ended_at else session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                    "state": session.state,
+                    "is_starred": session.is_starred,
+                    "has_full_transcript": session.state == Session.SessionState.FULL,
                 }
-                for s in recent_sessions
+                for session in sessions
             ]
-            
+
+            total = Session.objects.filter(user_id=user_id).count()
+
             return JsonResponse({
                 "sessions": sessions_list,
-                "total": len(sessions),
+                "total": total,
                 "user_id": user_id
             }, status=200)
-            
+
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
-    
+
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
@@ -798,30 +816,130 @@ def get_session_by_id(request):
         try:
             data = json.loads(request.body)
             user_id = data.get("user_id")
-            session_id = data.get("session_id")
-            
-            if not user_id or not session_id:
+            session_identifier = data.get("session_id")
+
+            if not user_id or not session_identifier:
                 return JsonResponse({"error": "User ID and Session ID are required."}, status=400)
-            
-            user_id_str = str(user_id)
-            sessions = USER_SESSIONS.get(user_id_str, [])
-            
-            session = next(
-                (s for s in sessions if s.get("session_id") == session_id),
-                None
-            )
-            
-            if not session:
+
+            try:
+                session = _resolve_session_for_user(user_id, session_identifier)
+            except ValueError:
+                return JsonResponse({"error": "Invalid session identifier."}, status=400)
+            except Session.DoesNotExist:
                 return JsonResponse({"error": "Session not found."}, status=404)
-            
+
+            payload = {
+                "session_id": session.session_uuid.hex,
+                "title": session.title or "Therapy Session",
+                "summary": session.full_summary or "",
+                "short_summary": session.short_summary or session.full_summary or "",
+                "resume_message": session.resume_message or "",
+                "state": session.state,
+                "is_starred": session.is_starred,
+                "created_at": session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                "updated_at": session.updated_at.isoformat() if session.updated_at else session.ended_at.isoformat() if session.ended_at else session.created_at.isoformat() if session.created_at else session.started_at.isoformat(),
+                "messages": [],
+                "resume_context": session.continuation_context or {},
+                "has_full_transcript": session.state == Session.SessionState.FULL,
+            }
+
+            if session.state == Session.SessionState.FULL:
+                messages = session.messages.order_by('sequence', 'message_id')
+                payload["messages"] = [
+                    {
+                        "role": msg.metadata.get('role') or ('assistant' if msg.sender == Message.Sender.AI else 'user'),
+                        "sender": msg.sender,
+                        "content": msg.content,
+                        "content_type": msg.content_type,
+                        "emotion_label": msg.emotion_label,
+                        "emotion_score": msg.emotion_score,
+                        "sequence": msg.sequence,
+                        "metadata": msg.metadata,
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    }
+                    for msg in messages
+                ]
+            else:
+                reminder = session.resume_message or session.short_summary or session.full_summary or "Welcome back! Let's continue whenever you're ready."
+                payload["messages"] = [
+                    {
+                        "role": "assistant",
+                        "sender": Message.Sender.AI,
+                        "content": reminder,
+                        "content_type": Message.ContentType.TEXT,
+                        "emotion_label": None,
+                        "emotion_score": None,
+                        "sequence": None,
+                        "metadata": {},
+                        "created_at": timezone.now().isoformat(),
+                    }
+                ]
+
             return JsonResponse({
-                "session": session,
+                "session": payload,
                 "user_id": user_id
             }, status=200)
-            
+
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
-    
+
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# TOGGLE SESSION STAR
+# -------------------------
+@csrf_exempt
+def toggle_session_star(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+            session_identifier = data.get("session_id")
+            star = data.get("star")
+
+            if not user_id or session_identifier is None or star is None:
+                return JsonResponse({"error": "User ID, session ID, and star value are required."}, status=400)
+
+            try:
+                session = _resolve_session_for_user(user_id, session_identifier)
+            except ValueError:
+                return JsonResponse({"error": "Invalid session identifier."}, status=400)
+            except Session.DoesNotExist:
+                return JsonResponse({"error": "Session not found."}, status=404)
+
+            try:
+                updated_session = SessionService.set_starred(session, bool(star))
+            except ValueError as exc:
+                error_code = str(exc)
+                message = "Unable to update star status."
+                if error_code == "star_limit":
+                    message = "You can star up to three sessions at a time. Unstar another session first."
+                elif error_code == "archived_session":
+                    message = "Archived sessions cannot be starred."
+                return JsonResponse({"error": message}, status=400)
+
+            payload = {
+                "session_id": updated_session.session_uuid.hex,
+                "title": updated_session.title or "Therapy Session",
+                "summary": updated_session.full_summary or "",
+                "short_summary": updated_session.short_summary or updated_session.full_summary or "",
+                "resume_message": updated_session.resume_message or "",
+                "state": updated_session.state,
+                "is_starred": updated_session.is_starred,
+                "has_full_transcript": updated_session.state == Session.SessionState.FULL,
+                "created_at": updated_session.created_at.isoformat() if updated_session.created_at else updated_session.started_at.isoformat(),
+                "updated_at": updated_session.updated_at.isoformat() if updated_session.updated_at else updated_session.ended_at.isoformat() if updated_session.ended_at else updated_session.created_at.isoformat() if updated_session.created_at else updated_session.started_at.isoformat(),
+            }
+
+            return JsonResponse({
+                "session": payload,
+                "user_id": user_id,
+            }, status=200)
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
@@ -858,7 +976,10 @@ def get_user_profile(request):
                 "dob": user.dob.isoformat() if user.dob else None,
                 "gender": user.gender or "Other",
                 "lang_pref": lang_pref,
+                "city": user.city or "",
+                "nearest_major_city": user.nearest_major_city or "",
                 "created_at": user.created_at.isoformat() if user.created_at else None,
+                "dashboard_tour_seen": user.dashboard_tour_seen,
             }, status=200)
             
         except Exception as e:
@@ -925,6 +1046,16 @@ def update_user_profile(request):
                     lang_pref = "urdu"
                 user.lang_pref = lang_pref
                 updated_fields.append("lang_pref")
+
+            if "city" in data:
+                city_value = data.get("city")
+                user.city = city_value.strip() if city_value else None
+                updated_fields.append("city")
+
+            if "nearest_major_city" in data:
+                nearest_value = data.get("nearest_major_city")
+                user.nearest_major_city = nearest_value.strip() if nearest_value else None
+                updated_fields.append("nearest_major_city")
             
             if "password" in data and data.get("password"):
                 # Update password if provided
@@ -954,6 +1085,9 @@ def update_user_profile(request):
                 "dob": user.dob.isoformat() if user.dob else None,
                 "gender": user.gender or "Other",
                 "lang_pref": lang_pref,
+                "city": user.city or "",
+                "nearest_major_city": user.nearest_major_city or "",
+                "dashboard_tour_seen": user.dashboard_tour_seen,
             }, status=200)
             
         except Exception as e:
@@ -961,4 +1095,219 @@ def update_user_profile(request):
             traceback.print_exc()
             return JsonResponse({"error": str(e)}, status=500)
     
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# UPDATE DASHBOARD TOUR STATUS
+# -------------------------
+@csrf_exempt
+def update_dashboard_tour(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+            seen = data.get("seen")
+
+            if user_id is None or seen is None:
+                return JsonResponse({"error": "User ID and seen flag are required."}, status=400)
+
+            try:
+                user = User.objects.get(user_id=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"error": "User not found."}, status=404)
+
+            seen_bool = bool(seen)
+
+            if user.dashboard_tour_seen != seen_bool:
+                user.dashboard_tour_seen = seen_bool
+                user.updated_at = timezone.now()
+                user.save(update_fields=["dashboard_tour_seen", "updated_at"])
+
+            return JsonResponse({
+                "dashboard_tour_seen": user.dashboard_tour_seen,
+                "user_id": user.user_id,
+            }, status=200)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# STT TRANSCRIBE
+# -------------------------
+@csrf_exempt
+def stt_transcribe(request):
+    if request.method == "POST":
+        try:
+            if 'audio' not in request.FILES:
+                return JsonResponse({"error": "Audio file is required."}, status=400)
+            
+            audio_file = request.FILES['audio']
+            language = request.POST.get('language', 'en')
+            
+            max_size = 10 * 1024 * 1024  # 10MB
+            if audio_file.size > max_size:
+                return JsonResponse({"error": "Audio file too large. Maximum size is 10MB."}, status=400)
+            
+            allowed_extensions = ['.wav', '.webm', '.mp3', '.m4a', '.ogg']
+            file_name = audio_file.name.lower()
+            if not any(file_name.endswith(ext) for ext in allowed_extensions):
+                return JsonResponse({
+                    "error": f"Unsupported file format. Allowed formats: {', '.join(allowed_extensions)}"
+                }, status=400)
+            
+            import sys
+            import os
+            import tempfile
+            
+            stt_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'stt')
+            if stt_dir not in sys.path:
+                sys.path.insert(0, stt_dir)
+            
+            from stt.stt_service import SpeechToTextService
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.name)[1]) as temp_file:
+                for chunk in audio_file.chunks():
+                    temp_file.write(chunk)
+                temp_file_path = temp_file.name
+            
+            try:
+                stt_service = SpeechToTextService(
+                    model_id="Systran/faster-whisper-large-v3",
+                    device=None,
+                    compute_type=None,
+                    beam_size=5,
+                    temperature=0.0,
+                    vad_filter=True,
+                )
+                
+                transcript = stt_service.transcribe_file(
+                    temp_file_path,
+                    language=language if language != 'auto' else None,
+                )
+                
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+                
+                if not transcript or not transcript.strip():
+                    return JsonResponse({
+                        "error": "No speech detected in audio file.",
+                        "transcript": ""
+                    }, status=200)
+                
+                return JsonResponse({
+                    "transcript": transcript.strip(),
+                    "language": language,
+                    "confidence": 0.95
+                }, status=200)
+                
+            except Exception as e:
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+                
+                import traceback
+                traceback.print_exc()
+                return JsonResponse({
+                    "error": f"Transcription failed: {str(e)}"
+                }, status=500)
+                
+        except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# TTS SYNTHESIZE
+# -------------------------
+@csrf_exempt
+def tts_synthesize(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            text = data.get("text")
+            language = data.get("language", "en")
+            
+            if not text:
+                return JsonResponse({"error": "Text is required."}, status=400)
+            
+            # Limit text length to prevent abuse (max 5000 characters)
+            if len(text) > 5000:
+                return JsonResponse({"error": "Text too long. Maximum length is 5000 characters."}, status=400)
+            
+            # Validate language code
+            supported_languages = ["en", "ur", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"]
+            if language not in supported_languages:
+                language = "en"  # Default to English if invalid
+            
+            import os
+            import tempfile
+            
+            # Use cached TTS service for better performance
+            tts_service = _get_tts_service()
+            
+            try:
+                # Create temporary file for audio output
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+                    temp_file_path = temp_file.name
+                
+                # Synthesize text to speech
+                tts_service.synthesize_to_file(
+                    text=text,
+                    output_path=temp_file_path,
+                    language=language,
+                )
+                
+                # Read the generated audio file
+                with open(temp_file_path, 'rb') as audio_file:
+                    audio_data = audio_file.read()
+                
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+                
+                # Don't close TTS service - we're caching it for performance
+                # tts_service.close()
+                
+                # Return audio file as binary response
+                from django.http import HttpResponse
+                response = HttpResponse(audio_data, content_type='audio/wav')
+                response['Content-Disposition'] = 'inline; filename="tts_audio.wav"'
+                response['Content-Length'] = len(audio_data)
+                return response
+                
+            except Exception as e:
+                # Clean up temporary file if it exists
+                try:
+                    if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+                        os.unlink(temp_file_path)
+                except Exception:
+                    pass
+                
+                # Don't close TTS service on error - we're caching it
+                # The service will be reused for next request
+                
+                import traceback
+                traceback.print_exc()
+                return JsonResponse({
+                    "error": f"TTS synthesis failed: {str(e)}"
+                }, status=500)
+                
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
     return JsonResponse({"error": "Invalid request method."}, status=405)

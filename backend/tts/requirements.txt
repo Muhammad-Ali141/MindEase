@@ -1,0 +1,34 @@
+# Text-to-Speech Module Dependencies
+# Install in a virtual environment: pip install -r requirements.txt
+#
+# IMPORTANT: Coqui TTS requires Python >= 3.9 and < 3.12
+# If you have Python 3.12+, you have two options:
+# 1. Use Python 3.10 or 3.11 (recommended)
+# 2. Install from source with modifications (advanced)
+#
+# Installation options:
+# Option 1 (Recommended): pip install TTS
+# Option 2 (If pip fails): pip install git+https://github.com/coqui-ai/TTS.git
+# Option 3 (Python 3.12+): See README.md for alternative TTS libraries
+
+# Core TTS library
+# Note: TTS package requires Python < 3.12
+# For Python 3.12+, consider using piper-tts or edge-tts instead
+TTS>=0.22.0
+
+# PyTorch for model inference
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Audio processing
+soundfile>=0.12.1
+sounddevice>=0.4.6  # For audio playback
+pydub>=0.25.1  # For audio format conversion (already in STT)
+
+# Numerical processing
+numpy>=1.24.0
+scipy>=1.11.2  # For audio filtering and post-processing
+
+# Utilities
+tqdm>=4.65.0
+
