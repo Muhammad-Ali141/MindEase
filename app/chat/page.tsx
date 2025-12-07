@@ -8,6 +8,7 @@ import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
 import { apiChatMessage, apiChatWelcome, apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar, type ChatMessage, type Session } from "@/lib/api"
 import { ChatInterface } from "@/components/chat-interface"
+import { ShareTestModal } from "@/components/share-test-modal"
 import { ArrowLeft, Loader2, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
@@ -25,6 +26,9 @@ export default function ChatPage() {
   const [isEnding, setIsEnding] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [baselineUserMessageCount, setBaselineUserMessageCount] = useState(0)
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [testContext, setTestContext] = useState<string | null>(null)
+  const shareModalShownRef = useRef(false)
 
   // Check for session_id in URL query params
   useEffect(() => {
@@ -33,16 +37,19 @@ export default function ChatPage() {
       const sessionId = params.get("session_id")
       
       if (sessionId) {
-        // Load existing session
+        // Load existing session (don't show share modal for existing sessions)
         loadSession(sessionId)
       } else {
-        // Load welcome message for new session
-        loadWelcomeMessage()
+        // For new sessions, show share modal first
+        if (!shareModalShownRef.current) {
+          shareModalShownRef.current = true
+          setShowShareModal(true)
+        }
       }
     }
   }, [user, token])
 
-  const loadWelcomeMessage = async () => {
+  const loadWelcomeMessage = async (sharedTestContext?: string) => {
     try {
       setWelcomeLoading(true)
       setSavedSession(null)
@@ -50,7 +57,8 @@ export default function ChatPage() {
       setSummary("")
       const response = await apiChatWelcome(
         user!.id,
-        user!.first_name || null
+        user!.first_name || null,
+        sharedTestContext || null
       )
       
       // Add welcome message to messages
@@ -72,6 +80,18 @@ export default function ChatPage() {
     } finally {
       setWelcomeLoading(false)
     }
+  }
+
+  const handleShareTest = (context: string) => {
+    setTestContext(context)
+    setShowShareModal(false)
+    loadWelcomeMessage(context)
+  }
+
+  const handleSkipShare = () => {
+    setTestContext(null)
+    setShowShareModal(false)
+    loadWelcomeMessage()
   }
 
   const loadSession = async (sessionId: string) => {
@@ -148,7 +168,8 @@ export default function ChatPage() {
         user.id,
         user.first_name || null,
         user.gender || null,
-        historyForRequest
+        historyForRequest,
+        testContext || null
       )
 
       const primaryEmotion = response.emotions?.[0]
@@ -397,6 +418,13 @@ export default function ChatPage() {
                 )}
               </Button>
             </div>
+            
+            <ShareTestModal
+              open={showShareModal}
+              onClose={() => setShowShareModal(false)}
+              onShare={handleShareTest}
+              onSkip={handleSkipShare}
+            />
             
             <ChatInterface
               messages={messages}

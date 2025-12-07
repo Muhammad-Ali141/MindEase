@@ -2,12 +2,42 @@
 
 import { MessageCircle, Mic2, Zap } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/context/AuthContext"
+import { apiGetDiagnosticTestStatus } from "@/lib/api"
+import { useState } from "react"
 
 export function TherapyOptions() {
   const router = useRouter()
+  const { user } = useAuth()
+  const [loading, setLoading] = useState(false)
 
   const handleStartChat = () => {
     router.push("/chat")
+  }
+
+  const handleStartCheckin = async () => {
+    if (!user?.id) {
+      router.push("/diagnostic-test/generic-screening")
+      return
+    }
+
+    try {
+      setLoading(true)
+      const status = await apiGetDiagnosticTestStatus(user.id)
+      
+      if (status.available_test) {
+        router.push(`/diagnostic-test/${status.available_test}`)
+      } else {
+        // No test available, go to diagnostic-test page to see message
+        router.push("/diagnostic-test")
+      }
+    } catch (error) {
+      console.error("Failed to get test status:", error)
+      // Fallback to generic screening if API fails
+      router.push("/diagnostic-test/generic-screening")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -22,8 +52,11 @@ export function TherapyOptions() {
         </div>
         <h3 className="text-2xl font-bold mb-2">Quick Check-in</h3>
         <p className="text-blue-100 dark:text-blue-200/80 mb-6">A brief mood assessment</p>
-        <button className="w-full bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 font-semibold py-3 rounded-lg hover:bg-white dark:hover:bg-slate-700 hover:ring-2 hover:ring-blue-300 dark:hover:ring-blue-500 hover:ring-offset-2 dark:hover:ring-offset-blue-900/50 transition border-2 border-transparent hover:border-blue-200 dark:hover:border-blue-600/50">
-          Start Check-in
+        <button 
+          onClick={handleStartCheckin}
+          disabled={loading}
+          className="w-full bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 font-semibold py-3 rounded-lg hover:bg-white dark:hover:bg-slate-700 hover:ring-2 hover:ring-blue-300 dark:hover:ring-blue-500 hover:ring-offset-2 dark:hover:ring-offset-blue-900/50 transition border-2 border-transparent hover:border-blue-200 dark:hover:border-blue-600/50 disabled:opacity-50 disabled:cursor-not-allowed">
+          {loading ? "Loading..." : "Start Check-in"}
         </button>
       </div>
 

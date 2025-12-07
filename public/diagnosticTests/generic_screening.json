@@ -1,0 +1,25 @@
+{
+    "name": "Generic Screening Test",
+    "scale": [
+      "0 = Not at all",
+      "1 = A little bit",
+      "2 = Sometimes",
+      "3 = Often",
+      "4 = Almost always"
+    ],
+    "questions": [
+      { "q": "I felt sad or hopeless.", "domain": "depression" },
+      { "q": "I had trouble enjoying my usual activities.", "domain": "depression" },
+  
+      { "q": "I felt excessively worried or on edge.", "domain": "anxiety" },
+      { "q": "I found it hard to control my worrying.", "domain": "anxiety" },
+  
+      { "q": "I felt overwhelmed or unable to cope with daily tasks.", "domain": "stress" },
+      { "q": "I felt tense or mentally exhausted.", "domain": "stress" },
+  
+      { "q": "My mood kept shifting throughout the day.", "domain": "mood" },
+      { "q": "I had sudden emotional changes without clear reason.", "domain": "mood" }
+    ]
+  }
+
+

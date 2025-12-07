@@ -1,0 +1,15 @@
+{
+    "name": "GAD-7 (anxiety screening test)",
+    "scale": ["0 = Not at all", "1 = A little bit", "2 = Sometimes", "3 = Often", "4 = Almost always"],
+    "questions": [
+      "Feeling nervous, anxious, or on edge?",
+      "Not being able to stop or control worrying?",
+      "Worrying about many different things?",
+      "Trouble relaxing?",
+      "Restlessness making it hard to sit still?",
+      "Becoming easily annoyed or irritable?",
+      "Feeling afraid that something bad might happen?"
+    ]
+  }
+
+

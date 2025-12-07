@@ -1,0 +1,17 @@
+{
+    "name": "PHQ-9 (depression screening test)",
+    "scale": ["0 = Not at all", "1 = A little bit", "2 = Sometimes", "3 = Often", "4 = Almost always"],
+    "questions": [
+      "Little interest or pleasure in doing things?",
+      "Feeling down, depressed, or hopeless?",
+      "Trouble sleeping or sleeping too much?",
+      "Feeling tired or having little energy?",
+      "Poor appetite or overeating?",
+      "Feeling bad about yourself or like a failure?",
+      "Trouble concentrating on things?",
+      "Moving or speaking slowly / being restless?",
+      "Thoughts of self-harm?"
+    ]
+  }
+
+

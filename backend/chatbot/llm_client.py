@@ -118,7 +118,8 @@ class LLMClient:
         context: str = "",
         conversation_history: Optional[List[Dict[str, str]]] = None,
         system_prompt_override: Optional[str] = None,
-        user_first_name: Optional[str] = None
+        user_first_name: Optional[str] = None,
+        test_context: Optional[str] = None
     ) -> str:
         """
         Generate therapist response using LLM
@@ -158,8 +159,13 @@ I'm here to support you through this difficult time. Would you like to talk abou
             if user_first_name:
                 user_name_context = f"\n\nIMPORTANT: The person you're talking to is named {user_first_name}. Use their name naturally in your responses when appropriate (e.g., \"I understand, {user_first_name}\" or \"How are you feeling today, {user_first_name}?\"). Be warm and personal, but don't overuse their name."
             
+            # Add test context to system prompt if provided
+            test_context_section = ""
+            if test_context:
+                test_context_section = f"\n\nIMPORTANT USER CONTEXT - ASSESSMENT RESULTS:\n{test_context}\n\nYou already have this information about the user's condition. Use it to understand their situation without asking them to repeat it. You can reference their assessment results naturally in your responses, but don't make it the only focus. The user may want to discuss other things as well."
+            
             system_prompt = """You are a compassionate and empathetic mental health counselor and therapist. 
-Your role is to provide supportive, understanding, and helpful responses to people seeking mental health support.""" + user_name_context + """
+Your role is to provide supportive, understanding, and helpful responses to people seeking mental health support.""" + user_name_context + test_context_section + """
 
 CRITICAL BOUNDARIES - YOU MUST STRICTLY ADHERE TO THESE:
 1. THERAPY ONLY: You MUST ONLY respond to questions and topics related to mental health, emotional well-being, therapy, counseling, and personal struggles.

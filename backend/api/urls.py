@@ -20,4 +20,9 @@ urlpatterns = [
     path("users/dashboard-tour/", views.update_dashboard_tour, name="update_dashboard_tour"),
     path("stt/transcribe/", views.stt_transcribe, name="stt_transcribe"),
     path("tts/synthesize/", views.tts_synthesize, name="tts_synthesize"),
+    path("diagnostic-tests/status/", views.diagnostic_test_status, name="diagnostic_test_status"),
+    path("diagnostic-tests/submit/", views.diagnostic_test_submit, name="diagnostic_test_submit"),
+    path("diagnostic-tests/history/", views.diagnostic_test_history, name="diagnostic_test_history"),
+    path("diagnostic-tests/mood-trend/", views.diagnostic_test_mood_trend, name="diagnostic_test_mood_trend"),
+    path("diagnostic-tests/streak/", views.diagnostic_test_streak, name="diagnostic_test_streak"),
 ]

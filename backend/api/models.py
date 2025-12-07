@@ -63,6 +63,9 @@ class User(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     nearest_major_city = models.CharField(max_length=100, blank=True, null=True)
     dashboard_tour_seen = models.BooleanField(default=False)
+    primary_condition = models.CharField(max_length=20, blank=True, null=True)
+    generic_screening_completed = models.BooleanField(default=False)
+    last_test_date = models.DateField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -176,8 +179,9 @@ class Testresult(models.Model):
         EXTREMELY_SEVERE = 'extremely severe', 'Extremely Severe'
 
     result_id = models.AutoField(primary_key=True)
-    test = models.ForeignKey(Diagnostictest, on_delete=models.CASCADE, related_name='results')
+    test = models.ForeignKey(Diagnostictest, on_delete=models.CASCADE, related_name='results', blank=True, null=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='test_results')
+    test_type = models.CharField(max_length=50)
     score = models.IntegerField()
     severity_level = models.CharField(
         max_length=20,
@@ -185,7 +189,8 @@ class Testresult(models.Model):
         default=Severity.MINIMAL
     )
     taken_at = models.DateTimeField(default=timezone.now)
-    user_responses = models.CharField(max_length=50, blank=True, null=True)
+    user_responses = models.TextField(blank=True, null=True)
+    domain_scores = models.JSONField(blank=True, null=True)
 
     class Meta:
         db_table = 'testresult'

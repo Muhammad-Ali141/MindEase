@@ -18,7 +18,7 @@ export const apiSendOtp = async (email: string) => {
   }
 
   return res.json();
-};
+}
 
 // Verify OTP
 export const apiVerifyOtp = async (email: string, otp: string) => {
@@ -36,7 +36,7 @@ export const apiVerifyOtp = async (email: string, otp: string) => {
   }
 
   return res.json();
-};
+}
 
 // Check if email exists
 export const apiCheckEmail = async (email: string) => {
@@ -54,7 +54,7 @@ export const apiCheckEmail = async (email: string) => {
   }
 
   return res.json();
-};
+}
 
 // lib/api.ts
 export const apiRegister = async (data: any) => {
@@ -82,8 +82,7 @@ export const apiRegister = async (data: any) => {
   }
 
   return res.json();
-};
-
+}
 
 export async function apiLogin(body: { email: string; password: string }) {
   const response = await fetch('http://localhost:8000/api/login/', {
@@ -174,7 +173,8 @@ export async function apiChatMessage(
   user_id: string,
   user_first_name: string | null,
   user_gender: string | null,
-  conversation_history: ChatMessage[]
+  conversation_history: ChatMessage[],
+  test_context: string | null = null
 ): Promise<ChatResponse> {
   const res = await fetch("http://localhost:8000/api/chat/", {
     method: "POST",
@@ -187,6 +187,7 @@ export async function apiChatMessage(
       user_first_name,
       user_gender,
       conversation_history,
+      test_context,
     }),
   })
 
@@ -205,7 +206,8 @@ export type WelcomeResponse = {
 
 export async function apiChatWelcome(
   user_id: string,
-  user_first_name: string | null
+  user_first_name: string | null,
+  test_context: string | null = null
 ): Promise<WelcomeResponse> {
   const res = await fetch("http://localhost:8000/api/chat/welcome/", {
     method: "POST",
@@ -215,6 +217,7 @@ export async function apiChatWelcome(
     body: JSON.stringify({
       user_id,
       user_first_name,
+      test_context,
     }),
   })
 
@@ -611,5 +614,164 @@ export async function apiTTSSynthesize(
   }
 
   return audioBlob
+}
+
+// ============================================
+// DIAGNOSTIC TESTS
+// ============================================
+
+export type DiagnosticTestStatus = {
+  generic_screening_completed: boolean
+  primary_condition: string | null
+  daily_test_available: boolean
+  last_test_date: string | null
+  available_test: string | null
+}
+
+export async function apiGetDiagnosticTestStatus(
+  user_id: string
+): Promise<DiagnosticTestStatus> {
+  const res = await fetch("http://localhost:8000/api/diagnostic-tests/status/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ error: "Failed to get test status" }));
+    throw new Error(errorData.error || "Failed to get test status");
+  }
+
+  return res.json();
+}
+
+export type MoodTrendData = {
+  date: string;
+  score: number;
+  severity: string;
+  trend: "improved" | "worsened" | "stable";
+};
+
+export type MoodTrendResponse = {
+  trend_data: MoodTrendData[];
+  primary_condition: string | null;
+  test_type: string;
+  message?: string;
+};
+
+export async function apiGetMoodTrend(
+  user_id: string
+): Promise<MoodTrendResponse> {
+  const res = await fetch("http://localhost:8000/api/diagnostic-tests/mood-trend/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ error: "Failed to get mood trend" }));
+    throw new Error(errorData.error || "Failed to get mood trend");
+  }
+
+  return res.json();
+}
+
+export type StreakResponse = {
+  current_streak: number;
+  longest_streak: number;
+  last_test_date: string | null;
+};
+
+export async function apiGetStreak(
+  user_id: string
+): Promise<StreakResponse> {
+  const res = await fetch("http://localhost:8000/api/diagnostic-tests/streak/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ error: "Failed to get streak" }));
+    throw new Error(errorData.error || "Failed to get streak");
+  }
+
+  return res.json();
+}
+
+export type TestSubmissionRequest = {
+  test_type: string
+  answers: Record<string, number>
+}
+
+export type TestSubmissionResponse = {
+  result_id: number
+  score: number
+  severity_level: string
+  primary_condition?: string
+  domain_scores?: Record<string, number>
+}
+
+export async function apiSubmitDiagnosticTest(
+  user_id: string,
+  test_type: string,
+  answers: Record<string, number>
+): Promise<TestSubmissionResponse> {
+  const res = await fetch("http://localhost:8000/api/diagnostic-tests/submit/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_id,
+      test_type,
+      answers,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ error: "Failed to submit test" }));
+    throw new Error(errorData.error || "Failed to submit test");
+  }
+
+  return res.json();
+}
+
+export type TestHistoryItem = {
+  result_id: number
+  test_type: string
+  test_name: string
+  score: number
+  severity_level: string
+  taken_at: string
+}
+
+export type TestHistoryResponse = {
+  results: TestHistoryItem[]
+}
+
+export async function apiGetDiagnosticTestHistory(
+  user_id: string
+): Promise<TestHistoryResponse> {
+  const res = await fetch("http://localhost:8000/api/diagnostic-tests/history/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ error: "Failed to get test history" }));
+    throw new Error(errorData.error || "Failed to get test history");
+  }
+
+  return res.json();
 }
 

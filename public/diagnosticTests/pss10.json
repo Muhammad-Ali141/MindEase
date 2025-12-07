@@ -1,0 +1,18 @@
+{
+    "name": "PSS-10 (stress screening test)",
+    "scale": ["0 = Not at all", "1 = A little bit", "2 = Sometimes", "3 = Often", "4 = Almost always"],
+    "questions": [
+      "How often have you felt things were out of your control?",
+      "How often have you felt nervous or stressed?",
+      "How often have you struggled to cope with daily tasks?",
+      "How often have you felt confident in handling personal problems?",
+      "How often have you felt things were going your way?",
+      "How often have you been upset because of unexpected events?",
+      "How often have you felt overwhelmed?",
+      "How often have you felt anger due to events outside your control?",
+      "How often have you found yourself unable to keep up with demands?",
+      "How often have you felt that difficulties were piling up?"
+    ]
+  }
+
+

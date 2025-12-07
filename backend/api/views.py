@@ -10,9 +10,12 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
+from datetime import date
+import os
 
-from api.models import EmailVerification, Message, Session, User
+from api.models import EmailVerification, Message, Session, User, Testresult
 from api.services.session_service import SessionService
+from api.services.diagnostic_test_service import DiagnosticTestService
 from chatbot.conversation_memory import ConversationMemory
 from chatbot.llm_client import LLMClient
 
@@ -334,6 +337,8 @@ def login(request):
                 "city": user.city or "",
                 "nearest_major_city": user.nearest_major_city or "",
                 "dashboard_tour_seen": user.dashboard_tour_seen,
+                "primary_condition": user.primary_condition,
+                "generic_screening_completed": user.generic_screening_completed,
             }, status=200)
 
         except Exception as e:
@@ -355,6 +360,7 @@ def chat_message(request):
             user_first_name = data.get("user_first_name")
             user_gender = data.get("user_gender")
             conversation_history = data.get("conversation_history", [])
+            test_context = data.get("test_context")  # Optional test context
 
             if not message:
                 return JsonResponse({"error": "Message is required."}, status=400)
@@ -371,9 +377,10 @@ def chat_message(request):
             
             from chatbot.chat import MindEaseChat
             
-            # Initialize chatbot with user's first name
+            # Initialize chatbot with user's first name and test context
             # Note: user_gender is not needed for chatbot initialization, only for summaries
-            chatbot = MindEaseChat(user_first_name=user_first_name)
+            # Pass test_context to constructor so it persists throughout the conversation
+            chatbot = MindEaseChat(user_first_name=user_first_name, test_context=test_context)
             
             # Populate conversation history from frontend
             for msg in conversation_history:
@@ -383,7 +390,8 @@ def chat_message(request):
                     chatbot.memory.add_message(role, content)
             
             # Process message through chatbot pipeline
-            response = chatbot._process_message(message)
+            # Test context is already stored in chatbot instance, but pass it again for backward compatibility
+            response = chatbot._process_message(message, test_context=test_context)
             
             # Get updated conversation history (filter out system messages)
             updated_history = [
@@ -432,15 +440,75 @@ def chat_welcome(request):
             data = json.loads(request.body)
             user_first_name = data.get("user_first_name")
             user_id = data.get("user_id")
+            test_context = data.get("test_context")
 
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
-            # Generate welcome message
-            if user_first_name:
-                welcome_msg = f"Welcome to MindEase, {user_first_name}. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+            # Generate welcome message with test context if provided
+            if test_context:
+                # Use LLM to generate personalized welcome message with test context
+                import sys
+                import os
+                chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'chatbot')
+                if chatbot_dir not in sys.path:
+                    sys.path.insert(0, chatbot_dir)
+                
+                from chatbot.llm_client import LLMClient
+                
+                llm_client = LLMClient()
+                
+                system_prompt = f"""You are a compassionate mental health therapist. The user has shared their assessment results with you. 
+
+Test Context:
+{test_context}
+
+Write a direct, warm welcome message (NOT a description of what to write, but the actual message itself) that:
+1. Greets the user warmly using their name: {user_first_name or 'there'}
+2. Briefly acknowledges you've reviewed their assessment results
+3. Shows understanding of their current condition
+4. Invites them to share what's on their mind
+
+IMPORTANT: Write the actual welcome message directly. Do NOT include phrases like "Here is", "Here's a", "I'll write", or any meta-commentary. Just write the message as if you're speaking directly to the user.
+
+Keep it concise (2-3 sentences) and natural. Start directly with the greeting."""
+                
+                welcome_msg = llm_client.generate_response(
+                    user_message="Hello, I'm ready to chat.",
+                    system_prompt_override=system_prompt,
+                    user_first_name=user_first_name
+                )
+                
+                # Clean up any meta-commentary that might have slipped through
+                welcome_msg = welcome_msg.strip()
+                # Remove common meta-phrases
+                meta_phrases = [
+                    "Here is a warm message for the user:",
+                    "Here's a warm message for the user:",
+                    "Here is a warm message:",
+                    "Here's a warm message:",
+                    "Here is warm message for user:",
+                    "Here's warm message for user:",
+                    "Here is warm message:",
+                    "Here's warm message:",
+                    "Here is the welcome message:",
+                    "Here's the welcome message:",
+                ]
+                for phrase in meta_phrases:
+                    if welcome_msg.lower().startswith(phrase.lower()):
+                        welcome_msg = welcome_msg[len(phrase):].strip()
+                        # Remove quotes if present
+                        if welcome_msg.startswith('"') and welcome_msg.endswith('"'):
+                            welcome_msg = welcome_msg[1:-1].strip()
+                        if welcome_msg.startswith("'") and welcome_msg.endswith("'"):
+                            welcome_msg = welcome_msg[1:-1].strip()
+                        break
             else:
-                welcome_msg = "Welcome to MindEase. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+                # Standard welcome message
+                if user_first_name:
+                    welcome_msg = f"Welcome to MindEase, {user_first_name}. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+                else:
+                    welcome_msg = "Welcome to MindEase. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
 
             return JsonResponse({
                 "welcome_message": welcome_msg,
@@ -448,6 +516,8 @@ def chat_welcome(request):
             }, status=200)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method."}, status=405)
@@ -1304,6 +1374,415 @@ def tts_synthesize(request):
                     "error": f"TTS synthesis failed: {str(e)}"
                 }, status=500)
                 
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# DIAGNOSTIC TESTS
+# -------------------------
+
+@csrf_exempt
+def diagnostic_test_status(request):
+    """Get diagnostic test status for user."""
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+
+            if not user_id:
+                return JsonResponse({"error": "User ID is required."}, status=400)
+
+            try:
+                user = User.objects.get(user_id=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"error": "User not found."}, status=404)
+
+            # Check if generic screening is completed
+            generic_screening_completed = user.generic_screening_completed
+            primary_condition = user.primary_condition
+            last_test_date = user.last_test_date
+
+            # Check if a test was already taken today
+            test_taken_today = DiagnosticTestService.test_taken_today(last_test_date)
+
+            # Check if daily test is available
+            daily_test_available = False
+            available_test = None
+
+            if not generic_screening_completed:
+                # User needs to take generic screening (only if not taken today)
+                if not test_taken_today:
+                    available_test = "generic-screening"
+            else:
+                # Generic screening completed - show daily test
+                # If last_test_date is None, it means they just completed screening and can take daily test
+                # If last_test_date is today, they already took daily test today
+                if last_test_date is None or not test_taken_today:
+                    daily_test_available = True
+                    # Map primary condition to test type
+                    condition_to_test = {
+                        "depression": "phq9",
+                        "anxiety": "gad7",
+                        "stress": "pss10",
+                        "general-mood": "mood_test"
+                    }
+                    available_test = condition_to_test.get(primary_condition, "phq9")
+
+            return JsonResponse({
+                "generic_screening_completed": generic_screening_completed,
+                "primary_condition": primary_condition,
+                "daily_test_available": daily_test_available,
+                "last_test_date": last_test_date.isoformat() if last_test_date else None,
+                "available_test": available_test
+            }, status=200)
+
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+@csrf_exempt
+def diagnostic_test_submit(request):
+    """Submit diagnostic test results."""
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+            test_type = data.get("test_type")
+            answers = data.get("answers")
+
+            if not user_id or not test_type or not answers:
+                return JsonResponse({"error": "User ID, test type, and answers are required."}, status=400)
+
+            try:
+                user = User.objects.get(user_id=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"error": "User not found."}, status=404)
+
+            # Validate test type
+            valid_test_types = ["generic-screening", "phq9", "gad7", "pss10", "mood_test", 
+                              "depression", "anxiety", "stress", "general-mood"]
+            if test_type not in valid_test_types:
+                return JsonResponse({"error": "Invalid test type."}, status=400)
+            
+            # Normalize test type
+            test_type_map = {
+                "depression": "phq9",
+                "anxiety": "gad7",
+                "stress": "pss10",
+                "general-mood": "mood_test"
+            }
+            normalized_test_type = test_type_map.get(test_type, test_type)
+            
+            # For generic screening, check if already completed (can only take once)
+            if normalized_test_type == "generic-screening" and user.generic_screening_completed:
+                return JsonResponse({
+                    "error": "You have already completed the generic screening. Daily tests are now available."
+                }, status=400)
+            
+            # For daily tests, check if user already took a test today (prevent multiple tests per day)
+            if normalized_test_type != "generic-screening" and DiagnosticTestService.test_taken_today(user.last_test_date):
+                return JsonResponse({
+                    "error": "You have already completed a test today. Taking one assessment per day helps us monitor your mood patterns more effectively. Please come back tomorrow for your next assessment."
+                }, status=400)
+
+            # Convert answers to proper format
+            answers_dict = {int(k): int(v) for k, v in answers.items()}
+
+            # Calculate score
+            score = DiagnosticTestService.calculate_score(answers_dict)
+
+            # Calculate severity level
+            severity_level = DiagnosticTestService.calculate_severity_level(normalized_test_type, score)
+
+            # Handle generic screening specially
+            domain_scores = None
+            primary_condition = None
+
+            if normalized_test_type == "generic-screening":
+                # Calculate domain scores from answers
+                # Questions 0-1: depression, 2-3: anxiety, 4-5: stress, 6-7: mood
+                domain_scores = {
+                    "depression": answers_dict.get(0, 0) + answers_dict.get(1, 0),
+                    "anxiety": answers_dict.get(2, 0) + answers_dict.get(3, 0),
+                    "stress": answers_dict.get(4, 0) + answers_dict.get(5, 0),
+                    "mood": answers_dict.get(6, 0) + answers_dict.get(7, 0)
+                }
+                primary_condition = DiagnosticTestService.identify_primary_condition(domain_scores)
+                
+                # Log for debugging
+                print(f"\n=== Generic Screening Results ===")
+                print(f"Domain Scores: Depression={domain_scores['depression']}, Anxiety={domain_scores['anxiety']}, Stress={domain_scores['stress']}, Mood={domain_scores['mood']}")
+                print(f"Primary Condition: {primary_condition} (highest score)")
+                print(f"Total Score: {score}")
+                print(f"Severity Level: {severity_level}")
+                print("=" * 40)
+
+            # Save test result
+            test_result = Testresult.objects.create(
+                user=user,
+                test_type=normalized_test_type,
+                score=score,
+                severity_level=severity_level,
+                user_responses=json.dumps(answers_dict),
+                domain_scores=domain_scores,
+                taken_at=timezone.now()
+            )
+
+            # Update user if generic screening
+            if normalized_test_type == "generic-screening" and primary_condition:
+                user.generic_screening_completed = True
+                user.primary_condition = primary_condition
+                # For generic screening, don't set last_test_date yet
+                # This allows user to take daily test immediately after screening
+            else:
+                # For daily tests, update last_test_date to prevent multiple tests per day
+                user.last_test_date = date.today()
+            
+            user.save()
+
+            response_data = {
+                "result_id": test_result.result_id,
+                "score": score,
+                "severity_level": severity_level,
+            }
+            
+            # Add domain scores and primary condition for generic screening
+            if normalized_test_type == "generic-screening" and domain_scores:
+                response_data["domain_scores"] = domain_scores
+                response_data["primary_condition"] = primary_condition
+                # Also add explanation
+                response_data["explanation"] = (
+                    f"Domain scores: Depression={domain_scores.get('depression', 0)}, "
+                    f"Anxiety={domain_scores.get('anxiety', 0)}, "
+                    f"Stress={domain_scores.get('stress', 0)}, "
+                    f"Mood={domain_scores.get('mood', 0)}. "
+                    f"Primary condition identified: {primary_condition} (highest score)."
+                )
+
+            if primary_condition:
+                response_data["primary_condition"] = primary_condition
+            if domain_scores:
+                response_data["domain_scores"] = domain_scores
+
+            return JsonResponse(response_data, status=200)
+
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+@csrf_exempt
+def diagnostic_test_history(request):
+    """Get diagnostic test history for user."""
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+
+            if not user_id:
+                return JsonResponse({"error": "User ID is required."}, status=400)
+
+            try:
+                user = User.objects.get(user_id=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"error": "User not found."}, status=404)
+
+            # Get all test results for user
+            results = Testresult.objects.filter(user=user).order_by("-taken_at")
+
+            results_list = []
+            for result in results:
+                results_list.append({
+                    "result_id": result.result_id,
+                    "test_type": result.test_type,
+                    "test_name": DiagnosticTestService.get_test_name(result.test_type),
+                    "score": result.score,
+                    "severity_level": result.severity_level,
+                    "taken_at": result.taken_at.isoformat() if result.taken_at else None
+                })
+
+            return JsonResponse({
+                "results": results_list
+            }, status=200)
+
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+@csrf_exempt
+def diagnostic_test_mood_trend(request):
+    """Get mood trend data for user (day-wise scores for their primary condition)."""
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+
+            if not user_id:
+                return JsonResponse({"error": "User ID is required."}, status=400)
+
+            try:
+                user = User.objects.get(user_id=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"error": "User not found."}, status=404)
+
+            # Get user's primary condition
+            primary_condition = user.primary_condition
+            if not primary_condition:
+                return JsonResponse({
+                    "trend_data": [],
+                    "message": "No primary condition identified yet. Complete your screening first."
+                }, status=200)
+
+            # Map primary condition to test type
+            condition_to_test = {
+                "depression": "phq9",
+                "anxiety": "gad7",
+                "stress": "pss10",
+                "general-mood": "mood_test"
+            }
+            test_type = condition_to_test.get(primary_condition, "phq9")
+
+            # Get all daily test results (exclude generic screening) for this test type
+            results = Testresult.objects.filter(
+                user=user,
+                test_type=test_type
+            ).order_by("taken_at")
+
+            # Build trend data (last 30 days or all available)
+            trend_data = []
+            for result in results:
+                # Calculate if score improved or worsened (compared to previous)
+                trend = "stable"
+                if len(trend_data) > 0:
+                    prev_score = trend_data[-1]["score"]
+                    if result.score < prev_score:
+                        trend = "improved"  # Lower score is better for most tests
+                    elif result.score > prev_score:
+                        trend = "worsened"
+                    # For mood_test, higher score is better, so reverse logic
+                    if test_type == "mood_test":
+                        if result.score > prev_score:
+                            trend = "improved"
+                        elif result.score < prev_score:
+                            trend = "worsened"
+
+                trend_data.append({
+                    "date": result.taken_at.isoformat(),
+                    "score": result.score,
+                    "severity": result.severity_level,
+                    "trend": trend
+                })
+
+            return JsonResponse({
+                "trend_data": trend_data,
+                "primary_condition": primary_condition,
+                "test_type": test_type
+            }, status=200)
+
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+@csrf_exempt
+def diagnostic_test_streak(request):
+    """Calculate current streak based on consecutive days of taking assessments."""
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+
+            if not user_id:
+                return JsonResponse({"error": "User ID is required."}, status=400)
+
+            try:
+                user = User.objects.get(user_id=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"error": "User not found."}, status=404)
+
+            # Get all test results (daily tests only, exclude generic screening)
+            results = Testresult.objects.filter(
+                user=user
+            ).exclude(
+                test_type="generic-screening"
+            ).order_by("-taken_at")
+
+            if not results.exists():
+                return JsonResponse({
+                    "current_streak": 0,
+                    "longest_streak": 0,
+                    "last_test_date": None
+                }, status=200)
+
+            # Calculate streak
+            from datetime import timedelta
+            current_streak = 0
+            longest_streak = 0
+            temp_streak = 0
+
+            # Check if last test was today or yesterday (for current streak)
+            last_result = results.first()
+            last_test_date = last_result.taken_at.date()
+
+            # Start from today and work backwards
+            test_dates = {r.taken_at.date() for r in results}
+
+            # Calculate current streak (consecutive days ending today or yesterday)
+            check_date = date.today()
+            # If last test was today, start from today
+            # If last test was yesterday, start from yesterday
+            if last_test_date < date.today() - timedelta(days=1):
+                # Streak is broken if last test was more than 1 day ago
+                current_streak = 0
+            else:
+                # Count backwards from last test date
+                check_date = last_test_date
+                while check_date in test_dates:
+                    current_streak += 1
+                    check_date -= timedelta(days=1)
+
+            # Calculate longest streak
+            sorted_dates = sorted(test_dates, reverse=True)
+            if sorted_dates:
+                temp_streak = 1
+                longest_streak = 1
+                for i in range(len(sorted_dates) - 1):
+                    if sorted_dates[i] - sorted_dates[i + 1] == timedelta(days=1):
+                        temp_streak += 1
+                        longest_streak = max(longest_streak, temp_streak)
+                    else:
+                        temp_streak = 1
+
+            return JsonResponse({
+                "current_streak": current_streak,
+                "longest_streak": longest_streak,
+                "last_test_date": last_test_date.isoformat() if last_test_date else None
+            }, status=200)
+
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
         except Exception as e:

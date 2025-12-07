@@ -23,14 +23,16 @@ from chatbot.config import DB_CONFIG
 class MindEaseChat:
     """Clean chat interface for MindEase therapy chatbot"""
     
-    def __init__(self, user_first_name: str = None):
+    def __init__(self, user_first_name: str = None, test_context: str = None):
         """
         Initialize chatbot with all components (silent initialization)
         
         Args:
             user_first_name: User's first name for personalized responses
+            test_context: Optional test context to be used throughout the conversation
         """
         self.user_first_name = user_first_name
+        self.test_context = test_context  # Store test context for the entire conversation
         self._initialize_components()
         self.memory = ConversationMemory(max_history_length=20)
         
@@ -71,9 +73,12 @@ class MindEaseChat:
         
         self._display_response(welcome_msg)
     
-    def _process_message(self, user_input: str) -> str:
+    def _process_message(self, user_input: str, test_context: str = None) -> str:
         """Process user message through pipeline (silent)"""
         try:
+            # Use instance test_context if provided, otherwise use parameter (for backward compatibility)
+            effective_test_context = self.test_context if self.test_context else test_context
+            
             # Step 1: Emotion Detection
             emotions = self.emotion_detector.detect_emotions(
                 user_input, 
@@ -93,12 +98,17 @@ class MindEaseChat:
             # Step 3: Generate LLM Response
             conversation_history = self.memory.get_history_with_context()
             
+            # Add test context to context string if provided
+            if effective_test_context:
+                context_str = f"{effective_test_context}\n\n{context_str}" if context_str else effective_test_context
+            
             response = self.llm_client.generate_response(
                 user_message=user_input,
                 emotions=emotions_str,
                 context=context_str,
                 conversation_history=conversation_history,
-                user_first_name=self.user_first_name
+                user_first_name=self.user_first_name,
+                test_context=effective_test_context
             )
             
             # Update memory
