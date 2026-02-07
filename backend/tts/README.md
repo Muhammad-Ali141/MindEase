@@ -64,6 +64,7 @@ Audio Output (WAV file or playback)
 
 ### Prerequisites
 
+- **transformers==4.35.2** — Required for Coqui TTS XTTS. Other versions can cause `BeamSearchScorer` or `GPT2InferenceModel.generate` errors. Install with: `pip install transformers==4.35.2`
 - **Python 3.9, 3.10, or 3.11** (Python 3.12+ is NOT supported by Coqui TTS)
 - Virtual environment (recommended)
 - CUDA-capable GPU (optional but recommended for best performance)

@@ -1,0 +1,3 @@
+# Qwen3-TTS experiment - install in a separate venv (do not use MindEase backend venv)
+qwen-tts>=0.1.0
+soundfile>=0.12.0

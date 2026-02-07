@@ -1,12 +1,13 @@
 import json
 import random
+import threading
 import uuid
 from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
@@ -53,6 +54,28 @@ def _get_tts_service():
                 )
     
     return _tts_service_cache
+
+
+# Qwen3-TTS adapter cache (for pipeline experiment when tts_backend=qwen3)
+_qwen3_tts_cache = None
+_qwen3_tts_lock = None
+
+
+def _get_qwen3_tts_service():
+    """Get or create Qwen3-TTS adapter (cached). Used when tts_backend=qwen3."""
+    global _qwen3_tts_cache, _qwen3_tts_lock
+    if _qwen3_tts_cache is None:
+        if _qwen3_tts_lock is None:
+            _qwen3_tts_lock = threading.Lock()
+        with _qwen3_tts_lock:
+            if _qwen3_tts_cache is None:
+                import sys
+                tts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tts')
+                if tts_dir not in sys.path:
+                    sys.path.insert(0, tts_dir)
+                from tts.qwen3_tts_adapter import Qwen3TTSAdapter
+                _qwen3_tts_cache = Qwen3TTSAdapter(model_size="0.6B")
+    return _qwen3_tts_cache
 
 
 def _resolve_session_for_user(user_id, identifier):
@@ -428,6 +451,59 @@ def chat_message(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# CHAT MESSAGE (STREAMING)
+# -------------------------
+@csrf_exempt
+def chat_message_stream(request):
+    """Stream LLM response as SSE; client can TTS per sentence and play while stream continues."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method."}, status=405)
+    try:
+        data = json.loads(request.body)
+        message = data.get("message")
+        user_id = data.get("user_id")
+        user_first_name = data.get("user_first_name")
+        user_gender = data.get("user_gender")
+        conversation_history = data.get("conversation_history", [])
+        test_context = data.get("test_context")
+        if not message:
+            return JsonResponse({"error": "Message is required."}, status=400)
+        if not user_id:
+            return JsonResponse({"error": "User ID is required."}, status=400)
+        import sys
+        chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'chatbot')
+        if chatbot_dir not in sys.path:
+            sys.path.insert(0, chatbot_dir)
+        from chatbot.chat import MindEaseChat
+        chatbot = MindEaseChat(user_first_name=user_first_name, test_context=test_context)
+        for msg in conversation_history:
+            role, content = msg.get("role"), msg.get("content")
+            if role and content:
+                chatbot.memory.add_message(role, content)
+        full_response = []
+
+        def event_stream():
+            for chunk in chatbot._process_message_stream(message, test_context=test_context):
+                full_response.append(chunk)
+                yield f"data: {json.dumps({'delta': chunk})}\n\n"
+            full_text = "".join(full_response)
+            chatbot.memory.add_exchange(message, full_text)
+            emotions = chatbot.emotion_detector.detect_emotions(message, top_k=2, threshold=0.3)
+            emotions_list = [{"emotion": e, "score": float(s)} for e, s in (emotions or [])]
+            yield f"data: {json.dumps({'done': True, 'full_response': full_text, 'emotions': emotions_list})}\n\n"
+
+        return StreamingHttpResponse(
+            event_stream(),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 # -------------------------
@@ -1290,9 +1366,92 @@ def stt_transcribe(request):
                 }, status=500)
                 
         except Exception as e:
-                import traceback
-                traceback.print_exc()
-                return JsonResponse({"error": str(e)}, status=500)
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# Cached tiny Whisper model for fast live partial STT (loaded once, reused)
+_partial_stt_service = None
+_partial_stt_lock = threading.Lock()
+
+def _get_partial_stt_service():
+    """Get or create fast tiny STT service for live partial transcription."""
+    global _partial_stt_service
+    with _partial_stt_lock:
+        if _partial_stt_service is None:
+            import sys
+            stt_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'stt')
+            if stt_dir not in sys.path:
+                sys.path.insert(0, stt_dir)
+            from stt.stt_service import SpeechToTextService
+            # Tiny model: ~10x faster than large-v3 so partial results return while user still speaks
+            _partial_stt_service = SpeechToTextService(
+                model_id="Systran/faster-whisper-tiny",
+                device=None,
+                compute_type=None,
+                beam_size=1,
+                temperature=0.0,
+                vad_filter=True,
+            )
+        return _partial_stt_service
+
+
+# Real-time STT: transcribe partial audio chunks for live display (uses fast tiny model)
+@csrf_exempt
+def stt_transcribe_partial(request):
+    """
+    Real-time speech-to-text endpoint. Uses tiny Whisper model so responses
+    return in 1–2 seconds and text appears while the user is still speaking.
+    """
+    if request.method == "POST":
+        try:
+            if 'audio' not in request.FILES:
+                return JsonResponse({"error": "Audio file is required."}, status=400)
+            
+            audio_file = request.FILES['audio']
+            language = request.POST.get('language', 'en')
+            
+            max_size = 20 * 1024 * 1024  # 20MB for partial chunks
+            if audio_file.size > max_size:
+                return JsonResponse({"error": "Audio file too large."}, status=400)
+            
+            if audio_file.size < 1500:
+                return JsonResponse({"transcript": "", "is_partial": True}, status=200)
+            
+            import tempfile
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as temp_file:
+                for chunk in audio_file.chunks():
+                    temp_file.write(chunk)
+                temp_file_path = temp_file.name
+            
+            try:
+                stt_service = _get_partial_stt_service()
+                transcript = stt_service.transcribe_file(
+                    temp_file_path,
+                    language=language if language != 'auto' else None,
+                )
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+                return JsonResponse({
+                    "transcript": transcript.strip() if transcript else "",
+                    "is_partial": True,
+                    "language": language
+                }, status=200)
+            except Exception as e:
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+                return JsonResponse({"transcript": "", "is_partial": True, "error": str(e)}, status=200)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
@@ -1303,9 +1462,13 @@ def stt_transcribe(request):
 def tts_synthesize(request):
     if request.method == "POST":
         try:
+            import os
             data = json.loads(request.body)
             text = data.get("text")
             language = data.get("language", "en")
+            # Env TTS_BACKEND=qwen3 forces Qwen3 only (XTTS disabled); otherwise use request or default xtts
+            tts_backend_env = (os.environ.get("TTS_BACKEND") or "").strip().lower()
+            tts_backend = tts_backend_env if tts_backend_env in ("xtts", "qwen3") else (data.get("tts_backend") or "xtts").strip().lower()
             
             if not text:
                 return JsonResponse({"error": "Text is required."}, status=400)
@@ -1319,11 +1482,18 @@ def tts_synthesize(request):
             if language not in supported_languages:
                 language = "en"  # Default to English if invalid
             
-            import os
             import tempfile
             
-            # Use cached TTS service for better performance
-            tts_service = _get_tts_service()
+            # Use XTTS (default) or Qwen3-TTS; env TTS_BACKEND=qwen3 disables XTTS and uses only Qwen3
+            if tts_backend == "qwen3":
+                try:
+                    tts_service = _get_qwen3_tts_service()
+                except RuntimeError as e:
+                    return JsonResponse({
+                        "error": str(e) + " Then retry, or use default TTS (omit tts_backend)."
+                    }, status=503)
+            else:
+                tts_service = _get_tts_service()
             
             try:
                 # Create temporary file for audio output

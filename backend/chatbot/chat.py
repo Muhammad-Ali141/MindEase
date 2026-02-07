@@ -118,7 +118,33 @@ class MindEaseChat:
             
         except Exception as e:
             return f"I apologize, but I'm having trouble processing that right now. Could you try rephrasing your message?"
-    
+
+    def _process_message_stream(self, user_input: str, test_context: str = None):
+        """
+        Process user message through pipeline and stream LLM response chunks.
+        Does not update memory; caller must call memory.add_exchange(user_input, full_response) when done.
+        """
+        try:
+            effective_test_context = self.test_context if self.test_context else test_context
+            emotions = self.emotion_detector.detect_emotions(user_input, top_k=2, threshold=0.3)
+            emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
+            contexts = self.rag_system.retrieve_context(query=user_input, top_k=3, similarity_threshold=0.5)
+            context_str = self.rag_system.format_context_for_llm(contexts) if contexts else ""
+            conversation_history = self.memory.get_history_with_context()
+            if effective_test_context:
+                context_str = f"{effective_test_context}\n\n{context_str}" if context_str else effective_test_context
+            for chunk in self.llm_client.generate_response_stream(
+                user_message=user_input,
+                emotions=emotions_str,
+                context=context_str,
+                conversation_history=conversation_history,
+                user_first_name=self.user_first_name,
+                test_context=effective_test_context,
+            ):
+                yield chunk
+        except Exception as e:
+            yield f"I apologize, but I'm having trouble processing that right now. Could you try rephrasing your message?"
+
     def _get_user_input(self) -> str:
         """Get user input with formatted prompt"""
         user_input = input(f"{'👤 You':<20} │ ").strip()

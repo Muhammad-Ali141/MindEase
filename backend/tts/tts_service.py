@@ -70,6 +70,18 @@ class TTSService:
         start_time = time.time()
         
         try:
+            # Patch transformers so Coqui TTS can import BeamSearchScorer (moved in newer transformers)
+            import transformers as _tf
+            if not getattr(_tf, "BeamSearchScorer", None):
+                try:
+                    from transformers.generation.beam_search import BeamSearchScorer
+                    _tf.BeamSearchScorer = BeamSearchScorer
+                except ImportError:
+                    try:
+                        from transformers.generation import BeamSearchScorer
+                        _tf.BeamSearchScorer = BeamSearchScorer
+                    except ImportError:
+                        pass
             # Patch torch.load for PyTorch 2.6+ compatibility
             # PyTorch 2.6+ defaults to weights_only=True, but TTS models need weights_only=False
             import torch

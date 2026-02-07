@@ -6,7 +6,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
-import { apiChatWelcome, apiChatMessage, apiSTTTranscribe, apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar, apiTTSSynthesize, type ChatMessage, type Session } from "@/lib/api"
+import { apiChatWelcome, apiChatMessageStream, apiSTTTranscribe, apiSTTTranscribePartial, apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar, apiTTSSynthesize, type ChatMessage, type Session } from "@/lib/api"
 import { ArrowLeft, Mic2, Square, Loader2, Star, Volume2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
@@ -28,9 +28,11 @@ export default function VoiceChatPage() {
   const [baselineUserMessageCount, setBaselineUserMessageCount] = useState(0)
   const [isSynthesizing, setIsSynthesizing] = useState(false)
   const [isPlayingAudio, setIsPlayingAudio] = useState(false)
+  const [partialTranscript, setPartialTranscript] = useState("")
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const welcomeMessageLoadedRef = useRef(false)
+  const latestPartialTranscriptRef = useRef("")
   
   // Microphone hook
   const {
@@ -354,14 +356,16 @@ export default function VoiceChatPage() {
   const handleMicClick = async () => {
     try {
       if (isRecording) {
-        // Stop recording and process
+        // Stop recording: use live transcript immediately, no extra "Transcribing..." step
+        const liveTranscript = latestPartialTranscriptRef.current.trim()
+        latestPartialTranscriptRef.current = ""
+        setPartialTranscript("")
         const audioBlob = await stopRecording()
         if (audioBlob) {
-          // Process the recording: Transcribe → Send to Chat API
-          await processRecording(audioBlob)
+          await processRecording(audioBlob, liveTranscript)
         }
       } else {
-        // Start recording
+        // Start recording with real-time STT
         if (hasPermission === false) {
           // Permission was denied, request again
           const granted = await requestPermission()
@@ -375,7 +379,20 @@ export default function VoiceChatPage() {
           }
         }
         
-        await startRecording()
+        setPartialTranscript("") // Reset partial transcript
+        // Start recording with chunk callback for real-time STT
+        await startRecording(async (blob: Blob) => {
+          try {
+            const result = await apiSTTTranscribePartial(blob, "en")
+            const text = (result.transcript && result.transcript.trim()) ? result.transcript.trim() : null
+            if (text) {
+              latestPartialTranscriptRef.current = text
+              setPartialTranscript(text)
+            }
+          } catch (error) {
+            // Silently ignore real-time STT errors
+          }
+        })
       }
     } catch (error: any) {
       toast({
@@ -386,156 +403,165 @@ export default function VoiceChatPage() {
     }
   }
 
-  // Process recording: Transcribe audio and send to chat API
-  const processRecording = async (audioBlob: Blob) => {
+  // Process recording: use live transcript if we have it, otherwise run full STT
+  const processRecording = async (audioBlob: Blob, liveTranscript?: string) => {
     if (!user || !token) return
 
-    try {
-      setIsTranscribing(true)
+    let transcript = liveTranscript?.trim() ?? ""
 
-      // Step 1: Transcribe audio
-      const sttResponse = await apiSTTTranscribe(audioBlob, "en")
-      const transcript = sttResponse.transcript.trim()
-
+    if (!transcript) {
+      try {
+        setIsTranscribing(true)
+        const sttResponse = await apiSTTTranscribe(audioBlob, "en")
+        transcript = sttResponse.transcript.trim()
+      } finally {
+        setIsTranscribing(false)
+      }
       if (!transcript) {
         toast({
           title: "No speech detected",
           description: "Please try speaking again.",
           variant: "destructive",
         })
-        setIsTranscribing(false)
         return
       }
+    }
 
-      // Step 2: Add user message (transcript) to chat
+    try {
+      // Add user message immediately (no "Transcribing..." when we had live transcript)
       const userMessage: ChatMessage = {
         role: "user",
         content: transcript,
-        content_type: "audio", // Mark as voice message
+        content_type: "audio",
       }
       const historyForRequest = [...messages, userMessage]
       setMessages(historyForRequest)
-      setIsTranscribing(false)
       setLoading(true)
 
-      // Step 3: Send transcript to chat API
-      const chatResponse = await apiChatMessage(
-        transcript,
-        user.id,
-        user.first_name || null,
-        user.gender || null,
-        historyForRequest
-      )
-
-      const primaryEmotion = chatResponse.emotions?.[0]
-
-      // Step 4: Prepare assistant message (but don't display yet)
-      const assistantMessage: ChatMessage = {
-        role: "assistant",
-        content: chatResponse.response,
-        content_type: "text",
+      // Step 3: Stream chat response and speak sentence-by-sentence as soon as ready
+      let userLanguage = "en"
+      if (user?.lang_pref) {
+        const langPref = user.lang_pref.toLowerCase()
+        if (langPref === "urdu" || langPref === "ur") userLanguage = "ur"
+        else if (langPref === "english" || langPref === "en") userLanguage = "en"
+      }
+      setIsSynthesizing(true)
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause()
+        currentAudioRef.current = null
       }
 
-      // Step 5: Synthesize assistant response to audio FIRST (before displaying text)
-      try {
-        setIsSynthesizing(true)
-        
-        // Stop any currently playing audio
-        if (currentAudioRef.current) {
-          currentAudioRef.current.pause()
-          currentAudioRef.current = null
-        }
+      // Voice chat sync: text appears ONLY when audio is ready (sentence-by-sentence)
+      const sentences: string[] = []
+      const ttsPromises: Promise<Blob | null>[] = []
+      let displayedText = ""
+      let nextDisplayIdx = 0
+      let isPlaying = false
 
-        // Get user's language preference (map to TTS language code)
-        let userLanguage = "en" // Default to English
-        if (user?.lang_pref) {
-          const langPref = user.lang_pref.toLowerCase()
-          if (langPref === "urdu" || langPref === "ur") {
-            userLanguage = "ur"
-          } else if (langPref === "english" || langPref === "en") {
-            userLanguage = "en"
-          }
-        }
-        
-        // Synthesize text to speech (this takes time, so we do it before showing text)
-        const audioBlob = await apiTTSSynthesize(chatResponse.response, userLanguage)
-        
-        // NOW display the message (text and audio ready at the same time)
-        setMessages((prev) => {
-          const updated = [...prev]
-          // Update user message with emotion if available
-          if (primaryEmotion) {
-            for (let i = updated.length - 1; i >= 0; i--) {
-              const msg = updated[i]
-              if (msg.role === "user") {
-                updated[i] = {
-                  ...msg,
-                  emotion_label: primaryEmotion.emotion,
-                  emotion_score: primaryEmotion.score,
-                }
-                break
+      const tryDisplayAndPlayNext = () => {
+        if (nextDisplayIdx >= sentences.length || nextDisplayIdx >= ttsPromises.length) return
+        const idx = nextDisplayIdx
+        // Wait for TTS promise to resolve
+        ttsPromises[idx].then((blob) => {
+          if (blob) {
+            // Append this sentence once (increment now so we never show this index again)
+            nextDisplayIdx = idx + 1
+            displayedText += (displayedText ? " " : "") + sentences[idx]
+            setMessages((prev) => {
+              const next = [...prev]
+              const last = next[next.length - 1]
+              if (last?.role === "assistant") next[next.length - 1] = { ...last, content: displayedText }
+              return next
+            })
+            // Play audio (only one at a time)
+            if (!isPlaying) {
+              isPlaying = true
+              setIsPlayingAudio(true)
+              const url = URL.createObjectURL(blob)
+              const audio = new Audio(url)
+              audio.onended = () => {
+                URL.revokeObjectURL(url)
+                isPlaying = false
+                currentAudioRef.current = null
+                setIsPlayingAudio(false)
+                tryDisplayAndPlayNext()
               }
-            }
-          }
-          updated.push(assistantMessage)
-          return updated
-        })
-        
-        // Create audio element and play
-        const audioUrl = URL.createObjectURL(audioBlob)
-        const audio = new Audio(audioUrl)
-        
-        // Set up audio event handlers
-        audio.onplay = () => {
-          setIsPlayingAudio(true)
-        }
-        
-        audio.onended = () => {
-          setIsPlayingAudio(false)
-          URL.revokeObjectURL(audioUrl)
-          currentAudioRef.current = null
-        }
-        
-        audio.onerror = (error) => {
-          console.error("Audio playback error:", error)
-          setIsPlayingAudio(false)
-          URL.revokeObjectURL(audioUrl)
-          currentAudioRef.current = null
-          // Don't show error toast - audio is optional, text is already shown
-        }
-        
-        audio.onpause = () => {
-          setIsPlayingAudio(false)
-        }
-        
-        // Store audio reference
-        currentAudioRef.current = audio
-        
-        // Play audio automatically
-        await audio.play()
-        
-      } catch (error: any) {
-        console.error("TTS synthesis error:", error)
-        // If TTS fails, still show the message
-        setMessages((prev) => {
-          const updated = [...prev]
-          // Update user message with emotion if available
-          if (primaryEmotion) {
-            for (let i = updated.length - 1; i >= 0; i--) {
-              const msg = updated[i]
-              if (msg.role === "user") {
-                updated[i] = {
-                  ...msg,
-                  emotion_label: primaryEmotion.emotion,
-                  emotion_score: primaryEmotion.score,
-                }
-                break
+              audio.onerror = () => {
+                URL.revokeObjectURL(url)
+                isPlaying = false
+                currentAudioRef.current = null
+                setIsPlayingAudio(false)
+                tryDisplayAndPlayNext()
               }
+              currentAudioRef.current = audio
+              audio.play()
             }
+          } else {
+            nextDisplayIdx = idx + 1
+            tryDisplayAndPlayNext()
           }
-          updated.push(assistantMessage)
-          return updated
         })
+      }
+
+      const seenSentences = new Set<string>()
+      const enqueueSentence = (sentence: string) => {
+        const key = sentence.trim().toLowerCase()
+        if (!key || seenSentences.has(key)) return
+        seenSentences.add(key)
+        const idx = sentences.length
+        sentences.push(sentence)
+        const p = apiTTSSynthesize(sentence, userLanguage).catch(() => null as Blob | null)
+        ttsPromises.push(p)
+        p.then(() => tryDisplayAndPlayNext())
+      }
+
+      let streamedText = ""
+      let lastTtsEnd = 0
+      const sentenceEnd = /[.!?]\s*|\n/
+      setMessages((prev) => [...prev, { role: "assistant", content: "", content_type: "text" }])
+      try {
+        await apiChatMessageStream(
+          transcript,
+          user.id,
+          user.first_name || null,
+          user.gender || null,
+          historyForRequest,
+          {
+          onDelta: (delta) => {
+            streamedText += delta
+            // Don't show text yet; text appears only when audio is ready
+            let rest = streamedText.slice(lastTtsEnd)
+            let match = rest.match(sentenceEnd)
+            while (match && match.index !== undefined) {
+              const sentence = rest.slice(0, match.index + match[0].length).trim()
+              lastTtsEnd += match.index + match[0].length
+              if (sentence) enqueueSentence(sentence)
+              rest = streamedText.slice(lastTtsEnd)
+              match = rest.match(sentenceEnd)
+            }
+          },
+          onDone: (payload) => {
+            const full = payload.full_response.trim()
+            const primaryEmotion = payload.emotions?.[0]
+            // Apply emotion to user message
+            if (primaryEmotion) {
+              setMessages((prev) => {
+                const updated = [...prev]
+                for (let i = updated.length - 1; i >= 0; i--) {
+                  if (updated[i].role === "user") {
+                    updated[i] = { ...updated[i], emotion_label: primaryEmotion.emotion, emotion_score: primaryEmotion.score }
+                    break
+                  }
+                }
+                return updated
+              })
+            }
+            const remainder = full.slice(lastTtsEnd).trim()
+            if (remainder) enqueueSentence(remainder)
+            setIsSynthesizing(false)
+          },
+        }
+        )
       } finally {
         setIsSynthesizing(false)
       }
@@ -740,6 +766,23 @@ export default function VoiceChatPage() {
                   </div>
                 ))}
 
+                {/* Live transcript while recording - shows words as you speak */}
+                {isRecording && (
+                  <div className="flex items-start gap-3 justify-end">
+                    <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-600 dark:to-emerald-700 rounded-2xl rounded-tr-sm px-6 py-4 shadow-md max-w-[80%] border-2 border-emerald-400/50 dark:border-emerald-500/50 animate-pulse">
+                      <p className="text-white whitespace-pre-wrap flex-1">
+                        {partialTranscript || (
+                          <span className="opacity-70">Listening... speak now.</span>
+                        )}
+                      </p>
+                      <p className="text-white/70 text-xs mt-1">Live transcription • {recordingTime}s</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center flex-shrink-0 animate-pulse">
+                      <Mic2 size={20} className="text-white" />
+                    </div>
+                  </div>
+                )}
+
                 {/* Transcribing indicator */}
                 {isTranscribing && (
                   <div className="flex items-start gap-3">
@@ -826,7 +869,7 @@ export default function VoiceChatPage() {
                   ) : null}
                   {isRecording ? (
                     <div className="text-sm text-red-600 dark:text-red-400 font-semibold">
-                      Recording... {recordingTime}s
+                      Recording... {recordingTime}s — see live transcript above
                     </div>
                   ) : isTranscribing ? (
                     <div className="text-sm text-emerald-600 dark:text-emerald-400 font-semibold">

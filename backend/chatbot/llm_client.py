@@ -3,7 +3,7 @@ LLM Client for Ollama Integration
 Uses Llama 3.1 8B Instruct via Ollama API
 """
 import ollama
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Generator
 
 class LLMClient:
     """Client for interacting with Ollama LLM"""
@@ -341,6 +341,76 @@ Remember: Understanding the user's situation is MORE IMPORTANT than immediately 
                 return f"Error: Cannot connect to Ollama service.\nPlease ensure Ollama is running: ollama serve"
             else:
                 return f"Error generating response: {error_msg}\n\nPlease ensure Ollama is running: ollama serve"
+
+    def generate_response_stream(
+        self,
+        user_message: str,
+        emotions: str = "",
+        context: str = "",
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        system_prompt_override: Optional[str] = None,
+        user_first_name: Optional[str] = None,
+        test_context: Optional[str] = None,
+    ) -> Generator[str, None, None]:
+        """
+        Generate therapist response using LLM, streaming text chunks.
+        Same args as generate_response; yields content deltas.
+        """
+        # Crisis response: return full text in one chunk (no stream)
+        suicide_keywords = ['suicide', 'kill myself', 'end my life', 'want to die', 'self harm', 'hurt myself', 'cut myself', 'take my life', 'ending it', 'not want to live']
+        if any(k in user_message.lower() for k in suicide_keywords):
+            crisis = """I'm deeply concerned about what you've shared. Your life has value and there are people who want to help you. Please reach out to these crisis helplines in Pakistan right away:
+
+- Suicide Prevention Helpline: 0800-111-111 (toll-free, 24/7)
+- Mental Health Crisis Line: 0300-111-2222 (24/7)
+- Emergency Services: 112 (24/7)
+
+Please don't hesitate to call. You don't have to go through this alone. If you're in immediate danger, please go to your nearest emergency room or call emergency services at 112.
+
+I'm here to support you through this difficult time. Would you like to talk about what's been going on?"""
+            yield crisis
+            return
+        # Build messages (same as generate_response)
+        if system_prompt_override:
+            system_prompt = system_prompt_override
+        else:
+            user_name_context = ""
+            if user_first_name:
+                user_name_context = f"\n\nIMPORTANT: The person you're talking to is named {user_first_name}. Use their name naturally in your responses when appropriate."
+            test_context_section = ""
+            if test_context:
+                test_context_section = f"\n\nIMPORTANT USER CONTEXT - ASSESSMENT RESULTS:\n{test_context}\n\nUse it to understand their situation without asking them to repeat it."
+            system_prompt = """You are a compassionate and empathetic mental health counselor and therapist.
+Your role is to provide supportive, understanding, and helpful responses.""" + user_name_context + test_context_section + """
+
+CRITICAL BOUNDARIES: Only respond to mental health/therapy topics. Refuse off-topic questions politely.
+Keep responses focused. Ask ONE question at a time. Validate feelings first. One coping strategy at a time."""
+        messages = [{"role": "system", "content": system_prompt}]
+        if conversation_history:
+            messages.extend(conversation_history)
+        current_message = user_message
+        if emotions:
+            current_message = f"{emotions}\n\nUser: {user_message}"
+        if context:
+            current_message = f"{context}\n\n{current_message}"
+        messages.append({"role": "user", "content": current_message})
+        if not self.model_name:
+            yield "Error: No LLM model available. Please ensure Ollama is running and a model is downloaded."
+            return
+        try:
+            stream = ollama.chat(
+                model=self.model_name,
+                messages=messages,
+                stream=True,
+                options={"temperature": 0.7, "top_p": 0.9, "top_k": 40},
+            )
+            for chunk in stream:
+                if isinstance(chunk, dict) and 'message' in chunk and 'content' in chunk['message']:
+                    yield chunk['message']['content']
+                elif hasattr(chunk, 'message') and hasattr(chunk.message, 'content'):
+                    yield chunk.message.content or ""
+        except Exception as e:
+            yield f"Error generating response: {str(e)}"
 
 
 if __name__ == "__main__":

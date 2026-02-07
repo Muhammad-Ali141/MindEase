@@ -5,6 +5,29 @@ Implements hierarchical retrieval: find input chunks -> get corresponding output
 Only uses 'input' and 'output' columns from CSV, ignores 'instruction' column.
 """
 import os
+# Compatibility: sentence_transformers 2.2.2 expects cached_download (removed in newer huggingface_hub)
+try:
+    from huggingface_hub import cached_download
+except ImportError:
+    import re
+    import huggingface_hub
+    from huggingface_hub import hf_hub_download
+
+    def _cached_download(*args, url=None, filename=None, force_filename=None, repo_id=None, **kwargs):
+        url = url or (args[0] if args and isinstance(args[0], str) and args[0].startswith("http") else None)
+        fn = filename or (args[1] if len(args) > 1 else None) or force_filename
+        if repo_id and fn:
+            return hf_hub_download(repo_id=repo_id, filename=fn, **kwargs)
+        if url:
+            m = re.match(r"https?://[^/]+/([^/]+/[^/]+)/resolve/[^/]+/(.+)", url.strip())
+            if m:
+                return hf_hub_download(repo_id=m.group(1), filename=fn or m.group(2), **kwargs)
+        if repo_id and fn:
+            return hf_hub_download(repo_id=repo_id, filename=fn, **kwargs)
+        raise ValueError("cached_download shim: need repo_id+filename or url+filename")
+
+    huggingface_hub.cached_download = _cached_download
+
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Tuple, Optional

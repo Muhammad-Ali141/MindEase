@@ -6,7 +6,7 @@ interface UseMicrophoneReturn {
   isRecording: boolean
   hasPermission: boolean | null // null = not checked yet, true = granted, false = denied
   error: string | null
-  startRecording: () => Promise<void>
+  startRecording: (onChunk?: (blob: Blob) => void) => Promise<void>
   stopRecording: () => Promise<Blob | null>
   requestPermission: () => Promise<boolean>
   recordingTime: number // Recording duration in seconds
@@ -35,6 +35,9 @@ export function useMicrophone(): UseMicrophoneReturn {
   const chunksRef = useRef<Blob[]>([])
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const startTimeRef = useRef<number | null>(null)
+  const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const chunkTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const onChunkCallbackRef = useRef<((blob: Blob) => void) | null>(null)
 
   /**
    * Request microphone permission from the user.
@@ -96,11 +99,13 @@ export function useMicrophone(): UseMicrophoneReturn {
   /**
    * Start recording audio from the microphone.
    * Automatically requests permission if not already granted.
+   * @param onChunk - Optional callback fired every ~2 seconds with accumulated audio chunks for real-time STT
    */
-  const startRecording = useCallback(async (): Promise<void> => {
+  const startRecording = useCallback(async (onChunk?: (blob: Blob) => void): Promise<void> => {
     try {
       setError(null)
       chunksRef.current = []
+      onChunkCallbackRef.current = onChunk || null
 
       // Request permission if not already granted
       if (hasPermission !== true) {
@@ -174,6 +179,18 @@ export function useMicrophone(): UseMicrophoneReturn {
         }
       }, 1000)
 
+      // Real-time STT: first chunk at 0.8s, then every 1s so live transcript appears quickly
+      if (onChunk) {
+        const fireChunk = () => {
+          if (chunksRef.current.length > 0) {
+            const blob = new Blob(chunksRef.current, { type: chunksRef.current[0]?.type || "audio/webm" })
+            onChunk(blob)
+          }
+        }
+        chunkTimeoutRef.current = setTimeout(fireChunk, 800)
+        chunkIntervalRef.current = setInterval(fireChunk, 1000)
+      }
+
     } catch (err: any) {
       setError(err.message || "Failed to start recording")
       setIsRecording(false)
@@ -201,6 +218,17 @@ export function useMicrophone(): UseMicrophoneReturn {
         clearInterval(timerRef.current)
         timerRef.current = null
       }
+
+      // Stop chunk interval and first-chunk timeout for real-time STT
+      if (chunkTimeoutRef.current) {
+        clearTimeout(chunkTimeoutRef.current)
+        chunkTimeoutRef.current = null
+      }
+      if (chunkIntervalRef.current) {
+        clearInterval(chunkIntervalRef.current)
+        chunkIntervalRef.current = null
+      }
+      onChunkCallbackRef.current = null
 
       // Stop MediaRecorder
       if (mediaRecorderRef.current && isRecording) {

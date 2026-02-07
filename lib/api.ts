@@ -199,6 +199,72 @@ export async function apiChatMessage(
   return res.json()
 }
 
+export type ChatStreamDonePayload = {
+  full_response: string
+  emotions: Array<{ emotion: string; score: number }>
+}
+
+export async function apiChatMessageStream(
+  message: string,
+  user_id: string,
+  user_first_name: string | null,
+  user_gender: string | null,
+  conversation_history: ChatMessage[],
+  callbacks: {
+    onDelta: (delta: string) => void
+    onDone: (payload: ChatStreamDonePayload) => void
+  },
+  test_context: string | null = null
+): Promise<void> {
+  const res = await fetch("http://localhost:8000/api/chat/stream/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      user_id,
+      user_first_name,
+      user_gender,
+      conversation_history,
+      test_context,
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || "Stream failed")
+  }
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error("No response body")
+  const dec = new TextDecoder()
+  let buffer = ""
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += dec.decode(value, { stream: true })
+    const lines = buffer.split("\n")
+    buffer = lines.pop() ?? ""
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(line.slice(6)) as { delta?: string; done?: boolean; full_response?: string; emotions?: Array<{ emotion: string; score: number }> }
+          if (data.delta != null) callbacks.onDelta(data.delta)
+          if (data.done && data.full_response != null) callbacks.onDone({ full_response: data.full_response, emotions: data.emotions ?? [] })
+        } catch {
+          // skip invalid JSON
+        }
+      }
+    }
+  }
+  if (buffer.startsWith("data: ")) {
+    try {
+      const data = JSON.parse(buffer.slice(6)) as { delta?: string; done?: boolean; full_response?: string; emotions?: Array<{ emotion: string; score: number }> }
+      if (data.delta != null) callbacks.onDelta(data.delta)
+      if (data.done && data.full_response != null) callbacks.onDone({ full_response: data.full_response, emotions: data.emotions ?? [] })
+    } catch {
+      // skip
+    }
+  }
+}
+
 export type WelcomeResponse = {
   welcome_message: string
   user_id: string
@@ -566,6 +632,33 @@ export async function apiSTTTranscribe(
   return data
 }
 
+/**
+ * Real-time STT: transcribe partial audio chunks for live display.
+ * Used while recording is in progress to show live transcript.
+ * Does NOT throw on empty transcript (returns empty string).
+ */
+export async function apiSTTTranscribePartial(
+  audioBlob: Blob,
+  language: string = "en"
+): Promise<{ transcript: string; is_partial: boolean }> {
+  const formData = new FormData()
+  formData.append("audio", audioBlob, "partial.webm")
+  formData.append("language", language)
+
+  const res = await fetch("http://localhost:8000/api/stt/transcribe-partial/", {
+    method: "POST",
+    body: formData,
+  })
+
+  if (!res.ok) {
+    // Silently return empty for real-time errors
+    return { transcript: "", is_partial: true }
+  }
+
+  const data = await res.json()
+  return { transcript: data.transcript || "", is_partial: true }
+}
+
 // TTS (Text-to-Speech) API functions
 
 /**
@@ -573,11 +666,13 @@ export async function apiSTTTranscribe(
  * 
  * @param text - Text to synthesize to speech
  * @param language - Language code (default: "en")
+ * @param ttsBackend - "xtts" (default) or "qwen3" to test Qwen3-TTS in the pipeline
  * @returns Promise with audio Blob
  */
 export async function apiTTSSynthesize(
   text: string,
-  language: string = "en"
+  language: string = "en",
+  ttsBackend: "xtts" | "qwen3" = "xtts"
 ): Promise<Blob> {
   if (!text || !text.trim()) {
     throw new Error("Text cannot be empty")
@@ -591,6 +686,7 @@ export async function apiTTSSynthesize(
     body: JSON.stringify({
       text: text.trim(),
       language: language,
+      tts_backend: ttsBackend,
     }),
   })
 
