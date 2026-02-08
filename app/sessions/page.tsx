@@ -7,7 +7,7 @@ import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from "@/lib/api"
-import { MessageCircle, ArrowLeft, Star } from "lucide-react"
+import { MessageCircle, ArrowLeft, Star, Mic2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 
@@ -40,8 +40,12 @@ export default function SessionsPage() {
     }
   }
 
-  const handleSessionClick = (sessionId: string) => {
-    router.push(`/chat?session_id=${sessionId}`)
+  const handleSessionClick = (session: SessionPreview) => {
+    if (session.has_voice) {
+      router.push(`/voice-chat?session_id=${session.session_id}`)
+    } else {
+      router.push(`/chat?session_id=${session.session_id}`)
+    }
   }
 
   const formatDate = (dateString: string) => {
@@ -134,16 +138,33 @@ export default function SessionsPage() {
                       >
                         <div className="flex items-start gap-4">
                           <button
-                            onClick={() => handleSessionClick(session.session_id)}
+                            onClick={() => handleSessionClick(session)}
                             className="flex-1 text-left flex gap-4"
                           >
-                            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
-                              <MessageCircle className="h-6 w-6 text-white" />
+                            <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                              session.has_voice
+                                ? "bg-gradient-to-br from-emerald-500 to-teal-500"
+                                : "bg-gradient-to-br from-purple-500 to-blue-500"
+                            }`}>
+                              {session.has_voice ? (
+                                <Mic2 className="h-6 w-6 text-white" />
+                              ) : (
+                                <MessageCircle className="h-6 w-6 text-white" />
+                              )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h3 className="font-semibold text-lg text-gray-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition mb-2">
-                                {session.title}
-                              </h3>
+                              <div className="flex items-center gap-2 flex-wrap mb-2">
+                                <h3 className="font-semibold text-lg text-gray-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">
+                                  {session.title}
+                                </h3>
+                                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                                  session.has_voice
+                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                    : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                                }`}>
+                                  {session.has_voice ? "Voice" : "Text"}
+                                </span>
+                              </div>
                               {(session.short_summary || session.summary) && (
                                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-2 leading-relaxed line-clamp-3">
                                   {session.short_summary || session.summary}

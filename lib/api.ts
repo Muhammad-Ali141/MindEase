@@ -385,6 +385,8 @@ export type SessionPreview = {
   state: SessionState
   is_starred: boolean
   has_full_transcript: boolean
+  /** True if session contains voice (audio) messages; use for icon/label and routing to voice-chat vs chat */
+  has_voice?: boolean
   created_at: string
   updated_at: string
 }
@@ -696,6 +698,76 @@ export async function apiVoiceProcess(
  * @param ttsBackend - "xtts" (default) or "qwen3" to test Qwen3-TTS in the pipeline
  * @returns Promise with audio Blob
  */
+export type GetWelcomeAudioResult = {
+  blob: Blob
+  /** When server stored text for this cache entry (e.g. with-context), use this so audio and text match. */
+  welcomeMessage?: string
+}
+
+/**
+ * Get cached welcome audio for voice chat (instant play).
+ * includeContext: true for welcome that includes test results.
+ * testContextKey: required when includeContext true – e.g. result_id so cache is per test result; new test => new audio.
+ * Returns blob + optional welcomeMessage from server (use for display so text matches audio).
+ */
+export async function apiGetWelcomeAudio(
+  userId: string,
+  includeContext = false,
+  testContextKey?: string | number
+): Promise<GetWelcomeAudioResult> {
+  const params = new URLSearchParams({ user_id: userId })
+  if (includeContext) {
+    params.set("include_context", "true")
+    if (testContextKey != null) params.set("test_context_key", String(testContextKey))
+  }
+  const res = await fetch(`http://localhost:8000/api/voice/welcome-audio/?${params}`)
+  if (!res.ok) throw new Error(res.status === 404 ? "No welcome audio" : "Failed to get welcome audio")
+  const blob = await res.blob()
+  const encoded = res.headers.get("X-Welcome-Message")
+  let welcomeMessage: string | undefined
+  if (encoded) {
+    try {
+      const raw = atob(encoded)
+      const bytes = new Uint8Array(raw.length)
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+      welcomeMessage = new TextDecoder().decode(bytes)
+    } catch {
+      welcomeMessage = undefined
+    }
+  }
+  return { blob, welcomeMessage }
+}
+
+/**
+ * Generate welcome TTS, save to cache on server, and return audio blob.
+ * testContextKey: required when includeTestContext true – e.g. result_id; when user takes a new test, new key => new audio stored.
+ */
+export async function apiGenerateAndSaveWelcomeAudio(
+  userId: string,
+  welcomeMessage: string,
+  langPref: string | null,
+  includeTestContext: boolean,
+  testContextKey?: string | number
+): Promise<Blob> {
+  const body: Record<string, unknown> = {
+    user_id: userId,
+    welcome_message: welcomeMessage,
+    lang_pref: langPref,
+    include_test_context: includeTestContext,
+  }
+  if (includeTestContext && testContextKey != null) body.test_context_key = testContextKey
+  const res = await fetch("http://localhost:8000/api/voice/welcome-audio/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || "Failed to generate welcome audio")
+  }
+  return res.blob()
+}
+
 export async function apiTTSSynthesize(
   text: string,
   language: string = "en",
@@ -768,6 +840,49 @@ export async function apiGetDiagnosticTestStatus(
   }
 
   return res.json();
+}
+
+// -------------------------
+// Therapist directory
+// -------------------------
+export type TherapistListItem = {
+  id: string
+  name: string
+  credentials?: string | null
+  specialty?: string | null
+  city?: string | null
+  region?: string | null
+  phone?: string | null
+  email?: string | null
+  website?: string | null
+  languages?: string[] | null
+}
+
+export type GetTherapistsResponse = {
+  therapists: TherapistListItem[]
+}
+
+export async function apiGetTherapists(
+  user_id: string,
+  options?: { city?: string; nearest_major_city?: string }
+): Promise<GetTherapistsResponse> {
+  const res = await fetch("http://localhost:8000/api/therapists/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_id,
+      city: options?.city,
+      nearest_major_city: options?.nearest_major_city,
+    }),
+  })
+
+  const data = await res.json().catch(() => ({ therapists: [], error: "Invalid response" }))
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error || "Failed to load therapists")
+  }
+  return data as GetTherapistsResponse
 }
 
 export type MoodTrendData = {

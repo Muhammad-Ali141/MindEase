@@ -1,16 +1,20 @@
 {
-    "name": "General Mood Assessment",
-    "scale": ["0 = Not at all","1 = A little bit","2 = Sometimes","3 = Often","4 = Almost always"],
-    "questions": [
-      "I have felt happy or content today.",
-      "I felt motivated to complete my tasks.",
-      "I felt calm and relaxed throughout the day.",
-      "I felt connected to the people around me.",
-      "I felt optimistic about the future.",
-      "I felt emotionally balanced.",
-      "I felt in control of my day.",
-      "I felt satisfied with my personal progress."
-    ]
-  }
-
-
+  "name": "Daily Mood Check-In",
+  "scale": [
+    "0 = Not at all",
+    "1 = A little",
+    "2 = Somewhat",
+    "3 = Quite a bit",
+    "4 = Very much"
+  ],
+  "questions": [
+    "Today I have felt happy or content.",
+    "Today I have felt motivated to complete my tasks.",
+    "Today I have felt calm and relaxed.",
+    "Today I have felt connected to the people around me.",
+    "Today I have felt optimistic about the future.",
+    "Today I have felt emotionally balanced.",
+    "Today I have felt in control of my day.",
+    "Today I have felt satisfied with my personal progress."
+  ]
+}

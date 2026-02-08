@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 import os
 import sys
+
+# Avoid OpenMP conflict when multiple libraries (PyTorch, NumPy, MKL) each ship libiomp5md
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import subprocess
 import platform
 import time
@@ -22,39 +26,44 @@ def start_ollama_if_needed():
         if check_ollama_running():
             print("Ollama is already running!")
             return None
-        
+
         print("Starting Ollama server...")
-        
-        # Determine the command based on OS
-        if platform.system() == "Windows":
-            # On Windows, start Ollama in a new window
-            process = subprocess.Popen(
-                ["ollama", "serve"],
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-        else:
-            # On Linux/Mac, start in background
-            process = subprocess.Popen(
-                ["ollama", "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
-        
-        # Wait a bit for Ollama to start
+        process = None
+        try:
+            if platform.system() == "Windows":
+                # Use shell so PATH is respected (e.g. Ollama installed for current user)
+                process = subprocess.Popen(
+                    "ollama serve",
+                    shell=True,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    cwd=os.path.expanduser("~"),
+                )
+            else:
+                process = subprocess.Popen(
+                    ["ollama", "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+        except FileNotFoundError:
+            print("Warning: 'ollama' not found in PATH. Install Ollama or start it manually: ollama serve")
+            return None
+        except Exception as e:
+            print(f"Warning: Could not start Ollama: {e}. Start manually: ollama serve")
+            return None
+
         print("Waiting for Ollama to initialize...")
-        for i in range(10):  # Wait up to 10 seconds
+        for i in range(10):
             time.sleep(1)
             if check_ollama_running():
                 print("Ollama server started successfully!")
                 return process
             print(f"   Still waiting... ({i+1}/10)")
-        
-        print("Warning: Ollama may not have started properly. Continuing anyway...")
+        print("Warning: Ollama may not have started in time. Start manually if needed: ollama serve")
         return process
-    
+
     return None
 
 def main():

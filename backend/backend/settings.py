@@ -50,7 +50,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-CORS_ALLOW_ALL_ORIGINS = True 
+CORS_ALLOW_ALL_ORIGINS = True
+# Expose custom response headers to the frontend (e.g. voice welcome cached text)
+CORS_EXPOSE_HEADERS = ["X-Welcome-Message"]
 
 # -------------------------------------------------------------------
 # URL Configuration

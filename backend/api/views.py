@@ -7,14 +7,14 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse, StreamingHttpResponse, FileResponse, Http404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
 from datetime import date
 import os
 
-from api.models import EmailVerification, Message, Session, User, Testresult
+from api.models import EmailVerification, Message, Session, User, Testresult, Therapistdirectory
 from api.services.session_service import SessionService
 from api.services.diagnostic_test_service import DiagnosticTestService
 from chatbot.conversation_memory import ConversationMemory
@@ -76,6 +76,27 @@ def _get_qwen3_tts_service():
                 from tts.qwen3_tts_adapter import Qwen3TTSAdapter
                 _qwen3_tts_cache = Qwen3TTSAdapter(model_size="0.6B")
     return _qwen3_tts_cache
+
+
+def _sanitize_test_context_key(key):
+    """Safe filename fragment from test context key (e.g. result_id)."""
+    if key is None:
+        return None
+    import re
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", str(key)).strip("_") or None
+
+
+def _get_welcome_audio_path(user_id, include_context=False, test_context_key=None):
+    """Path to cached welcome audio. With context: keyed by test_context_key so each test result has its own cache."""
+    base = getattr(settings, "MEDIA_ROOT", None) or os.path.join(settings.BASE_DIR, "media")
+    welcome_dir = os.path.join(base, "welcome_audio")
+    os.makedirs(welcome_dir, exist_ok=True)
+    if include_context and test_context_key:
+        safe_key = _sanitize_test_context_key(test_context_key)
+        suffix = f"_with_context_{safe_key}.wav" if safe_key else "_with_context.wav"
+    else:
+        suffix = "_with_context.wav" if include_context else ".wav"
+    return os.path.join(welcome_dir, f"{user_id}{suffix}")
 
 
 def _resolve_session_for_user(user_id, identifier):
@@ -158,7 +179,7 @@ def register(request):
                 password=make_password(password),
                 dob=dob_parsed,
                 gender=gender,
-                lang_pref=lang_pref,  # ✅ correct field name
+                lang_pref=lang_pref,
                 city=city.strip() if city else None,
                 nearest_major_city=nearest_major_city_clean,
             )
@@ -596,6 +617,74 @@ def voice_process(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+@csrf_exempt
+def voice_welcome_audio(request):
+    """GET: return cached welcome audio. Query: user_id, include_context, test_context_key (required when include_context true).
+     Returns X-Welcome-Message header (base64) when we have stored text so client can show matching text.
+     POST: generate TTS, save to cache (and sidecar .json with welcome_message), return audio blob.
+     Body: user_id, welcome_message, lang_pref, include_test_context, test_context_key (required when include_test_context true)."""
+    from io import BytesIO
+    import base64
+    if request.method == "GET":
+        user_id = request.GET.get("user_id")
+        if not user_id:
+            return JsonResponse({"error": "user_id required."}, status=400)
+        include_context = request.GET.get("include_context", "false").lower() in ("true", "1", "yes")
+        test_context_key = request.GET.get("test_context_key") or None
+        if include_context and not test_context_key:
+            return JsonResponse({"error": "test_context_key required when include_context is true."}, status=400)
+        path = _get_welcome_audio_path(user_id, include_context=include_context, test_context_key=test_context_key)
+        if not os.path.isfile(path):
+            raise Http404("Welcome audio not found")
+        with open(path, "rb") as f:
+            data = f.read()
+        response = FileResponse(BytesIO(data), content_type="audio/wav", as_attachment=False)
+        # Attach stored welcome text so client can show text that matches this audio
+        sidecar = path.replace(".wav", ".json")
+        if os.path.isfile(sidecar):
+            try:
+                with open(sidecar, "r", encoding="utf-8") as sf:
+                    meta = json.load(sf)
+                    msg = meta.get("welcome_message")
+                    if msg:
+                        response["X-Welcome-Message"] = base64.b64encode(msg.encode("utf-8")).decode("ascii")
+            except Exception:
+                pass
+        return response
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id = data.get("user_id")
+            welcome_message = data.get("welcome_message")
+            lang_pref = data.get("lang_pref")
+            include_test_context = data.get("include_test_context", False)
+            test_context_key = data.get("test_context_key") or None
+            if not user_id or not welcome_message:
+                return JsonResponse({"error": "user_id and welcome_message required."}, status=400)
+            if include_test_context and not test_context_key:
+                return JsonResponse({"error": "test_context_key required when include_test_context is true."}, status=400)
+            language = "ur" if (lang_pref and str(lang_pref).lower() in ("urdu", "ur")) else "en"
+            path = _get_welcome_audio_path(user_id, include_context=bool(include_test_context), test_context_key=test_context_key)
+            tts_backend_env = (os.environ.get("TTS_BACKEND") or "").strip().lower()
+            if tts_backend_env == "qwen3":
+                tts_service = _get_qwen3_tts_service()
+            else:
+                tts_service = _get_tts_service()
+            tts_service.synthesize_to_file(text=welcome_message, output_path=path, language=language)
+            # Store welcome message so GET can return matching text
+            sidecar = path.replace(".wav", ".json")
+            with open(sidecar, "w", encoding="utf-8") as sf:
+                json.dump({"welcome_message": welcome_message}, sf, ensure_ascii=False)
+            with open(path, "rb") as f:
+                audio_data = f.read()
+            return FileResponse(BytesIO(audio_data), content_type="audio/wav", as_attachment=False)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Method not allowed."}, status=405)
+
+
 # -------------------------
 # GET WELCOME MESSAGE
 # -------------------------
@@ -1012,7 +1101,14 @@ def get_recent_sessions(request):
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
-            sessions = SessionService.get_recent_sessions(user_id, limit)
+            sessions = list(SessionService.get_recent_sessions(user_id, limit))
+            session_ids = [s.session_id for s in sessions]
+            voice_session_ids = set(
+                Message.objects.filter(
+                    session_id__in=session_ids,
+                    content_type=Message.ContentType.AUDIO,
+                ).values_list("session_id", flat=True)
+            )
 
             sessions_list = [
                 {
@@ -1025,6 +1121,7 @@ def get_recent_sessions(request):
                     "state": session.state,
                     "is_starred": session.is_starred,
                     "has_full_transcript": session.state == Session.SessionState.FULL,
+                    "has_voice": session.session_id in voice_session_ids,
                 }
                 for session in sessions
             ]
@@ -1370,6 +1467,86 @@ def update_dashboard_tour(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# THERAPIST DIRECTORY
+# -------------------------
+def _normalize_location(s):
+    if not s or not isinstance(s, str):
+        return ""
+    return s.strip().lower()
+
+
+@csrf_exempt
+def get_therapists(request):
+    """GET or POST: return therapists, optionally filtered by city/nearest_major_city.
+    POST body can include user_id (to use user's city/nearest_major_city) and optional
+    city, nearest_major_city overrides. Response: { therapists: [...] }.
+    """
+    try:
+        city = None
+        nearest_major_city = None
+
+        if request.method == "POST":
+            try:
+                data = json.loads(request.body)
+            except (json.JSONDecodeError, TypeError):
+                data = {}
+            user_id = data.get("user_id")
+            city = data.get("city")
+            nearest_major_city = data.get("nearest_major_city")
+            if user_id and (city is None and nearest_major_city is None):
+                try:
+                    user = User.objects.get(user_id=user_id)
+                    city = user.city
+                    nearest_major_city = user.nearest_major_city
+                except User.DoesNotExist:
+                    pass
+        elif request.method == "GET":
+            city = request.GET.get("city")
+            nearest_major_city = request.GET.get("nearest_major_city")
+
+        qs = Therapistdirectory.objects.all()
+        user_city_n = _normalize_location(city)
+        user_nearest_n = _normalize_location(nearest_major_city)
+
+        # Build list with match priority for sorting
+        def match_priority(t):
+            tc = _normalize_location(t.city)
+            tr = _normalize_location(t.region)
+            if user_city_n and tc == user_city_n:
+                return 0
+            if user_nearest_n and (tc == user_nearest_n or tr == user_nearest_n):
+                return 1
+            return 2
+
+        therapists = list(qs)
+        therapists.sort(key=match_priority)
+
+        out = []
+        for t in therapists:
+            name = f"{t.first_name or ''} {t.last_name or ''}".strip() or "—"
+            out.append({
+                "id": str(t.therapist_id),
+                "name": name,
+                "credentials": t.credentials or None,
+                "specialty": t.specialty or None,
+                "city": t.city or None,
+                "region": t.region or None,
+                "phone": t.phone_number or None,
+                "email": t.email or None,
+                "website": t.website or None,
+                "languages": t.languages.split(",") if t.languages else None,
+            })
+            if out[-1]["languages"]:
+                out[-1]["languages"] = [x.strip() for x in out[-1]["languages"] if x.strip()]
+
+        return JsonResponse({"therapists": out}, status=200)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e), "therapists": []}, status=500)
 
 
 # -------------------------

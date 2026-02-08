@@ -1,15 +1,19 @@
 {
-    "name": "GAD-7 (anxiety screening test)",
-    "scale": ["0 = Not at all", "1 = A little bit", "2 = Sometimes", "3 = Often", "4 = Almost always"],
-    "questions": [
-      "Feeling nervous, anxious, or on edge?",
-      "Not being able to stop or control worrying?",
-      "Worrying about many different things?",
-      "Trouble relaxing?",
-      "Restlessness making it hard to sit still?",
-      "Becoming easily annoyed or irritable?",
-      "Feeling afraid that something bad might happen?"
-    ]
-  }
-
-
+  "name": "GAD-7 Anxiety Screening",
+  "scale": [
+    "0 = Not at all",
+    "1 = Several days",
+    "2 = More than half the days",
+    "3 = Nearly every day",
+    "4 = Every day"
+  ],
+  "questions": [
+    "Over the last 2 weeks, how often have you felt nervous, anxious, or on edge?",
+    "Over the last 2 weeks, how often have you been unable to stop or control worrying?",
+    "Over the last 2 weeks, how often have you worried too much about different things?",
+    "Over the last 2 weeks, how often have you had trouble relaxing?",
+    "Over the last 2 weeks, how often have you been so restless that it was hard to sit still?",
+    "Over the last 2 weeks, how often have you become easily annoyed or irritable?",
+    "Over the last 2 weeks, how often have you felt afraid as if something awful might happen?"
+  ]
+}

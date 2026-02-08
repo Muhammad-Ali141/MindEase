@@ -130,9 +130,9 @@ sounddevice==0.5.3
 pydub==0.25.1
 
 # ============================
-# Speech-to-Text
+# Speech-to-Text (faster-whisper 1.2.1 — no live transcription; record then transcribe)
 # ============================
-# faster-whisper==0.10.0
+faster-whisper==1.2.1
 resampy==0.4.2
 
 # ============================

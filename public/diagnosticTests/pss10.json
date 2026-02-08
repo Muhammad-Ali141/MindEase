@@ -1,18 +1,22 @@
 {
-    "name": "PSS-10 (stress screening test)",
-    "scale": ["0 = Not at all", "1 = A little bit", "2 = Sometimes", "3 = Often", "4 = Almost always"],
-    "questions": [
-      "How often have you felt things were out of your control?",
-      "How often have you felt nervous or stressed?",
-      "How often have you struggled to cope with daily tasks?",
-      "How often have you felt confident in handling personal problems?",
-      "How often have you felt things were going your way?",
-      "How often have you been upset because of unexpected events?",
-      "How often have you felt overwhelmed?",
-      "How often have you felt anger due to events outside your control?",
-      "How often have you found yourself unable to keep up with demands?",
-      "How often have you felt that difficulties were piling up?"
-    ]
-  }
-
-
+  "name": "PSS-10 Perceived Stress Screening",
+  "scale": [
+    "0 = Never",
+    "1 = Almost never",
+    "2 = Sometimes",
+    "3 = Fairly often",
+    "4 = Very often"
+  ],
+  "questions": [
+    "In the last month, how often have you been upset because of something that happened unexpectedly?",
+    "In the last month, how often have you felt unable to control important things in your life?",
+    "In the last month, how often have you felt nervous or stressed?",
+    "In the last month, how often have you felt unable to handle your personal problems?",
+    "In the last month, how often have you felt that things were not going your way?",
+    "In the last month, how often have you found that you could not cope with all the things that you had to do?",
+    "In the last month, how often have you been unable to control irritations in your life?",
+    "In the last month, how often have you felt that you were not on top of things?",
+    "In the last month, how often have you been angered because of things that happened that were outside your control?",
+    "In the last month, how often have you felt that difficulties were piling up so high that you could not overcome them?"
+  ]
+}

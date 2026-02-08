@@ -10,6 +10,7 @@ urlpatterns = [
     path("chat/", views.chat_message, name="chat_message"),
     path("chat/stream/", views.chat_message_stream, name="chat_message_stream"),
     path("voice/process/", views.voice_process, name="voice_process"),
+    path("voice/welcome-audio/", views.voice_welcome_audio, name="voice_welcome_audio"),
     path("chat/welcome/", views.chat_welcome, name="chat_welcome"),
     path("chat/summary/", views.chat_summary, name="chat_summary"),
     path("sessions/count/", views.get_session_count, name="get_session_count"),
@@ -28,4 +29,5 @@ urlpatterns = [
     path("diagnostic-tests/history/", views.diagnostic_test_history, name="diagnostic_test_history"),
     path("diagnostic-tests/mood-trend/", views.diagnostic_test_mood_trend, name="diagnostic_test_mood_trend"),
     path("diagnostic-tests/streak/", views.diagnostic_test_streak, name="diagnostic_test_streak"),
+    path("therapists/", views.get_therapists, name="get_therapists"),
 ]

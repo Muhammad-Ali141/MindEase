@@ -34,16 +34,40 @@ class AudioEmotionDetector:
         if self._model is not None:
             return
         import torch
-        from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2FeatureExtractor
         from huggingface_hub import hf_hub_download
+
+        # Support different transformers versions: 4.35+ may not export Wav2Vec2 at top level
+        try:
+            from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2FeatureExtractor, AutoConfig
+        except ImportError:
+            try:
+                from transformers.models.wav2vec2.modeling_wav2vec2 import Wav2Vec2ForSequenceClassification
+                from transformers.models.wav2vec2.feature_extraction_wav2vec2 import Wav2Vec2FeatureExtractor
+                from transformers import AutoConfig
+            except ImportError:
+                from transformers import AutoModelForAudioClassification, AutoProcessor, AutoConfig
+                Wav2Vec2ForSequenceClassification = None
+                Wav2Vec2FeatureExtractor = None
 
         self._device = self._device or ("cuda" if torch.cuda.is_available() else "cpu")
         logger.info("Loading Speech Emotion Recognition model: %s", self.model_id)
-        self._processor = Wav2Vec2FeatureExtractor.from_pretrained(self.model_id)
-        self._model = Wav2Vec2ForSequenceClassification.from_pretrained(self.model_id)
 
-        # Fix classifier head: this checkpoint uses classifier.dense / classifier.output but the
-        # library expects projector / classifier. Remap and load so we use the trained head, not random.
+        if Wav2Vec2FeatureExtractor is not None:
+            self._processor = Wav2Vec2FeatureExtractor.from_pretrained(self.model_id)
+        else:
+            self._processor = AutoProcessor.from_pretrained(self.model_id)
+
+        config = AutoConfig.from_pretrained(self.model_id)
+        if Wav2Vec2ForSequenceClassification is not None:
+            if not getattr(config, "classifier_proj_size", None) or getattr(config, "classifier_proj_size") == 256:
+                config.classifier_proj_size = 1024
+                logger.info("SER: using classifier_proj_size=1024 to match checkpoint head")
+            self._model = Wav2Vec2ForSequenceClassification.from_pretrained(self.model_id, config=config)
+        else:
+            self._model = AutoModelForAudioClassification.from_pretrained(self.model_id)
+
+        # Remap checkpoint head keys (classifier.dense / classifier.output -> projector / classifier)
+        # and load so we use the trained head.
         try:
             bin_path = hf_hub_download(self.model_id, "pytorch_model.bin")
         except Exception:
@@ -57,31 +81,37 @@ class AudioEmotionDetector:
                 ckpt = load_file(bin_path)
             else:
                 try:
-                    ckpt = torch.load(bin_path, map_location="cpu", weights_only=True)
+                    raw = torch.load(bin_path, map_location="cpu", weights_only=True)
                 except TypeError:
-                    ckpt = torch.load(bin_path, map_location="cpu")
-            key_map = {
+                    raw = torch.load(bin_path, map_location="cpu")
+                ckpt = raw.get("state_dict", raw) if isinstance(raw, dict) else raw
+            head_key_map = {
                 "classifier.dense.weight": "projector.weight",
                 "classifier.dense.bias": "projector.bias",
                 "classifier.output.weight": "classifier.weight",
                 "classifier.output.bias": "classifier.bias",
             }
-            for old_key, new_key in key_map.items():
-                if old_key not in ckpt:
-                    continue
-                parts = new_key.split(".")
-                try:
-                    obj = self._model
-                    for p in parts[:-1]:
-                        obj = getattr(obj, p)
-                    param = getattr(obj, parts[-1])
-                    if ckpt[old_key].shape == param.shape:
-                        param.data.copy_(ckpt[old_key])
-                        logger.info("SER: loaded checkpoint head %s -> %s", old_key, new_key)
-                except (AttributeError, KeyError) as e:
-                    logger.debug("SER: skip head key %s: %s", old_key, e)
+            model_sd = self._model.state_dict()
+            remapped = {}
+            for k, v in ckpt.items():
+                if k in head_key_map:
+                    new_k = head_key_map[k]
+                    if new_k in model_sd and v.shape == model_sd[new_k].shape:
+                        remapped[new_k] = v
+                    else:
+                        logger.warning(
+                            "SER: head key %s -> %s shape mismatch (ckpt %s vs model %s)",
+                            k, new_k, v.shape, model_sd.get(new_k, torch.Tensor()).shape,
+                        )
+                elif k in model_sd:
+                    remapped[k] = v
+            missing, unexpected = self._model.load_state_dict(remapped, strict=False)
+            if "projector.weight" in remapped:
+                logger.info("SER: loaded classifier head from checkpoint (projector + classifier)")
+            if missing:
+                logger.warning("SER: after load still missing: %s", missing[:8])
         else:
-            logger.warning("SER: could not load classifier weights; emotions may be poor or always neutral.")
+            logger.warning("SER: could not load classifier weights; emotions may be poor.")
 
         self._model.to(self._device)
         self._model.eval()

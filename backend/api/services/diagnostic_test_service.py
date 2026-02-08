@@ -189,15 +189,15 @@ class DiagnosticTestService:
             Display name
         """
         test_names = {
-            "generic-screening": "Generic Screening Test",
-            "phq9": "PHQ-9 (Depression Screening)",
-            "depression": "PHQ-9 (Depression Screening)",
-            "gad7": "GAD-7 (Anxiety Screening)",
-            "anxiety": "GAD-7 (Anxiety Screening)",
-            "pss10": "PSS-10 (Stress Screening)",
-            "stress": "PSS-10 (Stress Screening)",
-            "mood_test": "General Mood Assessment",
-            "general-mood": "General Mood Assessment"
+            "generic-screening": "Mental Health Screening",
+            "phq9": "PHQ-9 Depression Screening",
+            "depression": "PHQ-9 Depression Screening",
+            "gad7": "GAD-7 Anxiety Screening",
+            "anxiety": "GAD-7 Anxiety Screening",
+            "pss10": "PSS-10 Perceived Stress Screening",
+            "stress": "PSS-10 Perceived Stress Screening",
+            "mood_test": "Daily Mood Check-In",
+            "general-mood": "Daily Mood Check-In"
         }
         return test_names.get(test_type, test_type)
 

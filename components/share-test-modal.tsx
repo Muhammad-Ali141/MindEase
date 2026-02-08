@@ -10,7 +10,8 @@ import { useRouter } from "next/navigation"
 type ShareTestModalProps = {
   open: boolean
   onClose: () => void
-  onShare: (testContext: string) => void
+  /** Second arg is result_id for cache keying (voice chat); text chat can ignore it. */
+  onShare: (testContext: string, resultId?: number) => void
   onSkip: () => void
 }
 
@@ -59,17 +60,22 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
   const handleShare = () => {
     if (!latestTest) return
 
-    // Format test context for LLM
-    const testContext = `The user has completed a ${latestTest.test_name} assessment. 
-Test Results:
-- Score: ${latestTest.score}
-- Severity Level: ${latestTest.severity_level}
-- Test Type: ${latestTest.test_type}
-- Date: ${new Date(latestTest.taken_at).toLocaleDateString()}
+    const takenDate = new Date(latestTest.taken_at)
+    const dateStr = takenDate.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+    const severityCapitalized =
+      latestTest.severity_level?.replace(/\b\w/g, (c) => c.toUpperCase()) || latestTest.severity_level
 
-Please use this information to understand the user's current mental health condition and provide appropriate support. You don't need to ask about their condition as you already have this context.`
+    const testContext = `The user has completed a ${latestTest.test_name} assessment.
 
-    onShare(testContext)
+Assessment results:
+- Assessment: ${latestTest.test_name}
+- Total score: ${latestTest.score} (higher scores indicate greater symptom burden, except for Daily Mood Check-In where higher means better mood)
+- Severity: ${severityCapitalized}
+- Date completed: ${dateStr}
+
+Use this information to understand the user's current mental health context and provide appropriate, personalized support. You do not need to ask them to repeat their assessment results.`
+
+    onShare(testContext, latestTest.result_id)
   }
 
   const handleTakeTest = () => {
@@ -81,16 +87,24 @@ Please use this information to understand the user's current mental health condi
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4"
+        style={{ isolation: "isolate" }}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9 }}
-          className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 relative"
+          className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6 relative z-[101]"
         >
           <button
-            onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onClose()
+            }}
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
           >
             <X size={20} />
           </button>
@@ -123,7 +137,7 @@ Please use this information to understand the user's current mental health condi
                       {latestTest.test_name}
                     </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {new Date(latestTest.taken_at).toLocaleDateString()}
+                      {new Date(latestTest.taken_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
                     </p>
                   </div>
                   <span className={`text-xs font-medium px-2 py-1 rounded ${
@@ -145,15 +159,25 @@ Please use this information to understand the user's current mental health condi
 
               <div className="flex gap-3">
                 <button
-                  onClick={handleShare}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleShare()
+                  }}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer select-none"
                 >
                   <CheckCircle2 size={18} />
                   Share Results
                 </button>
                 <button
-                  onClick={onSkip}
-                  className="flex-1 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onSkip()
+                  }}
+                  className="flex-1 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer select-none"
                 >
                   Skip
                 </button>
@@ -187,15 +211,25 @@ Please use this information to understand the user's current mental health condi
 
               <div className="flex gap-3">
                 <button
-                  onClick={handleTakeTest}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleTakeTest()
+                  }}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer select-none"
                 >
                   Take Assessment
                   <ArrowRight size={18} />
                 </button>
                 <button
-                  onClick={onSkip}
-                  className="flex-1 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onSkip()
+                  }}
+                  className="flex-1 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer select-none"
                 >
                   Continue Without Test
                 </button>

@@ -1,4 +1,4 @@
-﻿# This is an auto-generated Django model module.
+# This is an auto-generated Django model module.
 # You'll have to do the following manually to clean this up:
 #   * Rearrange models' order
 #   * Make sure each model has one field with primary_key=True
@@ -201,16 +201,36 @@ class Testresult(models.Model):
 
 
 class Therapistdirectory(models.Model):
+    class Source(models.TextChoices):
+        NPI = "npi", "NPI Registry (US)"
+        IMPORT = "import", "Imported (scraped/JSON)"
+        MANUAL = "manual", "Manual"
+
     therapist_id = models.AutoField(primary_key=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
+    # Extended fields for directory display and filtering
+    credentials = models.CharField(max_length=200, blank=True, null=True)
+    specialty = models.CharField(max_length=200, blank=True, null=True)
+    region = models.CharField(max_length=100, blank=True, null=True)
+    email = models.CharField(max_length=255, blank=True, null=True)
+    website = models.URLField(max_length=500, blank=True, null=True)
+    languages = models.CharField(max_length=255, blank=True, null=True)  # e.g. "Urdu, English"
+    source = models.CharField(
+        max_length=20, choices=Source.choices, default=Source.MANUAL, blank=True
+    )
+    external_id = models.CharField(
+        max_length=50, blank=True, null=True, unique=True
+    )  # e.g. NPI number for dedup
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
 
     class Meta:
-        db_table = 'therapistdirectory'
-        ordering = ['first_name', 'last_name']
+        db_table = "therapistdirectory"
+        ordering = ["first_name", "last_name"]
 
     def __str__(self) -> str:
         return f"{self.first_name} {self.last_name or ''}".strip()

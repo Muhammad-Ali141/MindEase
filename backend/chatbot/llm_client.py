@@ -2,8 +2,26 @@
 LLM Client for Ollama Integration
 Uses Llama 3.1 8B Instruct via Ollama API
 """
+import time
 import ollama
 from typing import Optional, List, Dict, Generator
+
+# Message shown when Ollama GPU runner crashes (mid-conversation); emphasize CPU fix for recurring issues
+OLLAMA_GPU_ERROR_MSG = (
+    "Ollama's GPU runner stopped (this can happen mid-conversation with GPU memory or driver issues).\n\n"
+    "Quick fix: Restart Ollama (close any 'ollama serve' window, then run: ollama serve).\n\n"
+    "If it keeps happening: Run Ollama on CPU for stability (slower but reliable):\n"
+    "  • Windows (PowerShell): $env:OLLAMA_NUM_GPU=0; ollama serve\n"
+    "  • Windows (CMD): set OLLAMA_NUM_GPU=0 && ollama serve\n"
+    "  • Mac/Linux: OLLAMA_NUM_GPU=0 ollama serve\n\n"
+    "Also try: update GPU drivers, close other apps using the GPU, or use a smaller model (e.g. ollama pull llama3.2:3b)."
+)
+
+def _is_ollama_gpu_error(error_msg: str) -> bool:
+    """True if the exception looks like Ollama GPU runner crash (CUDA, 500, process terminated)."""
+    msg = (error_msg or "").lower()
+    return "cuda" in msg or "status code: 500" in msg or "process has terminated" in msg
+
 
 class LLMClient:
     """Client for interacting with Ollama LLM"""
@@ -279,26 +297,31 @@ Remember: Understanding the user's situation is MORE IMPORTANT than immediately 
         if not self.model_name:
             return "Error: No LLM model available. Please ensure Ollama is running and a model is downloaded.\n  ollama pull llama3.1:8b-instruct"
         
-        try:
-            response = ollama.chat(
-                model=self.model_name,
-                messages=messages,
-                options={
-                    "temperature": 0.7,  # Balanced creativity
-                    "top_p": 0.9,
-                    "top_k": 40,
-                }
-            )
-            
-            if 'message' in response and 'content' in response['message']:
-                return response['message']['content']
-            else:
+        last_error = None
+        for attempt in range(2):
+            try:
+                response = ollama.chat(
+                    model=self.model_name,
+                    messages=messages,
+                    options={
+                        "temperature": 0.7,  # Balanced creativity
+                        "top_p": 0.9,
+                        "top_k": 40,
+                    }
+                )
+                if 'message' in response and 'content' in response['message']:
+                    return response['message']['content']
                 return f"Unexpected response format: {response}"
-        
-        except Exception as e:
-            error_msg = str(e)
-            
-            # Check for specific error types
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)
+                if _is_ollama_gpu_error(error_msg) and attempt == 0:
+                    time.sleep(2.5)
+                    continue
+                break
+
+        if last_error is not None:
+            error_msg = str(last_error)
             if "not found" in error_msg.lower() or "404" in error_msg:
                 available_models = []
                 try:
@@ -342,14 +365,8 @@ Remember: Understanding the user's situation is MORE IMPORTANT than immediately 
                 return msg
             elif "connection" in error_msg.lower() or "refused" in error_msg.lower():
                 return f"Error: Cannot connect to Ollama service.\nPlease ensure Ollama is running: ollama serve"
-            elif "cuda" in error_msg.lower() or "status code: 500" in error_msg.lower() or "process has terminated" in error_msg.lower():
-                return (
-                    "Error: Ollama hit a GPU/CUDA error and the runner stopped.\n\n"
-                    "Try:\n"
-                    "  1. Restart Ollama: close any 'ollama serve' window, then run: ollama serve\n"
-                    "  2. If it keeps failing, run Ollama on CPU only: set OLLAMA_NUM_GPU=0 then ollama serve\n"
-                    "  3. Update your GPU drivers (NVIDIA) or ensure only one app is using the GPU."
-                )
+            elif _is_ollama_gpu_error(error_msg):
+                return "Error: " + OLLAMA_GPU_ERROR_MSG
             else:
                 return f"Error generating response: {error_msg}\n\nPlease ensure Ollama is running: ollama serve"
 
@@ -412,24 +429,32 @@ Keep responses focused. Ask ONE question at a time. Validate feelings first. One
         if not self.model_name:
             yield "Error: No LLM model available. Please ensure Ollama is running and a model is downloaded."
             return
-        try:
-            stream = ollama.chat(
-                model=self.model_name,
-                messages=messages,
-                stream=True,
-                options={"temperature": 0.7, "top_p": 0.9, "top_k": 40},
-            )
-            for chunk in stream:
-                if isinstance(chunk, dict) and 'message' in chunk and 'content' in chunk['message']:
-                    yield chunk['message']['content']
-                elif hasattr(chunk, 'message') and hasattr(chunk.message, 'content'):
-                    yield chunk.message.content or ""
-        except Exception as e:
-            error_msg = str(e)
-            if "cuda" in error_msg.lower() or "status code: 500" in error_msg.lower() or "process has terminated" in error_msg.lower():
-                yield (
-                    "Error: Ollama hit a GPU/CUDA error. Restart Ollama (ollama serve) or run with CPU: OLLAMA_NUM_GPU=0 ollama serve"
+        last_error = None
+        for attempt in range(2):
+            try:
+                stream = ollama.chat(
+                    model=self.model_name,
+                    messages=messages,
+                    stream=True,
+                    options={"temperature": 0.7, "top_p": 0.9, "top_k": 40},
                 )
+                for chunk in stream:
+                    if isinstance(chunk, dict) and 'message' in chunk and 'content' in chunk['message']:
+                        yield chunk['message']['content']
+                    elif hasattr(chunk, 'message') and hasattr(chunk.message, 'content'):
+                        yield chunk.message.content or ""
+                return
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)
+                if _is_ollama_gpu_error(error_msg) and attempt == 0:
+                    time.sleep(2.5)
+                    continue
+                break
+        if last_error is not None:
+            error_msg = str(last_error)
+            if _is_ollama_gpu_error(error_msg):
+                yield "Error: " + OLLAMA_GPU_ERROR_MSG
             else:
                 yield f"Error generating response: {error_msg}"
 

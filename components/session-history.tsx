@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
-import { apiGetRecentSessions, apiToggleSessionStar, apiGetSessionById, type SessionPreview } from "@/lib/api"
+import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from "@/lib/api"
 import { MessageCircle, Star, Mic2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
@@ -47,29 +47,11 @@ export function SessionHistory() {
     }
   }
 
-  const handleSessionClick = async (sessionId: string) => {
-    if (!user?.id) return
-    
-    try {
-      // Load session to check if it has voice messages
-      const response = await apiGetSessionById(user.id, sessionId)
-      const session = response.session
-      
-      // Check if any messages have content_type: "audio"
-      const hasVoiceMessages = session.messages?.some(
-        (msg) => msg.content_type === "audio"
-      ) || false
-      
-      // Route to appropriate page based on session type
-      if (hasVoiceMessages) {
-        router.push(`/voice-chat?session_id=${sessionId}`)
-      } else {
-        router.push(`/chat?session_id=${sessionId}`)
-      }
-    } catch (error) {
-      // Fallback to text chat if loading fails
-      console.error("Failed to load session:", error)
-      router.push(`/chat?session_id=${sessionId}`)
+  const handleSessionClick = (session: SessionPreview) => {
+    if (session.has_voice) {
+      router.push(`/voice-chat?session_id=${session.session_id}`)
+    } else {
+      router.push(`/chat?session_id=${session.session_id}`)
     }
   }
 
@@ -146,20 +128,44 @@ export function SessionHistory() {
         ) : (
           <div className="space-y-3">
             {sessions.map((session) => (
-              <button
+              <div
                 key={session.session_id}
-                onClick={() => handleSessionClick(session.session_id)}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleSessionClick(session)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    handleSessionClick(session)
+                  }
+                }}
                 className="w-full text-left p-4 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition cursor-pointer group"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
-                    <MessageCircle className="h-5 w-5 text-white" />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    session.has_voice
+                      ? "bg-gradient-to-br from-emerald-500 to-teal-500"
+                      : "bg-gradient-to-br from-purple-500 to-blue-500"
+                  }`}>
+                    {session.has_voice ? (
+                      <Mic2 className="h-5 w-5 text-white" />
+                    ) : (
+                      <MessageCircle className="h-5 w-5 text-white" />
+                    )}
                   </div>
-                  {/* Note: Icon will be updated dynamically when session is loaded */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 dark:text-white truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">
-                      {session.title}
-                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-gray-900 dark:text-white truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">
+                        {session.title}
+                      </h3>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        session.has_voice
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                      }`}>
+                        {session.has_voice ? "Voice" : "Text"}
+                      </span>
+                    </div>
                     {(session.short_summary || session.summary) && (
                       <p className="mt-1 text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
                         {session.short_summary || session.summary}
@@ -176,8 +182,9 @@ export function SessionHistory() {
                   </div>
                   <button
                     type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
                       toggleStar(session)
                     }}
                     className={`ml-auto inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium transition ${
@@ -194,7 +201,7 @@ export function SessionHistory() {
                     {session.is_starred ? "Starred" : "Star"}
                   </button>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
