@@ -5,6 +5,15 @@ import sys
 # Avoid OpenMP conflict when multiple libraries (PyTorch, NumPy, MKL) each ship libiomp5md
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
+# Add nvidia-cudnn-cu12 DLLs to PATH so cudnn_ops64_9.dll is found (fixes cuDNN errors during TTS/STT)
+for _p in sys.path:
+    if isinstance(_p, str):
+        _cudnn_bin = os.path.join(_p, "nvidia", "cudnn", "bin")
+        if os.path.isdir(_cudnn_bin) and os.path.exists(os.path.join(_cudnn_bin, "cudnn_ops64_9.dll")):
+            os.environ["PATH"] = _cudnn_bin + os.pathsep + os.environ.get("PATH", "")
+            break
+    _cudnn_bin = None
+
 import subprocess
 import platform
 import time

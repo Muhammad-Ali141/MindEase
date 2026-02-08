@@ -37,21 +37,28 @@ class MindEaseChat:
         self.memory = ConversationMemory(max_history_length=20)
         
     def _initialize_components(self):
-        """Initialize all components silently"""
-        try:
-            # Initialize components (suppress output)
-            import io
-            import contextlib
-            
-            # Redirect stdout temporarily
-            f = io.StringIO()
-            with contextlib.redirect_stdout(f):
+        """Initialize all components silently; on failure set component to None so chat can still run."""
+        import io
+        import contextlib
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            try:
                 self.emotion_detector = EmotionDetector()
+            except Exception as e:
+                print(f"Warning: Emotion detector failed to load ({e}). Continuing without emotion detection.")
+                self.emotion_detector = None
+            try:
                 self.rag_system = RAGSystem(db_config=DB_CONFIG)
+            except Exception as e:
+                print(f"Warning: RAG system failed to load ({e}). Continuing without RAG.")
+                self.rag_system = None
+            try:
                 self.llm_client = LLMClient()
-        except Exception as e:
-            print(f"Error initializing chatbot: {e}")
-            sys.exit(1)
+            except Exception as e:
+                print(f"Error: LLM client failed to load ({e}). Chat will not work.")
+                self.llm_client = None
+        if self.llm_client is None:
+            raise RuntimeError("LLM client is required but failed to initialize.")
     
     def _print_separator(self, char="─", length=75):
         """Print a separator line"""
@@ -83,22 +90,28 @@ class MindEaseChat:
             # Step 1: Emotion Detection (from text via DeBERTa, or from audio via SER when emotions_override is provided)
             if emotions_override is not None and len(emotions_override) > 0:
                 emotions = emotions_override
-                emotions_str = self.emotion_detector.format_emotions_for_llm(emotions)
-            else:
+                emotions_str = (self.emotion_detector.format_emotions_for_llm(emotions) if self.emotion_detector
+                                else "Detected emotions: " + ", ".join(f"{e} ({p:.2f})" for e, p in emotions))
+            elif self.emotion_detector is not None:
                 emotions = self.emotion_detector.detect_emotions(
                     user_input,
                     top_k=2,
                     threshold=0.3
                 )
                 emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
+            else:
+                emotions_str = ""
             
             # Step 2: RAG Retrieval
-            contexts = self.rag_system.retrieve_context(
-                query=user_input,
-                top_k=3,
-                similarity_threshold=0.5
-            )
-            context_str = self.rag_system.format_context_for_llm(contexts) if contexts else ""
+            if self.rag_system is not None:
+                contexts = self.rag_system.retrieve_context(
+                    query=user_input,
+                    top_k=3,
+                    similarity_threshold=0.5
+                )
+                context_str = self.rag_system.format_context_for_llm(contexts) if contexts else ""
+            else:
+                context_str = ""
             
             # Step 3: Generate LLM Response
             conversation_history = self.memory.get_history_with_context()
@@ -133,12 +146,18 @@ class MindEaseChat:
             effective_test_context = self.test_context if self.test_context else test_context
             if emotions_override is not None and len(emotions_override) > 0:
                 emotions = emotions_override
-                emotions_str = self.emotion_detector.format_emotions_for_llm(emotions)
-            else:
+                emotions_str = (self.emotion_detector.format_emotions_for_llm(emotions) if self.emotion_detector
+                                else "Detected emotions: " + ", ".join(f"{e} ({p:.2f})" for e, p in emotions))
+            elif self.emotion_detector is not None:
                 emotions = self.emotion_detector.detect_emotions(user_input, top_k=2, threshold=0.3)
                 emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
-            contexts = self.rag_system.retrieve_context(query=user_input, top_k=3, similarity_threshold=0.5)
-            context_str = self.rag_system.format_context_for_llm(contexts) if contexts else ""
+            else:
+                emotions_str = ""
+            if self.rag_system is not None:
+                contexts = self.rag_system.retrieve_context(query=user_input, top_k=3, similarity_threshold=0.5)
+                context_str = self.rag_system.format_context_for_llm(contexts) if contexts else ""
+            else:
+                context_str = ""
             conversation_history = self.memory.get_history_with_context()
             if effective_test_context:
                 context_str = f"{effective_test_context}\n\n{context_str}" if context_str else effective_test_context

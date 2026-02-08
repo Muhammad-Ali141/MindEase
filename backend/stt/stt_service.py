@@ -2,10 +2,11 @@
 Speech-to-Text Service
 
 Core STT service class using faster-whisper for real-time transcription.
-Supports CUDA acceleration when available, falls back to CPU.
+Supports CUDA acceleration when available (float16), falls back to CPU (int8).
 """
 
 import logging
+import os
 import time
 from typing import Optional
 
@@ -55,22 +56,29 @@ class SpeechToTextService:
         self.temperature = temperature
         self.vad_filter = vad_filter
         
-        # Auto-detect device if not specified
+        # Device selection: explicit arg > env MINDEASE_STT_DEVICE > auto-detect CUDA
         if self.device is None:
-            try:
-                import torch
-                self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            except ImportError:
-                # If torch not available, try to detect via faster-whisper
-                self.device = "cpu"
-                logger.warning("PyTorch not available, defaulting to CPU")
+            env_device = os.environ.get("MINDEASE_STT_DEVICE", "").strip().lower()
+            if env_device in ("cuda", "cpu"):
+                self.device = env_device
+                logger.info(f"STT device from env MINDEASE_STT_DEVICE: {self.device}")
+            else:
+                try:
+                    import torch
+                    self.device = "cuda" if torch.cuda.is_available() else "cpu"
+                    if self.device == "cuda":
+                        logger.info("STT using CUDA (GPU acceleration)")
+                    else:
+                        logger.info("STT using CPU (no GPU or CUDA not available)")
+                except ImportError:
+                    self.device = "cpu"
+                    logger.warning("PyTorch not available, STT defaulting to CPU")
         
-        # Auto-select compute type if not specified
+        # Auto-select compute type: CUDA -> float16, CPU -> int8
         if self.compute_type is None:
             if self.device == "cuda":
                 self.compute_type = "float16"
             else:
-                # CPU: use int8 for speed, fallback to float32 if int8 not supported
                 self.compute_type = "int8"
         
         self._load_model()
@@ -89,8 +97,8 @@ class SpeechToTextService:
                 compute_type=self.compute_type,
             )
             load_time = time.time() - start_time
-            logger.info(f"Model loaded successfully in {load_time:.2f} seconds")
-            logger.info(f"Using device: {self.device}, compute_type: {self.compute_type}")
+            logger.info(f"STT model loaded successfully in {load_time:.2f} seconds")
+            logger.info(f"STT device: {self.device}, compute_type: {self.compute_type}" + (" (CUDA)" if self.device == "cuda" else " (CPU)"))
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             # Fallback to CPU if CUDA fails

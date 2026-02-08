@@ -53,8 +53,9 @@ class EmotionDetector:
         print(f"Loading emotion detection model from {model_path}...")
         print(f"Using device: {self.device}")
         
-        # Load tokenizer and model
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        # Load tokenizer with use_fast=False to avoid tokenizers lib format issues
+        # (local tokenizer.json may use an older format incompatible with tokenizers >=0.15)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
         self.model.to(self.device)
         self.model.eval()

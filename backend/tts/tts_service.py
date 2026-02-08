@@ -48,17 +48,26 @@ class TTSService:
         self.tts = None
         self._default_speaker_wav = None  # Cached default speaker reference
         
-        # Auto-detect device if not specified
+        # Device selection: explicit arg > env MINDEASE_TTS_DEVICE > gpu flag > auto-detect CUDA
         if self.device is None:
-            try:
-                import torch
-                if self.gpu is not None:
-                    self.device = "cuda" if self.gpu else "cpu"
-                else:
-                    self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            except ImportError:
-                self.device = "cpu"
-                logger.warning("PyTorch not available, defaulting to CPU")
+            env_device = os.environ.get("MINDEASE_TTS_DEVICE", "").strip().lower()
+            if env_device in ("cuda", "cpu"):
+                self.device = env_device
+                logger.info(f"TTS device from env MINDEASE_TTS_DEVICE: {self.device}")
+            else:
+                try:
+                    import torch
+                    if self.gpu is not None:
+                        self.device = "cuda" if self.gpu else "cpu"
+                    else:
+                        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+                    if self.device == "cuda":
+                        logger.info("TTS using CUDA (GPU acceleration)")
+                    else:
+                        logger.info("TTS using CPU (no GPU or CUDA not available)")
+                except ImportError:
+                    self.device = "cpu"
+                    logger.warning("PyTorch not available, TTS defaulting to CPU")
         
         self._load_model()
     
@@ -106,17 +115,9 @@ class TTSService:
             # Restore original torch.load after model loading
             torch.load = torch._original_load
             
-            # Move model to device if CUDA
-            if self.device == "cuda":
-                try:
-                    # XTTS models automatically use GPU if available
-                    logger.info("Using CUDA for TTS synthesis")
-                except Exception as e:
-                    logger.warning(f"CUDA initialization warning: {e}")
-            
             load_time = time.time() - start_time
             logger.info(f"TTS model loaded successfully in {load_time:.2f} seconds")
-            logger.info(f"Using device: {self.device}")
+            logger.info(f"TTS device: {self.device}" + (" (CUDA)" if self.device == "cuda" else " (CPU)"))
             
         except Exception as e:
             logger.error(f"Failed to load TTS model: {e}")
@@ -219,13 +220,24 @@ class TTSService:
                 except (AttributeError, Exception) as e:
                     logger.debug(f"Could not access synthesizer parameters: {e}")
                 
+                # XTTS v2 speed-optimized inference params (reduce latency, preserve quality)
+                # - do_sample=False: greedy decoding is faster than sampling
+                # - gpt_cond_len/gpt_cond_chunk_len: less ref audio = faster conditioning
+                # - speed: slight playback speed-up (1.1 = 10% shorter, same clarity)
+                xtts_kwargs = {
+                    "do_sample": False,
+                    "temperature": 0.6,
+                    "gpt_cond_len": 12,
+                    "gpt_cond_chunk_len": 4,
+                    "speed": 1.1,
+                }
                 # Use tts_to_file for XTTS v2
-                # The model's natural output is preserved with minimal post-processing
                 self.tts.tts_to_file(
                     text=text,
                     file_path=temp_path,
                     speaker_wav=speaker_wav,
                     language=language,
+                    **xtts_kwargs,
                 )
                 
                 # Load the generated audio

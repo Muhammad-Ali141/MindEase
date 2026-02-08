@@ -1,33 +1,29 @@
 # Text-to-Speech Module Dependencies
-# Install in a virtual environment: pip install -r requirements.txt
+# Prefer installing from backend/requirements.txt which pins versions for TTS + STT + ML.
+# Or install here: pip install -r requirements.txt
 #
 # IMPORTANT: Coqui TTS requires Python >= 3.9 and < 3.12
-# If you have Python 3.12+, you have two options:
-# 1. Use Python 3.10 or 3.11 (recommended)
-# 2. Install from source with modifications (advanced)
+# If you have Python 3.12+, use Python 3.10 or 3.11, or see README.md for alternatives.
 #
-# Installation options:
-# Option 1 (Recommended): pip install TTS
-# Option 2 (If pip fails): pip install git+https://github.com/coqui-ai/TTS.git
-# Option 3 (Python 3.12+): See README.md for alternative TTS libraries
+# Versions aligned with backend/requirements.txt (Coqui TTS 0.22.0, XTTS):
+# - TTS==0.22.0, torch==2.3.1, torchvision==0.18.1, numpy==1.26.4
+# - pandas>=1.4,<2.0 (required by TTS 0.22.0)
 
-# Core TTS library
-# Note: TTS package requires Python < 3.12
-# For Python 3.12+, consider using piper-tts or edge-tts instead
-TTS>=0.22.0
+# Core TTS library (Coqui TTS 0.22.0 for XTTS)
+TTS==0.22.0
 
-# PyTorch for model inference
+# PyTorch for model inference (match backend for CUDA/cuDNN)
 torch>=2.0.0
 torchaudio>=2.0.0
 
 # Audio processing
-soundfile>=0.12.1
-sounddevice>=0.4.6  # For audio playback
-pydub>=0.25.1  # For audio format conversion (already in STT)
+soundfile==0.12.1
+sounddevice>=0.4.6
+pydub>=0.25.1
 
-# Numerical processing
-numpy>=1.24.0
-scipy>=1.11.2  # For audio filtering and post-processing
+# Numerical processing (numpy 1.x for binary compatibility with TTS/sklearn)
+numpy>=1.24.0,<2.0
+scipy>=1.11.2
 
 # Utilities
 tqdm>=4.65.0
