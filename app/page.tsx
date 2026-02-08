@@ -49,12 +49,12 @@ export default function HomePage() {
           <nav className="flex items-center gap-6">
             <LanguageToggle />
             <ThemeToggle />
-            <Link href="/login">
+            <Link href="/auth">
               <Button variant="ghost" className="hidden sm:flex text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-100 hover:bg-purple-50 dark:hover:bg-purple-900/30">
                 {t.login}
               </Button>
             </Link>
-            <Link href="/register">
+            <Link href="/auth?mode=signup">
               <Button className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white border-0 shadow-lg hover:shadow-xl">
                 {t.register}
               </Button>
@@ -171,7 +171,7 @@ export default function HomePage() {
               transition={{ duration: 1, delay: 0.7 }}
               className="flex flex-wrap gap-4"
             >
-              <Link href="/register">
+              <Link href="/auth?mode=signup">
                 <motion.div
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -185,7 +185,7 @@ export default function HomePage() {
                   </Button>
                 </motion.div>
               </Link>
-              <Link href="/login">
+              <Link href="/auth">
                 <motion.div
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -610,7 +610,7 @@ export default function HomePage() {
           </h2>
           
           <div className="flex flex-wrap justify-center gap-4">
-            <Link href="/register">
+            <Link href="/auth?mode=signup">
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
