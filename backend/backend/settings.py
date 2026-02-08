@@ -132,14 +132,10 @@ REST_FRAMEWORK = {
 }
 
 # -------------------------------------------------------------------
-# Email Configuration
+# Email / OTP via n8n webhook (sends to real Gmail)
 # -------------------------------------------------------------------
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Console backend for development
-# For production with Gmail SMTP, use:
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.gmail.com'
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_HOST_USER = 'your-email@gmail.com'
-# EMAIL_HOST_PASSWORD = 'your-app-password'
-DEFAULT_FROM_EMAIL = 'noreply@mindease.com'
+# n8n workflow webhook URL; expects POST JSON: {"email": "...", "otp": "123456"}
+N8N_SEND_OTP_WEBHOOK_URL = os.getenv(
+    'N8N_SEND_OTP_WEBHOOK_URL',
+    'http://localhost:5678/webhook-test/send-otp-mindease'
+)
