@@ -135,3 +135,6 @@ ehthumbs.db
 *.weights
 models/**/*.bin
 models/**/*.safetensors
+
+# Scraper output (scraped JSON)
+scraper/output/

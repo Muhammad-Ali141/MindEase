@@ -1277,6 +1277,75 @@ def toggle_session_star(request):
 
 
 # -------------------------
+# THERAPIST DIRECTORY (GET with optional filters)
+# -------------------------
+def _serialize_therapist(t):
+    name = f"{t.first_name or ''} {t.last_name or ''}".strip() or "—"
+    languages_list = None
+    if t.languages:
+        languages_list = [s.strip() for s in t.languages.split(",") if s.strip()]
+    return {
+        "id": str(t.therapist_id),
+        "name": name,
+        "credentials": t.credentials,
+        "specialty": t.specialty,
+        "city": t.city,
+        "region": t.region,
+        "website": t.website or t.profile_url,
+        "profile_url": t.profile_url,
+        "languages": languages_list,
+        "address": t.address,
+        "service_type": t.service_type,
+    }
+
+
+@csrf_exempt
+def get_therapists(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed."}, status=405)
+    try:
+        qs = Therapistdirectory.objects.all().order_by("first_name", "last_name")
+        city = (request.GET.get("city") or "").strip()
+        specialty = (request.GET.get("specialty") or "").strip()
+        service_type = (request.GET.get("service_type") or "").strip().lower()
+        try:
+            limit = int(request.GET.get("limit", 0))
+        except ValueError:
+            limit = 0
+        if city:
+            qs = qs.filter(city__iexact=city)
+        if specialty:
+            qs = qs.filter(specialty__icontains=specialty)
+        if service_type in ("in-person", "online"):
+            qs = qs.filter(service_type__contains=[service_type])
+        total = qs.count()
+        if limit > 0:
+            qs = qs[:limit]
+        therapists = [_serialize_therapist(t) for t in qs]
+        return JsonResponse({"therapists": therapists, "total": total}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def get_therapist_filters(request):
+    """Return distinct cities for therapist directory dropdowns."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed."}, status=405)
+    try:
+        cities = list(
+            Therapistdirectory.objects.exclude(city__isnull=True)
+            .exclude(city="")
+            .values_list("city", flat=True)
+            .distinct()
+            .order_by("city")
+        )
+        return JsonResponse({"cities": cities}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# -------------------------
 # GET USER PROFILE
 # -------------------------
 @csrf_exempt
@@ -1467,86 +1536,6 @@ def update_dashboard_tour(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method."}, status=405)
-
-
-# -------------------------
-# THERAPIST DIRECTORY
-# -------------------------
-def _normalize_location(s):
-    if not s or not isinstance(s, str):
-        return ""
-    return s.strip().lower()
-
-
-@csrf_exempt
-def get_therapists(request):
-    """GET or POST: return therapists, optionally filtered by city/nearest_major_city.
-    POST body can include user_id (to use user's city/nearest_major_city) and optional
-    city, nearest_major_city overrides. Response: { therapists: [...] }.
-    """
-    try:
-        city = None
-        nearest_major_city = None
-
-        if request.method == "POST":
-            try:
-                data = json.loads(request.body)
-            except (json.JSONDecodeError, TypeError):
-                data = {}
-            user_id = data.get("user_id")
-            city = data.get("city")
-            nearest_major_city = data.get("nearest_major_city")
-            if user_id and (city is None and nearest_major_city is None):
-                try:
-                    user = User.objects.get(user_id=user_id)
-                    city = user.city
-                    nearest_major_city = user.nearest_major_city
-                except User.DoesNotExist:
-                    pass
-        elif request.method == "GET":
-            city = request.GET.get("city")
-            nearest_major_city = request.GET.get("nearest_major_city")
-
-        qs = Therapistdirectory.objects.all()
-        user_city_n = _normalize_location(city)
-        user_nearest_n = _normalize_location(nearest_major_city)
-
-        # Build list with match priority for sorting
-        def match_priority(t):
-            tc = _normalize_location(t.city)
-            tr = _normalize_location(t.region)
-            if user_city_n and tc == user_city_n:
-                return 0
-            if user_nearest_n and (tc == user_nearest_n or tr == user_nearest_n):
-                return 1
-            return 2
-
-        therapists = list(qs)
-        therapists.sort(key=match_priority)
-
-        out = []
-        for t in therapists:
-            name = f"{t.first_name or ''} {t.last_name or ''}".strip() or "—"
-            out.append({
-                "id": str(t.therapist_id),
-                "name": name,
-                "credentials": t.credentials or None,
-                "specialty": t.specialty or None,
-                "city": t.city or None,
-                "region": t.region or None,
-                "phone": t.phone_number or None,
-                "email": t.email or None,
-                "website": t.website or None,
-                "languages": t.languages.split(",") if t.languages else None,
-            })
-            if out[-1]["languages"]:
-                out[-1]["languages"] = [x.strip() for x in out[-1]["languages"] if x.strip()]
-
-        return JsonResponse({"therapists": out}, status=200)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JsonResponse({"error": str(e), "therapists": []}, status=500)
 
 
 # -------------------------

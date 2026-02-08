@@ -202,31 +202,35 @@ class Testresult(models.Model):
 
 class Therapistdirectory(models.Model):
     class Source(models.TextChoices):
-        NPI = "npi", "NPI Registry (US)"
-        IMPORT = "import", "Imported (scraped/JSON)"
-        MANUAL = "manual", "Manual"
+        NPI = "npi", "NPI Registry"
+        IMPORT = "import", "Imported (JSON/scraper)"
 
     therapist_id = models.AutoField(primary_key=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
+    email = models.CharField(max_length=255, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
-    # Extended fields for directory display and filtering
-    credentials = models.CharField(max_length=200, blank=True, null=True)
-    specialty = models.CharField(max_length=200, blank=True, null=True)
     region = models.CharField(max_length=100, blank=True, null=True)
-    email = models.CharField(max_length=255, blank=True, null=True)
+    credentials = models.CharField(max_length=255, blank=True, null=True)
+    specialty = models.TextField(blank=True, null=True)
     website = models.URLField(max_length=500, blank=True, null=True)
-    languages = models.CharField(max_length=255, blank=True, null=True)  # e.g. "Urdu, English"
+    profile_url = models.URLField(max_length=500, blank=True, null=True)
+    languages = models.CharField(max_length=255, blank=True, null=True)
+    external_id = models.CharField(max_length=255, unique=True, blank=True, null=True)
     source = models.CharField(
-        max_length=20, choices=Source.choices, default=Source.MANUAL, blank=True
+        max_length=20,
+        choices=Source.choices,
+        default=Source.IMPORT,
+        blank=True,
+        null=True,
     )
-    external_id = models.CharField(
-        max_length=50, blank=True, null=True, unique=True
-    )  # e.g. NPI number for dedup
-    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
-    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+    service_type = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="List of e.g. ['in-person', 'online']",
+    )
 
     class Meta:
         db_table = "therapistdirectory"
