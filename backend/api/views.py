@@ -4,9 +4,10 @@ import threading
 import uuid
 from datetime import timedelta
 
+import requests
+
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
-from django.core.mail import send_mail
 from django.http import JsonResponse, StreamingHttpResponse, FileResponse, Http404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -229,33 +230,23 @@ def send_otp(request):
                 is_verified=False
             )
 
-            # Send email with OTP
+            # Send OTP via n8n webhook (workflow sends email to user's Gmail)
+            webhook_url = getattr(
+                settings, 'N8N_SEND_OTP_WEBHOOK_URL',
+                'http://localhost:5678/webhook-test/send-otp-mindease'
+            )
             try:
-                send_mail(
-                    subject='MindEase - Email Verification OTP',
-                    message=f'''
-Hello!
-
-Thank you for signing up for MindEase.
-
-Your verification code is: {otp_code}
-
-This code will expire in 5 minutes.
-
-If you didn't request this code, please ignore this email.
-
-Stay well,
-MindEase Team
-                    ''',
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[email_normalized],
-                    fail_silently=False,
+                resp = requests.post(
+                    webhook_url,
+                    json={"email": email_normalized, "otp": otp_code},
+                    headers={"Content-Type": "application/json"},
+                    timeout=15,
                 )
-            except Exception as email_error:
-                # If email fails, still return success for development (comment out in production)
-                print(f"Email sending failed: {email_error}")
-                # Uncomment below line in production
-                # return JsonResponse({"error": "Failed to send email. Please try again."}, status=500)
+                resp.raise_for_status()
+            except requests.RequestException as e:
+                return JsonResponse({
+                    "error": "Failed to send verification email. Please try again.",
+                }, status=500)
 
             return JsonResponse({
                 "message": "OTP sent successfully to your email.",
