@@ -6,15 +6,13 @@ import platform
 import time
 
 def check_ollama_running():
-    """Check if Ollama is already running by trying to connect to it."""
+    """Check if Ollama is really running by hitting its HTTP API (port check alone can be wrong)."""
     try:
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)
-        result = sock.connect_ex(('localhost', 11434))
-        sock.close()
-        return result == 0
-    except:
+        import urllib.request
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
         return False
 
 def start_ollama_if_needed():

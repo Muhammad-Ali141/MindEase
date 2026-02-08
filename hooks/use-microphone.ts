@@ -38,6 +38,8 @@ export function useMicrophone(): UseMicrophoneReturn {
   const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const chunkTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const onChunkCallbackRef = useRef<((blob: Blob) => void) | null>(null)
+  const lastChunkFireTimeRef = useRef<number>(0)
+  const firstChunkFiredRef = useRef<boolean>(false)
 
   /**
    * Request microphone permission from the user.
@@ -151,10 +153,35 @@ export function useMicrophone(): UseMicrophoneReturn {
       const mediaRecorder = new MediaRecorder(stream, options)
       mediaRecorderRef.current = mediaRecorder
 
-      // Handle data available event
+      // Live STT: fire chunks when we have data (driven by ondataavailable, not timers)
+      lastChunkFireTimeRef.current = 0
+      firstChunkFiredRef.current = false
+      const startTime = Date.now()
+      const chunkCallback = onChunkCallbackRef.current
+      const tryFireChunk = () => {
+        if (!chunkCallback || chunksRef.current.length === 0) return
+        const elapsed = Date.now() - startTime
+        if (!firstChunkFiredRef.current) {
+          if (elapsed >= 800) {
+            firstChunkFiredRef.current = true
+            lastChunkFireTimeRef.current = Date.now()
+            const blob = new Blob(chunksRef.current, { type: chunksRef.current[0]?.type || "audio/webm" })
+            chunkCallback(blob)
+          }
+          return
+        }
+        if (Date.now() - lastChunkFireTimeRef.current >= 1000) {
+          lastChunkFireTimeRef.current = Date.now()
+          const blob = new Blob(chunksRef.current, { type: chunksRef.current[0]?.type || "audio/webm" })
+          chunkCallback(blob)
+        }
+      }
+
+      // Handle data available event (fires every 100ms with mediaRecorder.start(100))
       mediaRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           chunksRef.current.push(event.data)
+          tryFireChunk()
         }
       }
 
@@ -179,17 +206,7 @@ export function useMicrophone(): UseMicrophoneReturn {
         }
       }, 1000)
 
-      // Real-time STT: first chunk at 0.8s, then every 1s so live transcript appears quickly
-      if (onChunk) {
-        const fireChunk = () => {
-          if (chunksRef.current.length > 0) {
-            const blob = new Blob(chunksRef.current, { type: chunksRef.current[0]?.type || "audio/webm" })
-            onChunk(blob)
-          }
-        }
-        chunkTimeoutRef.current = setTimeout(fireChunk, 800)
-        chunkIntervalRef.current = setInterval(fireChunk, 1000)
-      }
+      // Live STT chunks are fired from ondataavailable (see above), not from timers
 
     } catch (err: any) {
       setError(err.message || "Failed to start recording")

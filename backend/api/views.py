@@ -384,6 +384,7 @@ def chat_message(request):
             user_gender = data.get("user_gender")
             conversation_history = data.get("conversation_history", [])
             test_context = data.get("test_context")  # Optional test context
+            emotions_from_client = data.get("emotions")  # Optional: from voice SER
 
             if not message:
                 return JsonResponse({"error": "Message is required."}, status=400)
@@ -401,8 +402,6 @@ def chat_message(request):
             from chatbot.chat import MindEaseChat
             
             # Initialize chatbot with user's first name and test context
-            # Note: user_gender is not needed for chatbot initialization, only for summaries
-            # Pass test_context to constructor so it persists throughout the conversation
             chatbot = MindEaseChat(user_first_name=user_first_name, test_context=test_context)
             
             # Populate conversation history from frontend
@@ -412,22 +411,27 @@ def chat_message(request):
                 if role and content:
                     chatbot.memory.add_message(role, content)
             
-            # Process message through chatbot pipeline
-            # Test context is already stored in chatbot instance, but pass it again for backward compatibility
-            response = chatbot._process_message(message, test_context=test_context)
+            emotions_override = None
+            if emotions_from_client and isinstance(emotions_from_client, list):
+                emotions_override = [(e.get("emotion"), float(e.get("score", 0))) for e in emotions_from_client if e.get("emotion")]
+                if emotions_override:
+                    print("[Voice chat] Using emotions from audio (SER):", emotions_override)
             
-            # Get updated conversation history (filter out system messages)
+            response = chatbot._process_message(message, test_context=test_context, emotions_override=emotions_override)
+            
             updated_history = [
                 msg for msg in chatbot.memory.get_history()
                 if msg.get('role') in ['user', 'assistant']
             ]
             
-            # Get detected emotions (optional, for debugging)
-            emotions = chatbot.emotion_detector.detect_emotions(
-                message,
-                top_k=2,
-                threshold=0.3
-            )
+            if emotions_override:
+                emotions = emotions_override
+            else:
+                emotions = chatbot.emotion_detector.detect_emotions(
+                    message,
+                    top_k=2,
+                    threshold=0.3
+                )
             
             # Format emotions for response
             emotions_list = []
@@ -469,6 +473,7 @@ def chat_message_stream(request):
         user_gender = data.get("user_gender")
         conversation_history = data.get("conversation_history", [])
         test_context = data.get("test_context")
+        emotions_from_client = data.get("emotions")  # Optional: from audio SER (voice chat)
         if not message:
             return JsonResponse({"error": "Message is required."}, status=400)
         if not user_id:
@@ -483,16 +488,24 @@ def chat_message_stream(request):
             role, content = msg.get("role"), msg.get("content")
             if role and content:
                 chatbot.memory.add_message(role, content)
+        emotions_override = None
+        if emotions_from_client and isinstance(emotions_from_client, list):
+            emotions_override = [(e.get("emotion"), float(e.get("score", 0))) for e in emotions_from_client if e.get("emotion")]
+            if emotions_override:
+                print("[Voice chat stream] Using emotions from audio (SER):", emotions_override)
         full_response = []
 
         def event_stream():
-            for chunk in chatbot._process_message_stream(message, test_context=test_context):
+            for chunk in chatbot._process_message_stream(message, test_context=test_context, emotions_override=emotions_override):
                 full_response.append(chunk)
                 yield f"data: {json.dumps({'delta': chunk})}\n\n"
             full_text = "".join(full_response)
             chatbot.memory.add_exchange(message, full_text)
-            emotions = chatbot.emotion_detector.detect_emotions(message, top_k=2, threshold=0.3)
-            emotions_list = [{"emotion": e, "score": float(s)} for e, s in (emotions or [])]
+            if emotions_override:
+                emotions_list = [{"emotion": e, "score": s} for e, s in emotions_override]
+            else:
+                emotions = chatbot.emotion_detector.detect_emotions(message, top_k=2, threshold=0.3)
+                emotions_list = [{"emotion": e, "score": float(s)} for e, s in (emotions or [])]
             yield f"data: {json.dumps({'done': True, 'full_response': full_text, 'emotions': emotions_list})}\n\n"
 
         return StreamingHttpResponse(
@@ -500,6 +513,83 @@ def chat_message_stream(request):
             content_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# -------------------------
+# VOICE PROCESS (STT + SER) - get transcript and emotions-from-audio for voice chat
+# -------------------------
+@csrf_exempt
+def voice_process(request):
+    """
+    Accept audio file; run STT and Speech Emotion Recognition (SER) in parallel.
+    Returns { transcript, emotions } so the frontend can use transcript + emotions-from-voice
+    when calling the chat stream (emotion from how they said it, not from text).
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method."}, status=405)
+    try:
+        if "audio" not in request.FILES:
+            return JsonResponse({"error": "Audio file is required."}, status=400)
+        audio_file = request.FILES["audio"]
+        language = request.POST.get("language", "en")
+        import tempfile
+        import sys
+        import concurrent.futures
+        chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "chatbot")
+        stt_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "stt")
+        if chatbot_dir not in sys.path:
+            sys.path.insert(0, chatbot_dir)
+        if stt_dir not in sys.path:
+            sys.path.insert(0, stt_dir)
+        suffix = os.path.splitext(getattr(audio_file, "name", ""))[1] or ".webm"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            for chunk in audio_file.chunks():
+                tmp.write(chunk)
+            audio_path = tmp.name
+        try:
+            def run_stt():
+                from stt.stt_service import SpeechToTextService
+                # Distil-large-v3: ~6x faster than large-v3, within ~1% WER (best speed+accuracy)
+                svc = SpeechToTextService(
+                    model_id="Systran/faster-distil-whisper-large-v3",
+                    device=None,
+                    compute_type=None,
+                    beam_size=2,
+                    temperature=0.0,
+                    vad_filter=True,
+                )
+                return svc.transcribe_file(audio_path, language=language if language != "auto" else None)
+
+            def run_ser():
+                try:
+                    from chatbot.audio_emotion_detector import AudioEmotionDetector
+                    det = AudioEmotionDetector()
+                    return det.detect_emotions_from_audio(audio_path, top_k=2, threshold=0.2)
+                except Exception as ser_err:
+                    import logging
+                    logging.getLogger(__name__).warning("SER failed: %s", ser_err)
+                    return []
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+                fut_stt = ex.submit(run_stt)
+                fut_ser = ex.submit(run_ser)
+                transcript = (fut_stt.result() or "").strip()
+                try:
+                    ser_emotions = fut_ser.result() or []
+                except Exception:
+                    ser_emotions = []
+            emotions_list = [{"emotion": e, "score": float(s)} for e, s in ser_emotions]
+            print("[Voice] SER emotions from audio:", emotions_list)
+            return JsonResponse({"transcript": transcript, "emotions": emotions_list}, status=200)
+        finally:
+            try:
+                os.unlink(audio_path)
+            except Exception:
+                pass
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1322,11 +1412,12 @@ def stt_transcribe(request):
                 temp_file_path = temp_file.name
             
             try:
+                # Distil-large-v3: ~6x faster than large-v3, within ~1% WER
                 stt_service = SpeechToTextService(
-                    model_id="Systran/faster-whisper-large-v3",
+                    model_id="Systran/faster-distil-whisper-large-v3",
                     device=None,
                     compute_type=None,
-                    beam_size=5,
+                    beam_size=2,
                     temperature=0.0,
                     vad_filter=True,
                 )
@@ -1372,12 +1463,13 @@ def stt_transcribe(request):
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
-# Cached tiny Whisper model for fast live partial STT (loaded once, reused)
+# Cached TINY STT model for live partial transcription (loaded once, reused)
+# Must stay tiny: distil/large are too slow for live; responses would arrive after user stops.
 _partial_stt_service = None
 _partial_stt_lock = threading.Lock()
 
 def _get_partial_stt_service():
-    """Get or create fast tiny STT service for live partial transcription."""
+    """Get or create STT service for live partial transcription. TINY only - fast enough for real-time."""
     global _partial_stt_service
     with _partial_stt_lock:
         if _partial_stt_service is None:
@@ -1386,7 +1478,6 @@ def _get_partial_stt_service():
             if stt_dir not in sys.path:
                 sys.path.insert(0, stt_dir)
             from stt.stt_service import SpeechToTextService
-            # Tiny model: ~10x faster than large-v3 so partial results return while user still speaks
             _partial_stt_service = SpeechToTextService(
                 model_id="Systran/faster-whisper-tiny",
                 device=None,
@@ -1398,12 +1489,12 @@ def _get_partial_stt_service():
         return _partial_stt_service
 
 
-# Real-time STT: transcribe partial audio chunks for live display (uses fast tiny model)
+# Real-time STT: transcribe partial audio chunks for live display (TINY model so results return in ~1s)
 @csrf_exempt
 def stt_transcribe_partial(request):
     """
-    Real-time speech-to-text endpoint. Uses tiny Whisper model so responses
-    return in 1–2 seconds and text appears while the user is still speaking.
+    Live speech-to-text while user is speaking. Uses tiny Whisper so each chunk
+    returns in 1–2 seconds; distil/large would be too slow for live display.
     """
     if request.method == "POST":
         try:

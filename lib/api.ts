@@ -174,7 +174,8 @@ export async function apiChatMessage(
   user_first_name: string | null,
   user_gender: string | null,
   conversation_history: ChatMessage[],
-  test_context: string | null = null
+  test_context: string | null = null,
+  emotions?: Array<{ emotion: string; score: number }>
 ): Promise<ChatResponse> {
   const res = await fetch("http://localhost:8000/api/chat/", {
     method: "POST",
@@ -188,6 +189,7 @@ export async function apiChatMessage(
       user_gender,
       conversation_history,
       test_context,
+      ...(emotions && emotions.length > 0 ? { emotions } : {}),
     }),
   })
 
@@ -214,7 +216,8 @@ export async function apiChatMessageStream(
     onDelta: (delta: string) => void
     onDone: (payload: ChatStreamDonePayload) => void
   },
-  test_context: string | null = null
+  test_context: string | null = null,
+  emotions?: Array<{ emotion: string; score: number }>
 ): Promise<void> {
   const res = await fetch("http://localhost:8000/api/chat/stream/", {
     method: "POST",
@@ -226,6 +229,7 @@ export async function apiChatMessageStream(
       user_gender,
       conversation_history,
       test_context,
+      ...(emotions && emotions.length > 0 ? { emotions } : {}),
     }),
   })
   if (!res.ok) {
@@ -657,6 +661,29 @@ export async function apiSTTTranscribePartial(
 
   const data = await res.json()
   return { transcript: data.transcript || "", is_partial: true }
+}
+
+/**
+ * Voice process: run STT + Speech Emotion Recognition on audio.
+ * Returns transcript and emotions-from-voice for use with chat stream.
+ */
+export async function apiVoiceProcess(
+  audioBlob: Blob,
+  language: string = "en"
+): Promise<{ transcript: string; emotions: Array<{ emotion: string; score: number }> }> {
+  const form = new FormData()
+  form.append("audio", audioBlob, "recording.webm")
+  form.append("language", language)
+  const res = await fetch("http://localhost:8000/api/voice/process/", { method: "POST", body: form })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || "Voice process failed")
+  }
+  const data = await res.json()
+  return {
+    transcript: (data.transcript ?? "").trim(),
+    emotions: Array.isArray(data.emotions) ? data.emotions : [],
+  }
 }
 
 // TTS (Text-to-Speech) API functions

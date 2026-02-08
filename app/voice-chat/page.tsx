@@ -6,7 +6,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
-import { apiChatWelcome, apiChatMessageStream, apiSTTTranscribe, apiSTTTranscribePartial, apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar, apiTTSSynthesize, type ChatMessage, type Session } from "@/lib/api"
+import { apiChatWelcome, apiChatMessage, apiVoiceProcess, apiSTTTranscribe, apiSTTTranscribePartial, apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar, apiTTSSynthesize, type ChatMessage, type Session } from "@/lib/api"
 import { ArrowLeft, Mic2, Square, Loader2, Star, Volume2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
@@ -33,6 +33,7 @@ export default function VoiceChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const welcomeMessageLoadedRef = useRef(false)
   const latestPartialTranscriptRef = useRef("")
+  const isMountedRef = useRef(true)
   
   // Microphone hook
   const {
@@ -67,9 +68,11 @@ export default function VoiceChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Cleanup audio on unmount
+  // Track mount state and cleanup audio on unmount — don't run state/play after user leaves
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
+      isMountedRef.current = false
       if (currentAudioRef.current) {
         currentAudioRef.current.pause()
         currentAudioRef.current = null
@@ -99,7 +102,8 @@ export default function VoiceChatPage() {
         user!.id,
         user!.first_name || null
       )
-      
+      if (!isMountedRef.current) return
+
       // Get user's language preference for TTS
       let userLanguage = "en" // Default to English
       if (user?.lang_pref) {
@@ -115,7 +119,8 @@ export default function VoiceChatPage() {
       try {
         setIsSynthesizing(true)
         const audioBlob = await apiTTSSynthesize(response.welcome_message, userLanguage)
-        
+        if (!isMountedRef.current) return
+
         // Stop any existing audio before creating new one
         if (currentAudioRef.current) {
           currentAudioRef.current.pause()
@@ -179,13 +184,15 @@ export default function VoiceChatPage() {
       setCurrentSessionId(null) // New session
       setBaselineUserMessageCount(0)
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load welcome message",
-        variant: "destructive",
-      })
+      if (isMountedRef.current) {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to load welcome message",
+          variant: "destructive",
+        })
+      }
     } finally {
-      setWelcomeLoading(false)
+      if (isMountedRef.current) setWelcomeLoading(false)
     }
   }
 
@@ -193,7 +200,8 @@ export default function VoiceChatPage() {
     try {
       setWelcomeLoading(true)
       const response = await apiGetSessionById(user!.id, sessionId)
-      
+      if (!isMountedRef.current) return
+
       // Load messages from session
       const session = response.session
       setCurrentSessionId(session.session_id)
@@ -232,15 +240,16 @@ export default function VoiceChatPage() {
 
       setMessages(initialMessages)
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load session",
-        variant: "destructive",
-      })
-      // Fallback to welcome message
-      loadWelcomeMessage()
+      if (isMountedRef.current) {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to load session",
+          variant: "destructive",
+        })
+        loadWelcomeMessage()
+      }
     } finally {
-      setWelcomeLoading(false)
+      if (isMountedRef.current) setWelcomeLoading(false)
     }
   }
 
@@ -356,11 +365,10 @@ export default function VoiceChatPage() {
   const handleMicClick = async () => {
     try {
       if (isRecording) {
-        // Stop recording: use live transcript immediately, no extra "Transcribing..." step
         const liveTranscript = latestPartialTranscriptRef.current.trim()
         latestPartialTranscriptRef.current = ""
-        setPartialTranscript("")
         const audioBlob = await stopRecording()
+        setPartialTranscript("")
         if (audioBlob) {
           await processRecording(audioBlob, liveTranscript)
         }
@@ -403,42 +411,95 @@ export default function VoiceChatPage() {
     }
   }
 
-  // Process recording: use live transcript if we have it, otherwise run full STT
+  // Process recording: show transcript immediately (no disappearing), then get emotion + stream
   const processRecording = async (audioBlob: Blob, liveTranscript?: string) => {
     if (!user || !token) return
 
-    let transcript = liveTranscript?.trim() ?? ""
+    const initialTranscript = liveTranscript?.trim() ?? ""
+    if (initialTranscript) {
+      const userMessage: ChatMessage = { role: "user", content: initialTranscript, content_type: "audio" }
+      setMessages((prev) => [...prev, userMessage])
+      setLoading(true)
+    } else {
+      setIsTranscribing(true)
+    }
+
+    let transcript = initialTranscript
+    let emotionsFromVoice: Array<{ emotion: string; score: number }> = []
+
+    try {
+      const voiceResult = await apiVoiceProcess(audioBlob, "en")
+      if (!isMountedRef.current) return
+      transcript = voiceResult.transcript?.trim() || initialTranscript || ""
+      emotionsFromVoice = voiceResult.emotions || []
+    } catch (e) {
+      if (!transcript) {
+        try {
+          const sttResponse = await apiSTTTranscribe(audioBlob, "en")
+          transcript = sttResponse.transcript.trim()
+        } catch {
+          transcript = initialTranscript
+        }
+      }
+    } finally {
+      setIsTranscribing(false)
+    }
 
     if (!transcript) {
-      try {
-        setIsTranscribing(true)
-        const sttResponse = await apiSTTTranscribe(audioBlob, "en")
-        transcript = sttResponse.transcript.trim()
-      } finally {
-        setIsTranscribing(false)
-      }
-      if (!transcript) {
+      if (isMountedRef.current) {
+        if (initialTranscript) setMessages((prev) => prev.slice(0, -1))
         toast({
           title: "No speech detected",
           description: "Please try speaking again.",
           variant: "destructive",
         })
-        return
+        setLoading(false)
       }
+      return
     }
 
     try {
-      // Add user message immediately (no "Transcribing..." when we had live transcript)
-      const userMessage: ChatMessage = {
-        role: "user",
-        content: transcript,
-        content_type: "audio",
+      if (!initialTranscript) {
+        const userMessage: ChatMessage = { role: "user", content: transcript, content_type: "audio" }
+        setMessages((prev) => [...prev, userMessage])
+        setLoading(true)
       }
-      const historyForRequest = [...messages, userMessage]
-      setMessages(historyForRequest)
-      setLoading(true)
+      const historyForRequest = [...messages, { role: "user" as const, content: transcript, content_type: "audio" as const }]
+      setMessages((prev) => {
+        const next = [...prev]
+        if (next.length > 0 && next[next.length - 1].role === "user" && next[next.length - 1].content !== transcript) {
+          next[next.length - 1] = { ...next[next.length - 1], content: transcript }
+        }
+        return next
+      })
 
-      // Step 3: Stream chat response and speak sentence-by-sentence as soon as ready
+      // Non-streaming: get full LLM reply once, then one TTS for the whole reply; show text only when audio is ready
+      const chatResponse = await apiChatMessage(
+        transcript,
+        user.id,
+        user.first_name || null,
+        user.gender || null,
+        historyForRequest,
+        null,
+        emotionsFromVoice.length > 0 ? emotionsFromVoice : undefined
+      )
+      if (!isMountedRef.current) return
+      setLoading(false)
+
+      const primaryEmotion = chatResponse.emotions?.[0]
+      if (primaryEmotion) {
+        setMessages((prev) => {
+          const updated = [...prev]
+          for (let i = updated.length - 1; i >= 0; i--) {
+            if (updated[i].role === "user") {
+              updated[i] = { ...updated[i], emotion_label: primaryEmotion.emotion, emotion_score: primaryEmotion.score }
+              break
+            }
+          }
+          return updated
+        })
+      }
+
       let userLanguage = "en"
       if (user?.lang_pref) {
         const langPref = user.lang_pref.toLowerCase()
@@ -451,148 +512,47 @@ export default function VoiceChatPage() {
         currentAudioRef.current = null
       }
 
-      // Voice chat sync: text appears ONLY when audio is ready (sentence-by-sentence)
-      const sentences: string[] = []
-      const ttsPromises: Promise<Blob | null>[] = []
-      let displayedText = ""
-      let nextDisplayIdx = 0
-      let isPlaying = false
-
-      const tryDisplayAndPlayNext = () => {
-        if (nextDisplayIdx >= sentences.length || nextDisplayIdx >= ttsPromises.length) return
-        const idx = nextDisplayIdx
-        // Wait for TTS promise to resolve
-        ttsPromises[idx].then((blob) => {
-          if (blob) {
-            // Append this sentence once (increment now so we never show this index again)
-            nextDisplayIdx = idx + 1
-            displayedText += (displayedText ? " " : "") + sentences[idx]
-            setMessages((prev) => {
-              const next = [...prev]
-              const last = next[next.length - 1]
-              if (last?.role === "assistant") next[next.length - 1] = { ...last, content: displayedText }
-              return next
-            })
-            // Play audio (only one at a time)
-            if (!isPlaying) {
-              isPlaying = true
-              setIsPlayingAudio(true)
-              const url = URL.createObjectURL(blob)
-              const audio = new Audio(url)
-              audio.onended = () => {
-                URL.revokeObjectURL(url)
-                isPlaying = false
-                currentAudioRef.current = null
-                setIsPlayingAudio(false)
-                tryDisplayAndPlayNext()
-              }
-              audio.onerror = () => {
-                URL.revokeObjectURL(url)
-                isPlaying = false
-                currentAudioRef.current = null
-                setIsPlayingAudio(false)
-                tryDisplayAndPlayNext()
-              }
-              currentAudioRef.current = audio
-              audio.play()
-            }
-          } else {
-            nextDisplayIdx = idx + 1
-            tryDisplayAndPlayNext()
-          }
-        })
-      }
-
-      const seenSentences = new Set<string>()
-      const enqueueSentence = (sentence: string) => {
-        const key = sentence.trim().toLowerCase()
-        if (!key || seenSentences.has(key)) return
-        seenSentences.add(key)
-        const idx = sentences.length
-        sentences.push(sentence)
-        const p = apiTTSSynthesize(sentence, userLanguage).catch(() => null as Blob | null)
-        ttsPromises.push(p)
-        p.then(() => tryDisplayAndPlayNext())
-      }
-
-      let streamedText = ""
-      let lastTtsEnd = 0
-      const sentenceEnd = /[.!?]\s*|\n/
-      setMessages((prev) => [...prev, { role: "assistant", content: "", content_type: "text" }])
+      let audioBlob: Blob | null = null
       try {
-        await apiChatMessageStream(
-          transcript,
-          user.id,
-          user.first_name || null,
-          user.gender || null,
-          historyForRequest,
-          {
-          onDelta: (delta) => {
-            streamedText += delta
-            // Don't show text yet; text appears only when audio is ready
-            let rest = streamedText.slice(lastTtsEnd)
-            let match = rest.match(sentenceEnd)
-            while (match && match.index !== undefined) {
-              const sentence = rest.slice(0, match.index + match[0].length).trim()
-              lastTtsEnd += match.index + match[0].length
-              if (sentence) enqueueSentence(sentence)
-              rest = streamedText.slice(lastTtsEnd)
-              match = rest.match(sentenceEnd)
-            }
-          },
-          onDone: (payload) => {
-            const full = payload.full_response.trim()
-            const primaryEmotion = payload.emotions?.[0]
-            // Apply emotion to user message
-            if (primaryEmotion) {
-              setMessages((prev) => {
-                const updated = [...prev]
-                for (let i = updated.length - 1; i >= 0; i--) {
-                  if (updated[i].role === "user") {
-                    updated[i] = { ...updated[i], emotion_label: primaryEmotion.emotion, emotion_score: primaryEmotion.score }
-                    break
-                  }
-                }
-                return updated
-              })
-            }
-            const remainder = full.slice(lastTtsEnd).trim()
-            if (remainder) enqueueSentence(remainder)
-            setIsSynthesizing(false)
-          },
+        audioBlob = await apiTTSSynthesize(chatResponse.response, userLanguage)
+      } catch (_) {
+        // TTS failed; still show text
+      }
+      if (!isMountedRef.current) return
+      setIsSynthesizing(false)
+      setMessages((prev) => [...prev, { role: "assistant", content: chatResponse.response, content_type: "text" }])
+      if (audioBlob) {
+        const url = URL.createObjectURL(audioBlob)
+        const audio = new Audio(url)
+        audio.onplay = () => setIsPlayingAudio(true)
+        audio.onended = () => {
+          URL.revokeObjectURL(url)
+          setIsPlayingAudio(false)
+          currentAudioRef.current = null
         }
-        )
-      } finally {
-        setIsSynthesizing(false)
+        audio.onerror = () => {
+          URL.revokeObjectURL(url)
+          setIsPlayingAudio(false)
+          currentAudioRef.current = null
+        }
+        currentAudioRef.current = audio
+        audio.play()
       }
     } catch (error: any) {
-      setIsTranscribing(false)
-      setLoading(false)
-      
-      // Handle specific error messages
-      let errorMessage = error.message || "Failed to process recording"
-      
-      if (errorMessage.includes("No speech detected")) {
-        toast({
-          title: "No speech detected",
-          description: "Please try speaking again.",
-          variant: "destructive",
-        })
-      } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
-        toast({
-          title: "Network error",
-          description: "Please check your connection and try again.",
-          variant: "destructive",
-        })
-      } else {
-        toast({
-          title: "Error",
-          description: errorMessage,
-          variant: "destructive",
-        })
+      if (isMountedRef.current) {
+        setIsTranscribing(false)
+        setLoading(false)
+        let errorMessage = error.message || "Failed to process recording"
+        if (errorMessage.includes("No speech detected")) {
+          toast({ title: "No speech detected", description: "Please try speaking again.", variant: "destructive" })
+        } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+          toast({ title: "Network error", description: "Please check your connection and try again.", variant: "destructive" })
+        } else {
+          toast({ title: "Error", description: errorMessage, variant: "destructive" })
+        }
       }
     } finally {
-      setLoading(false)
+      if (isMountedRef.current) setLoading(false)
     }
   }
 

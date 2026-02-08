@@ -73,19 +73,24 @@ class MindEaseChat:
         
         self._display_response(welcome_msg)
     
-    def _process_message(self, user_input: str, test_context: str = None) -> str:
-        """Process user message through pipeline (silent)"""
+    def _process_message(self, user_input: str, test_context: str = None, emotions_override: List[tuple] = None) -> str:
+        """Process user message through pipeline (silent).
+        emotions_override: optional list of (emotion, score) from e.g. audio SER; when set, skip text-based emotion detection."""
         try:
             # Use instance test_context if provided, otherwise use parameter (for backward compatibility)
             effective_test_context = self.test_context if self.test_context else test_context
             
-            # Step 1: Emotion Detection
-            emotions = self.emotion_detector.detect_emotions(
-                user_input, 
-                top_k=2, 
-                threshold=0.3
-            )
-            emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
+            # Step 1: Emotion Detection (from text via DeBERTa, or from audio via SER when emotions_override is provided)
+            if emotions_override is not None and len(emotions_override) > 0:
+                emotions = emotions_override
+                emotions_str = self.emotion_detector.format_emotions_for_llm(emotions)
+            else:
+                emotions = self.emotion_detector.detect_emotions(
+                    user_input,
+                    top_k=2,
+                    threshold=0.3
+                )
+                emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
             
             # Step 2: RAG Retrieval
             contexts = self.rag_system.retrieve_context(
@@ -119,15 +124,19 @@ class MindEaseChat:
         except Exception as e:
             return f"I apologize, but I'm having trouble processing that right now. Could you try rephrasing your message?"
 
-    def _process_message_stream(self, user_input: str, test_context: str = None):
+    def _process_message_stream(self, user_input: str, test_context: str = None, emotions_override: List[tuple] = None):
         """
         Process user message through pipeline and stream LLM response chunks.
-        Does not update memory; caller must call memory.add_exchange(user_input, full_response) when done.
+        emotions_override: optional list of (emotion, score) from e.g. audio SER; when set, skip text-based emotion detection.
         """
         try:
             effective_test_context = self.test_context if self.test_context else test_context
-            emotions = self.emotion_detector.detect_emotions(user_input, top_k=2, threshold=0.3)
-            emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
+            if emotions_override is not None and len(emotions_override) > 0:
+                emotions = emotions_override
+                emotions_str = self.emotion_detector.format_emotions_for_llm(emotions)
+            else:
+                emotions = self.emotion_detector.detect_emotions(user_input, top_k=2, threshold=0.3)
+                emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
             contexts = self.rag_system.retrieve_context(query=user_input, top_k=3, similarity_threshold=0.5)
             context_str = self.rag_system.format_context_for_llm(contexts) if contexts else ""
             conversation_history = self.memory.get_history_with_context()

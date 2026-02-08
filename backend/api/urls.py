@@ -9,6 +9,7 @@ urlpatterns = [
     path("verify-otp/", views.verify_otp, name="verify_otp"),
     path("chat/", views.chat_message, name="chat_message"),
     path("chat/stream/", views.chat_message_stream, name="chat_message_stream"),
+    path("voice/process/", views.voice_process, name="voice_process"),
     path("chat/welcome/", views.chat_welcome, name="chat_welcome"),
     path("chat/summary/", views.chat_summary, name="chat_summary"),
     path("sessions/count/", views.get_session_count, name="get_session_count"),

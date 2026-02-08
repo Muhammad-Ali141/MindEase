@@ -271,7 +271,10 @@ Remember: Understanding the user's situation is MORE IMPORTANT than immediately 
             current_message = f"{context}\n\n{current_message}"
         
         messages.append({"role": "user", "content": current_message})
-        
+        print("[LLM input] user_message:", user_message[:200] + ("..." if len(user_message) > 200 else ""))
+        print("[LLM input] emotions:", emotions[:300] if emotions else "(none)")
+        print("[LLM input] context length:", len(context or ""), "chars")
+        print("[LLM input] current_message (last user content) length:", len(current_message), "chars")
         # Generate response
         if not self.model_name:
             return "Error: No LLM model available. Please ensure Ollama is running and a model is downloaded.\n  ollama pull llama3.1:8b-instruct"
@@ -339,6 +342,14 @@ Remember: Understanding the user's situation is MORE IMPORTANT than immediately 
                 return msg
             elif "connection" in error_msg.lower() or "refused" in error_msg.lower():
                 return f"Error: Cannot connect to Ollama service.\nPlease ensure Ollama is running: ollama serve"
+            elif "cuda" in error_msg.lower() or "status code: 500" in error_msg.lower() or "process has terminated" in error_msg.lower():
+                return (
+                    "Error: Ollama hit a GPU/CUDA error and the runner stopped.\n\n"
+                    "Try:\n"
+                    "  1. Restart Ollama: close any 'ollama serve' window, then run: ollama serve\n"
+                    "  2. If it keeps failing, run Ollama on CPU only: set OLLAMA_NUM_GPU=0 then ollama serve\n"
+                    "  3. Update your GPU drivers (NVIDIA) or ensure only one app is using the GPU."
+                )
             else:
                 return f"Error generating response: {error_msg}\n\nPlease ensure Ollama is running: ollama serve"
 
@@ -394,6 +405,10 @@ Keep responses focused. Ask ONE question at a time. Validate feelings first. One
         if context:
             current_message = f"{context}\n\n{current_message}"
         messages.append({"role": "user", "content": current_message})
+        print("[LLM input stream] user_message:", user_message[:200] + ("..." if len(user_message) > 200 else ""))
+        print("[LLM input stream] emotions:", (emotions[:300] + "..." if emotions and len(emotions) > 300 else (emotions or "(none)")))
+        print("[LLM input stream] context length:", len(context or ""), "chars")
+        print("[LLM input stream] current_message length:", len(current_message), "chars")
         if not self.model_name:
             yield "Error: No LLM model available. Please ensure Ollama is running and a model is downloaded."
             return
@@ -410,7 +425,13 @@ Keep responses focused. Ask ONE question at a time. Validate feelings first. One
                 elif hasattr(chunk, 'message') and hasattr(chunk.message, 'content'):
                     yield chunk.message.content or ""
         except Exception as e:
-            yield f"Error generating response: {str(e)}"
+            error_msg = str(e)
+            if "cuda" in error_msg.lower() or "status code: 500" in error_msg.lower() or "process has terminated" in error_msg.lower():
+                yield (
+                    "Error: Ollama hit a GPU/CUDA error. Restart Ollama (ollama serve) or run with CPU: OLLAMA_NUM_GPU=0 ollama serve"
+                )
+            else:
+                yield f"Error generating response: {error_msg}"
 
 
 if __name__ == "__main__":
