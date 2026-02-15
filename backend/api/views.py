@@ -1,5 +1,6 @@
 import json
 import random
+import secrets
 import threading
 import uuid
 from datetime import timedelta
@@ -195,6 +196,111 @@ def register(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# LOGIN VIA OAUTH (e.g. Google via Clerk)
+# -------------------------
+@csrf_exempt
+def login_oauth(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method."}, status=405)
+    try:
+        data = json.loads(request.body)
+        email = data.get("email")
+        if not email:
+            return JsonResponse({"error": "Email is required."}, status=400)
+        email_normalized = email.lower()
+        try:
+            user = User.objects.get(email=email_normalized)
+        except User.DoesNotExist:
+            return JsonResponse({"error": "User not found. Complete sign up first."}, status=404)
+        # Return same shape as login for frontend setAuth
+        return JsonResponse({
+            "message": "Login successful.",
+            "user_id": user.user_id,
+            "first_name": user.first_name,
+            "last_name": user.last_name or "",
+            "email": user.email,
+            "gender": user.gender or "Other",
+            "lang_pref": user.lang_pref,
+            "city": user.city or "",
+            "nearest_major_city": user.nearest_major_city or "",
+            "dashboard_tour_seen": user.dashboard_tour_seen,
+            "primary_condition": user.primary_condition,
+            "generic_screening_completed": user.generic_screening_completed,
+        }, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# -------------------------
+# REGISTER VIA OAUTH (after OTP verified) — complete profile
+# -------------------------
+@csrf_exempt
+def register_oauth(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method."}, status=405)
+    try:
+        data = json.loads(request.body)
+        email = data.get("email")
+        first_name = data.get("first_name") or ""
+        last_name = data.get("last_name") or ""
+        city = data.get("city") or ""
+        nearest_major_city = (data.get("nearest_major_city") or "").strip()
+        dob = data.get("dob")
+        gender = data.get("gender") or "Other"
+        lang_pref = data.get("preferred_language") or data.get("lang_pref") or "en"
+        if lang_pref == "en":
+            lang_pref = "english"
+        elif lang_pref == "ur":
+            lang_pref = "urdu"
+
+        if not email:
+            return JsonResponse({"error": "Email is required."}, status=400)
+        email_normalized = email.lower()
+
+        if User.objects.filter(email__iexact=email_normalized).exists():
+            return JsonResponse({"error": "User with this email already exists."}, status=400)
+
+        try:
+            verification = EmailVerification.objects.get(user_email=email_normalized, is_verified=True)
+        except EmailVerification.DoesNotExist:
+            return JsonResponse({"error": "Please verify your email with OTP first."}, status=400)
+
+        if not nearest_major_city:
+            return JsonResponse({"error": "Nearest major city is required."}, status=400)
+        dob_parsed = parse_date(dob)
+        if not dob_parsed:
+            return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+
+        user = User.objects.create(
+            first_name=first_name or "User",
+            last_name=last_name,
+            email=email_normalized,
+            password=make_password(secrets.token_urlsafe(32)),
+            dob=dob_parsed,
+            gender=gender,
+            lang_pref=lang_pref,
+            city=city or None,
+            nearest_major_city=nearest_major_city,
+        )
+        return JsonResponse({
+            "message": "User registered successfully!",
+            "user_id": user.user_id,
+            "first_name": user.first_name,
+            "last_name": user.last_name or "",
+            "email": user.email,
+            "gender": user.gender or "Other",
+            "lang_pref": user.lang_pref,
+            "city": user.city or "",
+            "nearest_major_city": user.nearest_major_city or "",
+            "dashboard_tour_seen": user.dashboard_tour_seen,
+            "primary_condition": user.primary_condition,
+            "generic_screening_completed": user.generic_screening_completed,
+        }, status=201)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 # -------------------------

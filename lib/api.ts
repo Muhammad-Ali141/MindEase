@@ -100,6 +100,51 @@ export async function apiLogin(body: { email: string; password: string }) {
   return data;
 }
 
+const API_BASE = "http://localhost:8000/api";
+
+/** Login with OAuth (e.g. after Google sign-in via Clerk). Returns same shape as apiLogin. */
+export async function apiLoginOauth(email: string) {
+  const res = await fetch(`${API_BASE}/login-oauth/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const data = await res.json();
+  if (res.status === 404) throw new Error("USER_NOT_FOUND");
+  if (!res.ok) throw new Error(data.error || "Login failed");
+  return data;
+}
+
+/** Register after OAuth + OTP verified (complete profile). No password. */
+export async function apiRegisterOauth(data: {
+  email: string;
+  first_name: string;
+  last_name: string;
+  city: string;
+  nearest_major_city: string;
+  dob: string;
+  gender: string;
+  preferred_language: string;
+}) {
+  const res = await fetch(`${API_BASE}/register-oauth/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: data.email,
+      first_name: data.first_name,
+      last_name: data.last_name,
+      city: data.city,
+      nearest_major_city: data.nearest_major_city,
+      dob: data.dob,
+      gender: data.gender,
+      preferred_language: data.preferred_language,
+    }),
+  });
+  const out = await res.json();
+  if (!res.ok) throw new Error(out.error || "Registration failed");
+  return out;
+}
+
 export async function apiUpdateDashboardTour(user_id: string, seen: boolean) {
   const response = await fetch("http://localhost:8000/api/users/dashboard-tour/", {
     method: "POST",
