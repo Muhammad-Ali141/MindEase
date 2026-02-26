@@ -638,6 +638,63 @@ export async function apiUpdateUserProfile(
   return res.json()
 }
 
+// Therapist directory
+
+export type TherapistListParams = {
+  city?: string
+  specialty?: string
+  service_type?: "in-person" | "online"
+  limit?: number
+}
+
+export type TherapistListItem = {
+  id: string
+  name: string
+  credentials?: string | null
+  specialty?: string | null
+  city?: string | null
+  region?: string | null
+  website?: string | null
+  profile_url?: string | null
+  languages?: string[] | null
+  address?: string | null
+  service_type?: string[] | null
+}
+
+export type TherapistsResponse = {
+  therapists: TherapistListItem[]
+  total: number
+}
+
+export async function apiGetTherapists(
+  params?: TherapistListParams
+): Promise<TherapistsResponse> {
+  const search = new URLSearchParams()
+  if (params?.city) search.set("city", params.city)
+  if (params?.specialty) search.set("specialty", params.specialty)
+  if (params?.service_type) search.set("service_type", params.service_type)
+  if (params?.limit != null && params.limit > 0) search.set("limit", String(params.limit))
+  const qs = search.toString()
+  const url = `http://localhost:8000/api/therapists/${qs ? `?${qs}` : ""}`
+  const res = await fetch(url, { method: "GET" })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || "Failed to load therapists")
+  }
+  return res.json()
+}
+
+export type TherapistFiltersResponse = { cities: string[] }
+
+export async function apiGetTherapistFilters(): Promise<TherapistFiltersResponse> {
+  const res = await fetch("http://localhost:8000/api/therapists/filters/", { method: "GET" })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || "Failed to load filters")
+  }
+  return res.json()
+}
+
 // STT (Speech-to-Text) API functions
 
 export type STTTranscribeResponse = {
@@ -888,48 +945,8 @@ export async function apiGetDiagnosticTestStatus(
 }
 
 // -------------------------
-// Therapist directory
+// Mood trends (diagnostic tests)
 // -------------------------
-export type TherapistListItem = {
-  id: string
-  name: string
-  credentials?: string | null
-  specialty?: string | null
-  city?: string | null
-  region?: string | null
-  phone?: string | null
-  email?: string | null
-  website?: string | null
-  languages?: string[] | null
-}
-
-export type GetTherapistsResponse = {
-  therapists: TherapistListItem[]
-}
-
-export async function apiGetTherapists(
-  user_id: string,
-  options?: { city?: string; nearest_major_city?: string }
-): Promise<GetTherapistsResponse> {
-  const res = await fetch("http://localhost:8000/api/therapists/", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      user_id,
-      city: options?.city,
-      nearest_major_city: options?.nearest_major_city,
-    }),
-  })
-
-  const data = await res.json().catch(() => ({ therapists: [], error: "Invalid response" }))
-  if (!res.ok) {
-    throw new Error((data as { error?: string }).error || "Failed to load therapists")
-  }
-  return data as GetTherapistsResponse
-}
-
 export type MoodTrendData = {
   date: string;
   score: number;

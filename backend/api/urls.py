@@ -22,6 +22,8 @@ urlpatterns = [
     path("sessions/star/", views.toggle_session_star, name="toggle_session_star"),
     path("profile/get/", views.get_user_profile, name="get_user_profile"),
     path("profile/update/", views.update_user_profile, name="update_user_profile"),
+    path("therapists/", views.get_therapists, name="get_therapists"),
+    path("therapists/filters/", views.get_therapist_filters, name="get_therapist_filters"),
     path("users/dashboard-tour/", views.update_dashboard_tour, name="update_dashboard_tour"),
     path("stt/transcribe/", views.stt_transcribe, name="stt_transcribe"),
     path("stt/transcribe-partial/", views.stt_transcribe_partial, name="stt_transcribe_partial"),
@@ -31,5 +33,4 @@ urlpatterns = [
     path("diagnostic-tests/history/", views.diagnostic_test_history, name="diagnostic_test_history"),
     path("diagnostic-tests/mood-trend/", views.diagnostic_test_mood_trend, name="diagnostic_test_mood_trend"),
     path("diagnostic-tests/streak/", views.diagnostic_test_streak, name="diagnostic_test_streak"),
-    path("therapists/", views.get_therapists, name="get_therapists"),
 ]

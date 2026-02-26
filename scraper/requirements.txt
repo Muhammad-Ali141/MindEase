@@ -1,0 +1,2 @@
+# TherapyRoute scraper – run from scraper/ or project root
+playwright>=1.40.0

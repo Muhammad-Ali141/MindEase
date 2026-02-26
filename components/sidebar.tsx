@@ -42,7 +42,11 @@ export function Sidebar() {
         >
           <FileText size={24} className="text-white" />
         </button>
-        <button className="p-3 hover:bg-white/20 rounded-lg transition" title="Find Therapist">
+        <button
+          onClick={() => router.push("/dashboard/therapists")}
+          className="p-3 hover:bg-white/20 rounded-lg transition"
+          title="Find Therapist"
+        >
           <Users size={24} className="text-white" />
         </button>
       </nav>
