@@ -5,15 +5,16 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 
 export function AuthGuard({ children }: { children: ReactNode }) {
-  const { token } = useAuth()
+  const { token, isLoading } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
+    if (isLoading) return // wait for localStorage hydration
     if (!token) {
       router.replace("/login")
     }
-  }, [token, router])
+  }, [token, isLoading, router])
 
-  if (!token) return null
+  if (isLoading || !token) return null
   return <>{children}</>
 }

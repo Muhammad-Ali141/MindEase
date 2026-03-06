@@ -17,6 +17,7 @@ type AuthState = {
   user: User | null
 }
 type AuthContextType = AuthState & {
+  isLoading: boolean
   setAuth: (s: AuthState) => void
   logout: () => void
 }
@@ -77,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         token: state.token,
         user: state.user,
+        isLoading,
         setAuth,
         logout,
       }}

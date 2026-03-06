@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.therapyroute.com)",
+      "Bash(python:*)",
+      "Bash(venvScriptspython scraper/debug_page.py)",
+      "Bash(\"venv/Scripts/python.exe\" scraper/debug_page.py)",
+      "Bash(\"venv/Scripts/python.exe\":*)",
+      "WebFetch(domain:www.marham.pk)",
+      "Bash(\"venv/Scripts/python.exe\" scraper/debug_marham.py)",
+      "Bash(\"venv/Scripts/python.exe\" scraper/debug_marham2.py)",
+      "Bash(\"venv/Scripts/python.exe\" scraper/scrape_marham.py -o scraper/output/marham_therapists.json --no-headless)",
+      "Bash(claude mcp:*)"
+    ]
+  }
+}

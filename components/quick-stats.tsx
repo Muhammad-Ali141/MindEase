@@ -18,18 +18,6 @@ export function QuickStats() {
     }
   }, [user?.id])
 
-  // Refresh data when component becomes visible
-  useEffect(() => {
-    const handleFocus = () => {
-      if (user?.id) {
-        loadAllData()
-      }
-    }
-    
-    window.addEventListener('focus', handleFocus)
-    return () => window.removeEventListener('focus', handleFocus)
-  }, [user?.id])
-
   const loadAllData = async () => {
     if (!user?.id) return
     

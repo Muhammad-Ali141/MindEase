@@ -2,6 +2,7 @@
 
 import { Sparkles, User, ChevronDown } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
+import { useClerk } from "@clerk/nextjs"
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -12,6 +13,7 @@ type HeaderProps = {
 
 export function Header({ onStartTutorial }: HeaderProps) {
   const { user, logout } = useAuth()
+  const { signOut: clerkSignOut } = useClerk()
   const router = useRouter()
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -29,10 +31,11 @@ export function Header({ onStartTutorial }: HeaderProps) {
     }
   }, [])
 
-  const handleLogout = () => {
-    logout()
-    router.push("/")
+  const handleLogout = async () => {
     setIsProfileOpen(false)
+    await clerkSignOut?.()
+    logout()
+    window.location.href = "/"
   }
 
   const getUserDisplayName = () => {

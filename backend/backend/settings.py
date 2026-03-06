@@ -86,14 +86,21 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # -------------------------------------------------------------------
 # Database
 # -------------------------------------------------------------------
+_db_host = os.getenv('DB_HOST', 'localhost')
+_db_options = {}
+if _db_host not in ('localhost', '127.0.0.1'):
+    # Supabase and other hosted Postgres require SSL
+    _db_options['sslmode'] = os.getenv('DB_SSLMODE', 'require')
+
 DATABASES = {
     'default': {
         'ENGINE': os.getenv('DJANGO_DB_ENGINE', 'django.db.backends.postgresql'),
         'NAME': os.getenv('DB_NAME', 'mentalhealthdb'),
         'USER': os.getenv('DB_USER', 'postgres'),
         'PASSWORD': os.getenv('DB_PASSWORD', 'pakistan'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'HOST': _db_host,
         'PORT': os.getenv('DB_PORT', '5432'),
+        **({'OPTIONS': _db_options} if _db_options else {}),
     }
 }
 

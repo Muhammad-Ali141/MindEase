@@ -259,14 +259,16 @@ def register_oauth(request):
         if not email:
             return JsonResponse({"error": "Email is required."}, status=400)
         email_normalized = email.lower()
+        oauth_verified = data.get("oauth_verified") is True  # Skip OTP when user came from Google OAuth
 
         if User.objects.filter(email__iexact=email_normalized).exists():
             return JsonResponse({"error": "User with this email already exists."}, status=400)
 
-        try:
-            verification = EmailVerification.objects.get(user_email=email_normalized, is_verified=True)
-        except EmailVerification.DoesNotExist:
-            return JsonResponse({"error": "Please verify your email with OTP first."}, status=400)
+        if not oauth_verified:
+            try:
+                verification = EmailVerification.objects.get(user_email=email_normalized, is_verified=True)
+            except EmailVerification.DoesNotExist:
+                return JsonResponse({"error": "Please verify your email with OTP first."}, status=400)
 
         if not nearest_major_city:
             return JsonResponse({"error": "Nearest major city is required."}, status=400)

@@ -115,7 +115,7 @@ export async function apiLoginOauth(email: string) {
   return data;
 }
 
-/** Register after OAuth + OTP verified (complete profile). No password. */
+/** Register after OAuth (complete profile). No password. oauth_verified=true skips OTP when from Google. */
 export async function apiRegisterOauth(data: {
   email: string;
   first_name: string;
@@ -125,6 +125,7 @@ export async function apiRegisterOauth(data: {
   dob: string;
   gender: string;
   preferred_language: string;
+  oauth_verified?: boolean;
 }) {
   const res = await fetch(`${API_BASE}/register-oauth/`, {
     method: "POST",
@@ -138,6 +139,7 @@ export async function apiRegisterOauth(data: {
       dob: data.dob,
       gender: data.gender,
       preferred_language: data.preferred_language,
+      oauth_verified: data.oauth_verified ?? false,
     }),
   });
   const out = await res.json();
