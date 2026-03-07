@@ -2,58 +2,82 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
-import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
-import { apiChatWelcome, apiChatMessage, apiVoiceProcess, apiSTTTranscribe, apiGetWelcomeAudio, apiGenerateAndSaveWelcomeAudio, apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar, apiTTSSynthesize, type ChatMessage, type Session } from "@/lib/api"
+import { BeamsBackground } from "@/components/ui/beams-background"
+import { AIVoiceInput } from "@/components/ui/ai-voice-input"
+import { useTheme } from "next-themes"
+import { Header } from "@/components/header"
+import { ChatSidebar } from "@/components/chat-sidebar"
 import { ShareTestModal } from "@/components/share-test-modal"
-import { ArrowLeft, Mic2, Square, Loader2, Star, Volume2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import {
+  apiChatWelcome, apiChatMessage, apiVoiceProcess, apiSTTTranscribe,
+  apiGetWelcomeAudio, apiGenerateAndSaveWelcomeAudio,
+  apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar,
+  apiTTSSynthesize, type ChatMessage, type Session, type SessionPreview,
+} from "@/lib/api"
+import { ArrowLeft, Star, Loader2, CheckCircle2, Mic2, MessageCircle, Brain, Volume2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useMicrophone } from "@/hooks/use-microphone"
+import { motion, AnimatePresence } from "framer-motion"
+
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+
+type VoiceState = "idle" | "recording" | "transcribing" | "thinking" | "synthesizing" | "playing"
 
 export default function VoiceChatPage() {
-  const router = useRouter()
-  const { user, token } = useAuth()
-  const { toast } = useToast()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [loading, setLoading] = useState(false)
-  const [welcomeLoading, setWelcomeLoading] = useState(true)
-  const [isTranscribing, setIsTranscribing] = useState(false)
-  const [showSummary, setShowSummary] = useState(false)
-  const [summary, setSummary] = useState<string>("")
-  const [savedSession, setSavedSession] = useState<Session | null>(null)
-  const [isEnding, setIsEnding] = useState(false)
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const router           = useRouter()
+  const { user, token }  = useAuth()
+  const { toast }        = useToast()
+  const { resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const isDark = mounted ? resolvedTheme === "dark" : false
+
+  // ── State ───────────────────────────────────────────────────────────────────
+  const [sidebarOpen, setSidebarOpen]               = useState(true)
+  const [messages, setMessages]                     = useState<ChatMessage[]>([])
+  const [voiceState, setVoiceState]                 = useState<VoiceState>("idle")
+  const [welcomeLoading, setWelcomeLoading]         = useState(true)
+  const [showSummary, setShowSummary]               = useState(false)
+  const [summary, setSummary]                       = useState("")
+  const [savedSession, setSavedSession]             = useState<Session | null>(null)
+  const [isEnding, setIsEnding]                     = useState(false)
+  const [currentSessionId, setCurrentSessionId]     = useState<string | null>(null)
   const [baselineUserMessageCount, setBaselineUserMessageCount] = useState(0)
-  const [isSynthesizing, setIsSynthesizing] = useState(false)
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false)
-  const [showShareModal, setShowShareModal] = useState(false)
-  const [testContext, setTestContext] = useState<string | null>(null)
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const welcomeMessageLoadedRef = useRef(false)
-  const shareModalShownRef = useRef(false)
-  const isMountedRef = useRef(true)
-  
-  // Microphone hook
+  const [showShareModal, setShowShareModal]         = useState(false)
+  const [testContext, setTestContext]               = useState<string | null>(null)
+
+  const currentAudioRef        = useRef<HTMLAudioElement | null>(null)
+  const messagesEndRef         = useRef<HTMLDivElement>(null)
+  const welcomeLoadedRef       = useRef(false)
+  const shareModalShownRef     = useRef(false)
+  const isMountedRef           = useRef(true)
+
   const {
-    isRecording,
-    hasPermission,
-    error: micError,
-    startRecording,
-    stopRecording,
-    requestPermission,
-    recordingTime,
+    isRecording, hasPermission, error: micError,
+    startRecording, stopRecording, requestPermission, recordingTime,
   } = useMicrophone()
 
-  // Check for session_id in URL query params or show share modal / load welcome
+  const hasUserMessages = messages.some(m => m.role === "user")
+  const sessionTitle    = savedSession?.title || (currentSessionId ? "Voice Session" : "New Voice Session")
+
+  // Sync voiceState with recording hook
   useEffect(() => {
-    if (user && token && !welcomeMessageLoadedRef.current) {
-      const params = new URLSearchParams(window.location.search)
+    if (isRecording) setVoiceState("recording")
+  }, [isRecording])
+
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, voiceState])
+
+  // URL → load session or show share modal
+  useEffect(() => {
+    if (user && token && !welcomeLoadedRef.current) {
+      const params    = new URLSearchParams(window.location.search)
       const sessionId = params.get("session_id")
-      
       if (sessionId) {
         loadSession(sessionId)
       } else {
@@ -66,119 +90,81 @@ export default function VoiceChatPage() {
     }
   }, [user, token])
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
-
-  // Track mount state and cleanup audio on unmount — don't run state/play after user leaves
+  // Cleanup audio on unmount
   useEffect(() => {
     isMountedRef.current = true
     return () => {
       isMountedRef.current = false
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current = null
-      }
+      currentAudioRef.current?.pause()
+      currentAudioRef.current = null
     }
   }, [])
 
-  const handleShareTest = (context: string, resultId?: number) => {
-    setTestContext(context)
-    setShowShareModal(false)
-    welcomeMessageLoadedRef.current = true
-    loadWelcomeMessage(context, resultId)
+  // ── Background save ─────────────────────────────────────────────────────────
+  const backgroundSave = () => {
+    if (!user || !token) return
+    const userMsgCount = messages.filter(m => m.role === "user").length
+    if (userMsgCount <= baselineUserMessageCount) return
+    const snap = [...messages]; const sessSnap = currentSessionId
+    apiChatSummary(user.id, user.first_name || null, user.gender || null, snap)
+      .then(res => {
+        if (!res.summary || res.summary.includes("No conversation to summarize")) return
+        return apiSaveSession(user.id, snap, res.summary, sessSnap || undefined, user.first_name || null, user.gender || null)
+      })
+      .catch(err => console.error("[voice] background save failed:", err))
   }
 
-  const handleSkipShare = () => {
-    setTestContext(null)
-    setShowShareModal(false)
-    welcomeMessageLoadedRef.current = true
-    loadWelcomeMessage()
-  }
-
+  // ── Welcome / load ──────────────────────────────────────────────────────────
   const loadWelcomeMessage = async (sharedTestContext?: string, testContextKey?: string | number) => {
     if (!user) return
     const includeContext = !!sharedTestContext
     const key = includeContext ? testContextKey : undefined
-
     try {
       setWelcomeLoading(true)
-      setSavedSession(null)
-      setShowSummary(false)
-      setSummary("")
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current = null
-      }
+      setSavedSession(null); setShowSummary(false); setSummary("")
+      currentAudioRef.current?.pause(); currentAudioRef.current = null
 
-      let welcomeText: string
+      let welcomeText = ""
       let audioBlob: Blob | null = null
 
       try {
-        setIsSynthesizing(true)
+        setVoiceState("synthesizing")
         const result = await apiGetWelcomeAudio(user.id, includeContext, key)
         audioBlob = result.blob
         if (result.welcomeMessage) {
           welcomeText = result.welcomeMessage
         } else {
-          const welcomeRes = await apiChatWelcome(user.id, user.first_name || null, sharedTestContext || null)
-          welcomeText = welcomeRes.welcome_message
+          const r = await apiChatWelcome(user.id, user.first_name || null, sharedTestContext || null)
+          welcomeText = r.welcome_message
         }
       } catch {
         audioBlob = null
-        const welcomeRes = await apiChatWelcome(user.id, user.first_name || null, sharedTestContext || null)
+        const r = await apiChatWelcome(user.id, user.first_name || null, sharedTestContext || null)
         if (!isMountedRef.current) return
-        welcomeText = welcomeRes.welcome_message
+        welcomeText = r.welcome_message
         try {
-          audioBlob = await apiGenerateAndSaveWelcomeAudio(
-            user.id,
-            welcomeText,
-            user.lang_pref || null,
-            includeContext,
-            key
-          )
-        } catch (e) {
-          console.warn("Generate/save welcome audio failed:", e)
-        }
+          audioBlob = await apiGenerateAndSaveWelcomeAudio(user.id, welcomeText, user.lang_pref || null, includeContext, key)
+        } catch (e) { console.warn("Generate/save welcome audio failed:", e) }
       }
       if (!isMountedRef.current) return
-      setIsSynthesizing(false)
-
+      setVoiceState("idle")
       setMessages([{ role: "assistant", content: welcomeText, content_type: "text" }])
+      setCurrentSessionId(null); setBaselineUserMessageCount(0)
 
       if (audioBlob) {
-        if (currentAudioRef.current) {
-          currentAudioRef.current.pause()
-          currentAudioRef.current = null
-        }
-        const audioUrl = URL.createObjectURL(audioBlob)
-        const audio = new Audio(audioUrl)
-        audio.onplay = () => setIsPlayingAudio(true)
-        audio.onended = () => {
-          setIsPlayingAudio(false)
-          URL.revokeObjectURL(audioUrl)
-          currentAudioRef.current = null
-        }
-        audio.onerror = () => {
-          setIsPlayingAudio(false)
-          URL.revokeObjectURL(audioUrl)
-          currentAudioRef.current = null
-        }
-        audio.onpause = () => setIsPlayingAudio(false)
+        const url = URL.createObjectURL(audioBlob)
+        const audio = new Audio(url)
+        audio.onplay  = () => { if (isMountedRef.current) setVoiceState("playing") }
+        audio.onended = () => { URL.revokeObjectURL(url); if (isMountedRef.current) setVoiceState("idle"); currentAudioRef.current = null }
+        audio.onerror = () => { URL.revokeObjectURL(url); if (isMountedRef.current) setVoiceState("idle"); currentAudioRef.current = null }
+        audio.onpause = () => { if (isMountedRef.current) setVoiceState("idle") }
         currentAudioRef.current = audio
         await audio.play()
       }
-
-      setCurrentSessionId(null)
-      setBaselineUserMessageCount(0)
     } catch (error: any) {
       if (isMountedRef.current) {
-        toast({
-          title: "Error",
-          description: error.message || "Failed to load welcome message",
-          variant: "destructive",
-        })
+        setVoiceState("idle")
+        toast({ title: "Error", description: error.message || "Failed to load welcome message", variant: "destructive" })
       }
     } finally {
       if (isMountedRef.current) setWelcomeLoading(false)
@@ -190,51 +176,28 @@ export default function VoiceChatPage() {
       setWelcomeLoading(true)
       const response = await apiGetSessionById(user!.id, sessionId)
       if (!isMountedRef.current) return
-
-      // Load messages from session
       const session = response.session
-      setCurrentSessionId(session.session_id)
-      setSavedSession(session)
+      setCurrentSessionId(session.session_id); setSavedSession(session)
       setBaselineUserMessageCount(
-        session.has_full_transcript
-          ? session.messages.filter((msg) => msg.role === "user").length
-          : 0
+        session.has_full_transcript ? session.messages.filter(m => m.role === "user").length : 0
       )
-
-      let initialMessages: ChatMessage[] = []
-
+      let initialMessages: ChatMessage[]
       if (session.has_full_transcript && session.messages.length > 0) {
-        initialMessages = session.messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-          emotion_label: msg.emotion_label,
-          emotion_score: msg.emotion_score,
-          metadata: msg.metadata,
-          content_type: msg.content_type,
+        initialMessages = session.messages.map(msg => ({
+          role: msg.role, content: msg.content,
+          emotion_label: msg.emotion_label, emotion_score: msg.emotion_score,
+          metadata: msg.metadata, content_type: msg.content_type,
         }))
       } else {
-        const reminder = session.resume_message
-          ? session.resume_message
-          : session.summary
-            ? `${session.summary}\n\nLet's pick up from where we left off. How are you feeling now?`
-            : "Let's continue from our previous conversation. How are you feeling now?"
-        initialMessages = [
-          {
-            role: "assistant",
-            content: reminder,
-            content_type: "text",
-          },
-        ]
+        const reminder = session.resume_message || (session.summary
+          ? `${session.summary}\n\nLet's pick up from where we left off. How are you feeling now?`
+          : "Let's continue from our previous conversation. How are you feeling now?")
+        initialMessages = [{ role: "assistant", content: reminder, content_type: "text" }]
       }
-
       setMessages(initialMessages)
     } catch (error: any) {
       if (isMountedRef.current) {
-        toast({
-          title: "Error",
-          description: error.message || "Failed to load session",
-          variant: "destructive",
-        })
+        toast({ title: "Error", description: error.message || "Failed to load session", variant: "destructive" })
         loadWelcomeMessage()
       }
     } finally {
@@ -242,150 +205,119 @@ export default function VoiceChatPage() {
     }
   }
 
-  const handleBackToDashboard = () => {
-    router.push("/dashboard")
+  // ── Session actions ─────────────────────────────────────────────────────────
+  const handleShareTest = (context: string, resultId?: number) => {
+    setTestContext(context); setShowShareModal(false)
+    welcomeLoadedRef.current = true
+    loadWelcomeMessage(context, resultId)
+  }
+
+  const handleSkipShare = () => {
+    setTestContext(null); setShowShareModal(false)
+    welcomeLoadedRef.current = true
+    loadWelcomeMessage()
+  }
+
+  const handleNewChat = () => {
+    backgroundSave()
+    currentAudioRef.current?.pause(); currentAudioRef.current = null
+    setMessages([]); setCurrentSessionId(null); setSavedSession(null)
+    setShowSummary(false); setSummary(""); setTestContext(null)
+    setBaselineUserMessageCount(0); setVoiceState("idle")
+    welcomeLoadedRef.current = false; shareModalShownRef.current = false
+    window.history.pushState({}, "", "/voice-chat")
+    setShowShareModal(true)
+  }
+
+  const handleSessionSelect = (session: SessionPreview) => {
+    backgroundSave()
+    currentAudioRef.current?.pause(); currentAudioRef.current = null
+    if (!session.has_voice) {
+      router.push(`/chat?session_id=${session.session_id}`)
+      return
+    }
+    setMessages([]); setCurrentSessionId(null); setSavedSession(null)
+    setShowSummary(false); setSummary(""); setTestContext(null); setVoiceState("idle")
+    window.history.pushState({}, "", `/voice-chat?session_id=${session.session_id}`)
+    loadSession(session.session_id)
   }
 
   const handleEndChat = async () => {
     if (isEnding || !user || !token || messages.length === 0) return
-
-    const currentUserMessages = messages.filter((msg) => msg.role === "user").length
-    if (currentUserMessages <= baselineUserMessageCount) {
-      router.push("/dashboard")
-      return
-    }
-
+    const userMsgCount = messages.filter(m => m.role === "user").length
+    if (userMsgCount <= baselineUserMessageCount) { router.push("/dashboard"); return }
+    currentAudioRef.current?.pause(); currentAudioRef.current = null; setVoiceState("idle")
     setIsEnding(true)
-    setLoading(true)
-
     try {
-      // Get summary
-      const response = await apiChatSummary(
-        user.id,
-        user.first_name || null,
-        user.gender || null,
-        messages
-      )
-      
-      // Check if summary indicates no conversation
-      if (response.summary && response.summary.includes("No conversation to summarize")) {
-        // No actual conversation, just go back to dashboard (don't increment count)
-        router.push("/dashboard")
-        return
-      }
-      
-      // Save session (create new or update existing)
+      const response = await apiChatSummary(user.id, user.first_name || null, user.gender || null, messages)
+      if (response.summary?.includes("No conversation to summarize")) { router.push("/dashboard"); return }
       try {
-        const saveResponse = await apiSaveSession(
-          user.id,
-          messages,
-          response.summary,
-          currentSessionId || undefined,
-          user.first_name || null,
-          user.gender || null
-        )
-        setSavedSession(saveResponse.session)
-        setCurrentSessionId(saveResponse.session.session_id)
-        setBaselineUserMessageCount(
-          saveResponse.session.messages.filter((msg) => msg.role === "user").length
-        )
-      } catch (error) {
-        // Log error but don't block summary display
-        console.error("Failed to save session:", error)
-      }
-      
-      setSummary(response.summary)
-      setShowSummary(true)
+        const saveRes = await apiSaveSession(user.id, messages, response.summary, currentSessionId || undefined, user.first_name || null, user.gender || null)
+        setSavedSession(saveRes.session); setCurrentSessionId(saveRes.session.session_id)
+        setBaselineUserMessageCount(saveRes.session.messages.filter(m => m.role === "user").length)
+      } catch (err) { console.error("Failed to save session:", err) }
+      setSummary(response.summary); setShowSummary(true)
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to generate summary",
-        variant: "destructive",
-      })
-      // Still allow navigation even if summary fails
+      toast({ title: "Error", description: error.message || "Failed to generate summary", variant: "destructive" })
       router.push("/dashboard")
     } finally {
-      setLoading(false)
       setIsEnding(false)
     }
   }
 
   const handleToggleStar = async () => {
     if (!user || !savedSession) return
-
     if (savedSession.state !== "full" && !savedSession.is_starred) {
-      toast({
-        title: "Cannot star this session",
-        description: "Archived sessions cannot be starred because the detailed transcript is no longer available.",
-        variant: "destructive",
-      })
+      toast({ title: "Cannot star session", description: "Archived sessions cannot be starred.", variant: "destructive" })
       return
     }
-
     try {
-      const response = await apiToggleSessionStar(user.id, savedSession.session_id, !savedSession.is_starred)
-      setSavedSession((prev) =>
-        prev
-          ? {
-              ...prev,
-              is_starred: response.session.is_starred,
-              state: response.session.state,
-              has_full_transcript: response.session.has_full_transcript,
-              resume_message: response.session.resume_message ?? prev.resume_message,
-            }
-          : prev
-      )
-      toast({
-        title: response.session.is_starred ? "Session starred" : "Session unstarred",
-        description: response.session.is_starred
-          ? "We'll keep this session in full detail for you."
-          : "This session may be archived if newer ones are created.",
-      })
+      const res = await apiToggleSessionStar(user.id, savedSession.session_id, !savedSession.is_starred)
+      setSavedSession(prev => prev ? {
+        ...prev, is_starred: res.session.is_starred, state: res.session.state,
+        has_full_transcript: res.session.has_full_transcript,
+        resume_message: res.session.resume_message ?? prev.resume_message,
+      } : prev)
+      toast({ title: res.session.is_starred ? "Session starred" : "Session unstarred" })
     } catch (error: any) {
-      toast({
-        title: "Unable to update star",
-        description: error.message || "Please try again later.",
-        variant: "destructive",
-      })
+      toast({ title: "Unable to update star", description: error.message, variant: "destructive" })
     }
   }
 
-  // Handle microphone button click — record only; transcribe after stop (no live transcription)
+  // ── Mic / Recording ─────────────────────────────────────────────────────────
   const handleMicClick = async () => {
+    if (voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing") return
+
     try {
       if (isRecording) {
         const audioBlob = await stopRecording()
         if (audioBlob) {
+          setVoiceState("transcribing")
           await processRecording(audioBlob)
+        } else {
+          setVoiceState("idle")
         }
       } else {
         if (hasPermission === false) {
           const granted = await requestPermission()
           if (!granted) {
-            toast({
-              title: "Microphone access denied",
-              description: micError || "Please allow microphone access to record audio.",
-              variant: "destructive",
-            })
+            toast({ title: "Microphone access denied", description: micError || "Please allow microphone access.", variant: "destructive" })
             return
           }
         }
+        currentAudioRef.current?.pause(); currentAudioRef.current = null
+        setVoiceState("idle") // will flip to "recording" via useEffect
         await startRecording()
       }
     } catch (error: any) {
-      toast({
-        title: "Recording error",
-        description: error.message || "Failed to start/stop recording",
-        variant: "destructive",
-      })
+      setVoiceState("idle")
+      toast({ title: "Recording error", description: error.message || "Failed to start/stop recording", variant: "destructive" })
     }
   }
 
-  // Process recording: transcribe (STT) + SER, then send transcript + emotions + RAG to LLM, then TTS
   const processRecording = async (audioBlob: Blob) => {
     if (!user || !token) return
 
-    setIsTranscribing(true)
     let transcript = ""
     let emotionsFromVoice: Array<{ emotion: string; score: number }> = []
 
@@ -394,50 +326,38 @@ export default function VoiceChatPage() {
       if (!isMountedRef.current) return
       transcript = voiceResult.transcript?.trim() || ""
       emotionsFromVoice = voiceResult.emotions || []
-    } catch (e) {
+    } catch {
       try {
-        const sttResponse = await apiSTTTranscribe(audioBlob, "en")
-        transcript = sttResponse.transcript?.trim() || ""
-      } catch {
-        transcript = ""
-      }
-    } finally {
-      setIsTranscribing(false)
+        const sttRes = await apiSTTTranscribe(audioBlob, "en")
+        transcript = sttRes.transcript?.trim() || ""
+      } catch { transcript = "" }
     }
 
     if (!transcript) {
       if (isMountedRef.current) {
-        toast({
-          title: "No speech detected",
-          description: "Please try speaking again.",
-          variant: "destructive",
-        })
+        setVoiceState("idle")
+        toast({ title: "No speech detected", description: "Please try speaking again.", variant: "destructive" })
       }
       return
     }
 
     try {
       const userMessage: ChatMessage = { role: "user", content: transcript, content_type: "audio" }
-      setMessages((prev) => [...prev, userMessage])
-      setLoading(true)
+      setMessages(prev => [...prev, userMessage])
+      setVoiceState("thinking")
       const historyForRequest = [...messages, { role: "user" as const, content: transcript, content_type: "audio" as const }]
 
-      // Non-streaming: get full LLM reply once, then one TTS for the whole reply; show text only when audio is ready
       const chatResponse = await apiChatMessage(
-        transcript,
-        user.id,
-        user.first_name || null,
-        user.gender || null,
-        historyForRequest,
-        testContext || null,
+        transcript, user.id, user.first_name || null, user.gender || null,
+        historyForRequest, testContext || null,
         emotionsFromVoice.length > 0 ? emotionsFromVoice : undefined
       )
       if (!isMountedRef.current) return
-      setLoading(false)
 
+      // Attach emotion label to user message
       const primaryEmotion = chatResponse.emotions?.[0]
       if (primaryEmotion) {
-        setMessages((prev) => {
+        setMessages(prev => {
           const updated = [...prev]
           for (let i = updated.length - 1; i >= 0; i--) {
             if (updated[i].role === "user") {
@@ -449,370 +369,451 @@ export default function VoiceChatPage() {
         })
       }
 
+      // TTS
+      setVoiceState("synthesizing")
+      currentAudioRef.current?.pause(); currentAudioRef.current = null
+
       let userLanguage = "en"
       if (user?.lang_pref) {
-        const langPref = user.lang_pref.toLowerCase()
-        if (langPref === "urdu" || langPref === "ur") userLanguage = "ur"
-        else if (langPref === "english" || langPref === "en") userLanguage = "en"
-      }
-      setIsSynthesizing(true)
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current = null
+        const lp = user.lang_pref.toLowerCase()
+        if (lp === "urdu" || lp === "ur") userLanguage = "ur"
       }
 
-      let audioBlob: Blob | null = null
-      try {
-        audioBlob = await apiTTSSynthesize(chatResponse.response, userLanguage)
-      } catch (_) {
-        // TTS failed; still show text
-      }
+      let ttsBlob: Blob | null = null
+      try { ttsBlob = await apiTTSSynthesize(chatResponse.response, userLanguage) } catch { /* silent */ }
       if (!isMountedRef.current) return
-      setIsSynthesizing(false)
-      setMessages((prev) => [...prev, { role: "assistant", content: chatResponse.response, content_type: "text" }])
-      if (audioBlob) {
-        const url = URL.createObjectURL(audioBlob)
+
+      setMessages(prev => [...prev, { role: "assistant", content: chatResponse.response, content_type: "text" }])
+
+      if (ttsBlob) {
+        const url = URL.createObjectURL(ttsBlob)
         const audio = new Audio(url)
-        audio.onplay = () => setIsPlayingAudio(true)
-        audio.onended = () => {
-          URL.revokeObjectURL(url)
-          setIsPlayingAudio(false)
-          currentAudioRef.current = null
-        }
-        audio.onerror = () => {
-          URL.revokeObjectURL(url)
-          setIsPlayingAudio(false)
-          currentAudioRef.current = null
-        }
+        audio.onplay  = () => { if (isMountedRef.current) setVoiceState("playing") }
+        audio.onended = () => { URL.revokeObjectURL(url); if (isMountedRef.current) setVoiceState("idle"); currentAudioRef.current = null }
+        audio.onerror = () => { URL.revokeObjectURL(url); if (isMountedRef.current) setVoiceState("idle"); currentAudioRef.current = null }
         currentAudioRef.current = audio
         audio.play()
+      } else {
+        setVoiceState("idle")
       }
     } catch (error: any) {
       if (isMountedRef.current) {
-        setIsTranscribing(false)
-        setLoading(false)
-        let errorMessage = error.message || "Failed to process recording"
-        if (errorMessage.includes("No speech detected")) {
+        setVoiceState("idle")
+        const msg = error.message || "Failed to process recording"
+        if (msg.includes("No speech detected")) {
           toast({ title: "No speech detected", description: "Please try speaking again.", variant: "destructive" })
-        } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
-          toast({ title: "Network error", description: "Please check your connection and try again.", variant: "destructive" })
+        } else if (msg.includes("network") || msg.includes("fetch")) {
+          toast({ title: "Network error", description: "Please check your connection.", variant: "destructive" })
         } else {
-          toast({ title: "Error", description: errorMessage, variant: "destructive" })
+          toast({ title: "Error", description: msg, variant: "destructive" })
         }
       }
-    } finally {
-      if (isMountedRef.current) setLoading(false)
     }
   }
 
+  // ── Shell ───────────────────────────────────────────────────────────────────
+  const Shell = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
+      <div style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none" }}>
+        <BeamsBackground isDark={isDark} intensity="subtle" />
+        <div style={{ position: "absolute", inset: 0, backgroundColor: isDark ? "rgba(0,0,0,0.36)" : "rgba(255,255,255,0.18)" }} />
+      </div>
+      <div style={{ position: "relative", zIndex: 10, flexShrink: 0, height: "100%" }}>
+        <ChatSidebar
+          currentSessionId={currentSessionId}
+          onNewChat={handleNewChat}
+          onSessionSelect={handleSessionSelect}
+          open={sidebarOpen}
+          onToggle={() => setSidebarOpen(v => !v)}
+        />
+      </div>
+      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {children}
+      </div>
+    </div>
+  )
+
+  // ── Summary screen ──────────────────────────────────────────────────────────
   if (showSummary) {
     return (
       <AuthGuard>
-        <div className="fixed inset-0 flex h-screen w-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-slate-950 dark:via-purple-950/20 dark:to-pink-950/20 z-50">
-          <Sidebar />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header />
-            <div className="flex-1 overflow-auto p-6">
-              <div className="max-w-4xl mx-auto">
-                <Button
-                  onClick={handleBackToDashboard}
-                  variant="ghost"
-                  className="mb-6"
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Dashboard
-                </Button>
-                
-                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 border border-purple-100 dark:border-purple-900/30">
-                  <h2 className="text-3xl font-bold mb-6 bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                    Session Summary
-                  </h2>
-                {savedSession && (
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(savedSession.updated_at).toLocaleString()}
-                      </p>
-                      <p className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-                        {savedSession.title || "Therapy Session"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleToggleStar}
-                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${
-                        savedSession.is_starred
-                          ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                          : "border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-slate-600 dark:text-gray-200 dark:hover:bg-slate-700/60"
-                      }`}
-                    >
-                      <StarIcon filled={savedSession.is_starred} />
-                      {savedSession.is_starred ? "Starred" : "Star Session"}
-                    </button>
-                  </div>
-                )}
-                  <div className="prose prose-lg max-w-none dark:prose-invert">
-                    <div className="space-y-3 text-gray-700 dark:text-gray-300 leading-relaxed">
-                      {summary.split(/\n{2,}/).map((paragraph, index) => (
-                        <p key={index} className="whitespace-pre-line">
-                          {paragraph.trim()}
+        <Shell>
+          <Header />
+          <main style={{ flex: 1, overflowY: "auto" }}>
+            <div style={{ maxWidth: 680, margin: "0 auto", padding: "1.75rem 1.5rem 3rem" }}>
+              <button
+                onClick={() => router.push("/dashboard")}
+                style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", marginBottom: "2rem", padding: 0 }}
+              >
+                <ArrowLeft size={13} /> Dashboard
+              </button>
+
+              <div style={{ marginBottom: "1.625rem" }}>
+                <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.25rem" }}>
+                  Session Complete
+                </p>
+                <h1 style={{ ...serif, fontSize: "2rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1 }}>
+                  Your Session Summary
+                </h1>
+              </div>
+
+              <div style={{ backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)", backdropFilter: "blur(14px)", borderRadius: 18, border: "1px solid var(--border)", boxShadow: "0 4px 24px rgba(0,0,0,0.07)", overflow: "hidden" }}>
+                <div style={{ height: 4, background: "linear-gradient(90deg, #325944, #5D8A6B, #a67c52)" }} />
+                <div style={{ padding: "1.5rem 1.75rem" }}>
+
+                  {savedSession && (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", paddingBottom: "1rem", borderBottom: "1px solid var(--border)" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
+                          <div style={{ width: 22, height: 22, borderRadius: 6, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Mic2 size={11} color="white" strokeWidth={2} />
+                          </div>
+                          <h2 style={{ ...sans, fontSize: "0.9375rem", fontWeight: 700, color: "var(--foreground)" }}>
+                            {savedSession.title || "Voice Session"}
+                          </h2>
+                        </div>
+                        <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>
+                          {new Date(savedSession.updated_at).toLocaleString()}
                         </p>
-                      ))}
+                      </div>
+                      <button
+                        onClick={handleToggleStar}
+                        style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem", height: 32, padding: "0 0.875rem", borderRadius: 9, fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", border: savedSession.is_starred ? "1px solid rgba(245,158,11,0.4)" : "1px solid var(--border)", backgroundColor: savedSession.is_starred ? "color-mix(in srgb, #f59e0b 10%, transparent)" : "transparent", color: savedSession.is_starred ? "#f59e0b" : "var(--muted-foreground)", transition: "all 0.15s ease" }}
+                      >
+                        <Star size={12} strokeWidth={1.75} fill={savedSession.is_starred ? "currentColor" : "none"} />
+                        {savedSession.is_starred ? "Starred" : "Star"}
+                      </button>
                     </div>
+                  )}
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <CheckCircle2 size={13} color="white" strokeWidth={2} />
+                    </div>
+                    <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)" }}>
+                      Session saved to your history
+                    </span>
                   </div>
-                  <div className="mt-8 flex justify-end">
-                    <Button
-                      onClick={handleBackToDashboard}
-                      className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                    >
+
+                  <div style={{ ...sans, fontSize: "0.9375rem", color: "var(--foreground)", lineHeight: 1.82 }}>
+                    {summary.split(/\n{2,}/).map((p, i, arr) => (
+                      <p key={i} style={{ marginBottom: i < arr.length - 1 ? "1rem" : 0, whiteSpace: "pre-line" }}>{p.trim()}</p>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem", paddingTop: "1.25rem", borderTop: "1px solid var(--border)", justifyContent: "flex-end" }}>
+                    <button onClick={handleNewChat} style={{ ...sans, height: 36, padding: "0 1rem", borderRadius: 10, background: "none", border: "1px solid var(--border)", color: "var(--foreground)", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem", transition: "border-color 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.borderColor = "var(--sage)"} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}>
+                      <Mic2 size={13} /> New Voice Chat
+                    </button>
+                    <button onClick={() => router.push("/dashboard")} style={{ ...sans, height: 36, padding: "0 1.125rem", borderRadius: 10, background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)", border: "none", color: "white", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 10px rgba(166,124,82,0.28)", transition: "opacity 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.opacity = "0.87"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
                       Return to Dashboard
-                    </Button>
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </main>
+        </Shell>
       </AuthGuard>
     )
   }
 
+  // ── Main chat screen ────────────────────────────────────────────────────────
   return (
     <AuthGuard>
-      <ShareTestModal
-        open={showShareModal}
-        onClose={handleSkipShare}
-        onShare={handleShareTest}
-        onSkip={handleSkipShare}
-      />
-      <div
-        className={`fixed inset-0 flex h-screen w-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-slate-950 dark:via-purple-950/20 dark:to-pink-950/20 z-40 ${showShareModal ? "pointer-events-none" : ""}`}
-      >
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="p-6 pb-0">
-              <Button
-                onClick={handleEndChat}
-                variant="ghost"
-                disabled={isEnding || loading}
-                className="mb-4"
-              >
-                {isEnding ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Ending chat...
-                  </>
-                ) : (
-                  <>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    End Chat
-                  </>
-                )}
-              </Button>
-            </div>
-            
-            {/* Voice Chat Interface */}
-            <div className="flex-1 flex flex-col overflow-hidden px-6 pb-6">
-              {/* Messages Container */}
-              <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-2">
-                {messages.length === 0 && welcomeLoading && (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-gray-500">
-                      <div className="flex items-center justify-center gap-2 mb-2">
-                        <Loader2 className="h-5 w-5 animate-spin text-purple-600 dark:text-purple-400" />
-                      </div>
-                      <p className="text-lg">Preparing your voice companion...</p>
-                      <p className="text-sm mt-2 text-gray-400">Setting up everything for you</p>
-                    </div>
-                  </div>
-                )}
-                
-                {messages.length === 0 && !welcomeLoading && (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-gray-500">
-                      <p className="text-lg">Start a voice conversation...</p>
-                    </div>
-                  </div>
-                )}
+      <Shell>
+        <ShareTestModal
+          open={showShareModal}
+          onClose={handleSkipShare}
+          onShare={handleShareTest}
+          onSkip={handleSkipShare}
+        />
 
-                {messages.map((message, index) => (
-                  <div key={index} className="flex items-start gap-3">
-                    {message.role === "assistant" ? (
-                      <>
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
-                          <span className="text-white font-semibold text-sm">AI</span>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 rounded-2xl rounded-tl-sm px-6 py-4 shadow-md border border-purple-100 dark:border-purple-900/30 max-w-[80%]">
-                          <div className="flex items-start gap-2">
-                            <p className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap flex-1">
-                              {message.content}
-                            </p>
-                            {/* Show audio icon for the last assistant message if audio is available */}
-                            {index === messages.length - 1 && message.role === "assistant" && (
-                              <div className="flex-shrink-0 mt-1">
-                                {isSynthesizing ? (
-                                  <Loader2 size={16} className="text-purple-600 dark:text-purple-400 animate-spin" />
-                                ) : isPlayingAudio ? (
-                                  <div className="w-4 h-4 flex items-center justify-center">
-                                    <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full animate-pulse"></div>
-                                  </div>
-                                ) : (
-                                  <Volume2 size={16} className="text-purple-600 dark:text-purple-400" />
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex-1 flex justify-end">
-                        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-600 dark:to-emerald-700 rounded-2xl rounded-tr-sm px-6 py-4 shadow-md max-w-[80%]">
-                          <div className="flex items-start gap-2">
-                            <p className="text-white whitespace-pre-wrap flex-1">
-                              {message.content}
-                            </p>
-                            {message.content_type === "audio" && (
-                              <Mic2 size={16} className="text-white/80 flex-shrink-0 mt-1" />
-                            )}
-                          </div>
-                        </div>
+        <Header />
+
+        {/* Session bar */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 1.25rem", height: 44, flexShrink: 0,
+          borderBottom: "1px solid color-mix(in srgb, var(--border) 55%, transparent)",
+          backgroundColor: "color-mix(in srgb, var(--card) 70%, transparent)",
+          backdropFilter: "blur(10px)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <div style={{
+              width: 7, height: 7, borderRadius: "50%",
+              backgroundColor: voiceState === "recording" ? "#5D8A6B" : voiceState === "playing" ? "#a67c52" : welcomeLoading ? "var(--muted-foreground)" : "#5D8A6B",
+              boxShadow: (voiceState === "recording" || voiceState === "playing") ? "0 0 0 2px rgba(93,138,107,0.22)" : "none",
+              transition: "background-color 0.3s ease",
+            }} />
+            <span style={{ ...sans, fontSize: "0.875rem", fontWeight: 600, color: "var(--foreground)" }}>
+              {welcomeLoading ? "Starting…" : sessionTitle}
+            </span>
+            <span style={{ ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--sage)", backgroundColor: "color-mix(in srgb, var(--sage) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--sage) 22%, transparent)", padding: "0.15rem 0.45rem", borderRadius: 100 }}>
+              Voice
+            </span>
+            {testContext && (
+              <span style={{ ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--primary)", backgroundColor: "color-mix(in srgb, var(--primary) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 22%, transparent)", padding: "0.15rem 0.45rem", borderRadius: 100 }}>
+                With results
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={handleEndChat}
+            disabled={isEnding || welcomeLoading}
+            style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.35rem", height: 28, padding: "0 0.75rem", borderRadius: 7, fontSize: "0.8125rem", fontWeight: 600, border: "1px solid var(--border)", backgroundColor: "transparent", color: "var(--muted-foreground)", cursor: (isEnding || welcomeLoading) ? "default" : "pointer", opacity: (isEnding || welcomeLoading) ? 0.45 : 1, transition: "border-color 0.15s ease, color 0.15s ease" }}
+            onMouseEnter={e => { if (!isEnding && !welcomeLoading) { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)" } }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-foreground)" }}
+          >
+            {isEnding ? <><Loader2 size={11} className="animate-spin" /> Saving…</> : <><ArrowLeft size={11} /> End Chat</>}
+          </button>
+        </div>
+
+        {/* Chat body */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+          {/* Landing (no user messages) */}
+          {!hasUserMessages ? (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "1.5rem 1.5rem 1rem" }}>
+              <div style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                  style={{ textAlign: "center", marginBottom: "1.75rem" }}
+                >
+                  <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--sage)", marginBottom: "0.5rem" }}>
+                    Voice companion
+                  </p>
+                  <h1 style={{ ...serif, fontSize: "clamp(1.875rem, 3.5vw, 2.625rem)", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1, marginBottom: "0.6rem" }}>
+                    Speak freely,{" "}
+                    <span style={{ fontStyle: "italic", color: "var(--primary)" }}>
+                      {user?.first_name || "friend"}
+                    </span>.
+                  </h1>
+                  <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7 }}>
+                    Your voice is heard. I'm here to listen, reflect, and support you.
+                  </p>
+                </motion.div>
+
+                {/* AI welcome card */}
+                {messages.length > 0 && messages[0].role === "assistant" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                    style={{
+                      width: "100%", marginBottom: "1.5rem", padding: "0.875rem 1rem",
+                      borderRadius: 14,
+                      backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)",
+                      backdropFilter: "blur(12px)",
+                      borderTop: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                      borderRight: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                      borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                      borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)",
+                      display: "flex", alignItems: "center", gap: "0.75rem",
+                    }}
+                  >
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(93,138,107,0.25)" }}>
+                      <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
+                    </div>
+                    <p style={{ ...sans, fontSize: "0.9375rem", lineHeight: 1.78, color: "var(--foreground)", margin: 0 }}>
+                      {messages[0].content}
+                    </p>
+                    {voiceState === "playing" && (
+                      <div style={{ flexShrink: 0, display: "flex", gap: 3, alignItems: "flex-end", height: 16 }}>
+                        {[0,1,2,3].map(i => (
+                          <div key={i} style={{ width: 3, borderRadius: 2, backgroundColor: "var(--sage)", animation: `voice-bar 0.8s ease-in-out ${i * 0.15}s infinite alternate` }} />
+                        ))}
                       </div>
                     )}
-                  </div>
-                ))}
-
-                {/* Transcribing indicator */}
-                {isTranscribing && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center flex-shrink-0">
-                      <Mic2 size={20} className="text-white" />
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl rounded-tl-sm px-6 py-4 shadow-md border border-emerald-100 dark:border-emerald-900/30">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-emerald-600 dark:bg-emerald-400 rounded-full animate-pulse"></div>
-                        <div className="w-2 h-2 bg-emerald-600 dark:bg-emerald-400 rounded-full animate-pulse [animation-delay:0.2s]"></div>
-                        <div className="w-2 h-2 bg-emerald-600 dark:bg-emerald-400 rounded-full animate-pulse [animation-delay:0.4s]"></div>
-                        <span className="text-sm text-gray-600 dark:text-gray-300 ml-2">Transcribing...</span>
-                      </div>
-                    </div>
-                  </div>
+                  </motion.div>
                 )}
 
-                {/* Loading indicator (AI thinking) */}
-                {(loading || welcomeLoading) && messages.length > 0 && !isTranscribing && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-semibold text-sm">AI</span>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl rounded-tl-sm px-6 py-4 shadow-md border border-purple-100 dark:border-purple-900/30">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full animate-pulse"></div>
-                        <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full animate-pulse [animation-delay:0.2s]"></div>
-                        <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full animate-pulse [animation-delay:0.4s]"></div>
-                        <span className="text-sm text-gray-600 dark:text-gray-300 ml-2">Your companion is thinking...</span>
-                      </div>
-                    </div>
-                  </div>
+                {/* Welcome loading state */}
+                {welcomeLoading && messages.length === 0 && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.75rem" }}
+                  >
+                    <Loader2 size={16} color="var(--sage)" className="animate-spin" />
+                    <span style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>
+                      Preparing your voice companion…
+                    </span>
+                  </motion.div>
                 )}
 
-                {/* TTS Synthesis indicator - only show for non-welcome messages */}
-                {isSynthesizing && !loading && !welcomeLoading && messages.length > 0 && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
-                      <Volume2 size={20} className="text-white" />
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl rounded-tl-sm px-6 py-4 shadow-md border border-purple-100 dark:border-purple-900/30">
-                      <div className="flex items-center gap-2">
-                        <Loader2 size={16} className="text-purple-600 dark:text-purple-400 animate-spin" />
-                        <span className="text-sm text-gray-600 dark:text-gray-300">Generating audio...</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Microphone Button - Prominent, Green/Emerald Theme */}
-              <div className="flex flex-col items-center mb-4">
-                <button
-                  onClick={handleMicClick}
-                  className={`w-20 h-20 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center group ${
-                    isRecording
-                      ? "bg-gradient-to-br from-red-500 to-red-600 dark:from-red-600 dark:to-red-700 animate-pulse"
-                      : "bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-600 dark:to-emerald-700 hover:from-emerald-600 hover:to-emerald-700 dark:hover:from-emerald-700 dark:hover:to-emerald-800"
-                  }`}
-                  aria-label={isRecording ? "Stop recording" : "Start recording"}
-                  disabled={welcomeLoading || isTranscribing || loading || isSynthesizing}
+                {/* Voice input */}
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.38, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                  style={{ width: "100%" }}
                 >
-                  {isRecording ? (
-                    <Square 
-                      size={24} 
-                      className="text-white group-hover:scale-110 transition-transform" 
-                    />
-                  ) : (
-                    <Mic2 
-                      size={32} 
-                      className="text-white group-hover:scale-110 transition-transform" 
-                    />
-                  )}
-                </button>
-                
-                {/* Recording Status Indicator */}
-                <div className="text-center mt-3">
-                  {micError ? (
-                    <div className="text-sm text-red-600 dark:text-red-400 mb-2">
-                      {micError}
-                    </div>
-                  ) : null}
-                  {isRecording ? (
-                    <div className="text-sm text-red-600 dark:text-red-400 font-semibold">
-                      Recording... {recordingTime}s
-                    </div>
-                  ) : isTranscribing ? (
-                    <div className="text-sm text-emerald-600 dark:text-emerald-400 font-semibold">
-                      Transcribing your speech...
-                    </div>
-                  ) : loading ? (
-                    <div className="text-sm text-purple-600 dark:text-purple-400 font-semibold">
-                      Your companion is thinking...
-                    </div>
-                  ) : isSynthesizing ? (
-                    <div className="text-sm text-purple-600 dark:text-purple-400 font-semibold">
-                      Generating audio...
-                    </div>
-                  ) : isPlayingAudio ? (
-                    <div className="text-sm text-purple-600 dark:text-purple-400 font-semibold">
-                      Playing audio...
-                    </div>
-                  ) : hasPermission === false ? (
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Microphone access denied. Click to request permission.
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Click the microphone to start recording
-                    </div>
-                  )}
-                </div>
+                  <AIVoiceInput
+                    voiceState={voiceState}
+                    recordingTime={recordingTime}
+                    disabled={welcomeLoading || voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing"}
+                    onMicClick={handleMicClick}
+                  />
+                </motion.div>
               </div>
             </div>
-          </div>
+          ) : (
+            /* Chat mode — messages + voice input */
+            <>
+              {/* Messages scroll area */}
+              <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+                <div style={{ flex: 1, minHeight: "1.5rem" }} />
+                <div style={{ padding: "1rem 1.5rem 0.5rem" }}>
+
+                  <AnimatePresence initial={false}>
+                    {messages.map((msg, i) => {
+                      const isUser = msg.role === "user"
+                      const isAudio = msg.content_type === "audio"
+                      const isLastMsg = i === messages.length - 1
+                      const prev = messages[i - 1]
+                      const grouped = prev?.role === msg.role
+
+                      return (
+                        <motion.div
+                          key={i}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                          style={{ marginBottom: grouped ? "0.3rem" : "0.875rem" }}
+                        >
+                          {isUser ? (
+                            /* User bubble */
+                            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "0.5rem" }}>
+                              <div style={{
+                                maxWidth: "62%", padding: "0.625rem 0.875rem",
+                                borderRadius: "16px 4px 16px 16px",
+                                background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)",
+                                boxShadow: "0 2px 12px rgba(166,124,82,0.22)",
+                                display: "flex", alignItems: "flex-start", gap: "0.5rem",
+                              }}>
+                                {isAudio && <Mic2 size={12} color="rgba(255,255,255,0.7)" strokeWidth={1.75} style={{ flexShrink: 0, marginTop: 3 }} />}
+                                <p style={{ ...sans, fontSize: "0.9375rem", lineHeight: 1.65, color: "rgba(255,255,255,0.95)", margin: 0 }}>
+                                  {msg.content}
+                                </p>
+                              </div>
+                              {!grouped && (
+                                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #7a5535, #a67c52)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(166,124,82,0.28)" }}>
+                                  <span style={{ ...sans, fontSize: "0.6875rem", fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>
+                                    {(user?.first_name?.[0] || "U").toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                              {grouped && <div style={{ width: 28, flexShrink: 0 }} />}
+                            </div>
+                          ) : (
+                            /* AI bubble */
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+                              {!grouped ? (
+                                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(93,138,107,0.25)" }}>
+                                  <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
+                                </div>
+                              ) : (
+                                <div style={{ width: 28, flexShrink: 0 }} />
+                              )}
+                              <div style={{
+                                maxWidth: "82%", padding: "0.625rem 0.875rem",
+                                borderRadius: "4px 16px 16px 16px",
+                                backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)",
+                                backdropFilter: "blur(12px)",
+                                borderTop: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                                borderRight: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                                borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                                borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)",
+                                display: "flex", alignItems: "flex-start", gap: "0.625rem",
+                              }}>
+                                <p style={{ ...sans, fontSize: "0.9375rem", lineHeight: 1.78, color: "var(--foreground)", margin: 0, flex: 1 }}>
+                                  {msg.content}
+                                </p>
+                                {/* Audio playback indicator on last AI message */}
+                                {isLastMsg && (
+                                  voiceState === "synthesizing" ? (
+                                    <Loader2 size={14} color="var(--sage)" className="animate-spin" style={{ flexShrink: 0, marginTop: 2 }} />
+                                  ) : voiceState === "playing" ? (
+                                    <div style={{ flexShrink: 0, display: "flex", gap: 2, alignItems: "flex-end", height: 18, marginTop: 1 }}>
+                                      {[0,1,2].map(j => (
+                                        <div key={j} style={{ width: 3, borderRadius: 2, backgroundColor: "var(--sage)", animation: `voice-bar 0.7s ease-in-out ${j * 0.18}s infinite alternate` }} />
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <Volume2 size={14} color="var(--sage)" style={{ flexShrink: 0, marginTop: 2, opacity: 0.5 }} />
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </motion.div>
+                      )
+                    })}
+                  </AnimatePresence>
+
+                  {/* Transcribing indicator */}
+                  <AnimatePresence>
+                    {voiceState === "transcribing" && (
+                      <motion.div key="transcribing" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}
+                        style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.875rem" }}
+                      >
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <Mic2 size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
+                        </div>
+                        <div style={{ padding: "0.625rem 0.875rem", borderRadius: "4px 14px 14px 14px", backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)", backdropFilter: "blur(12px)", border: "1px solid color-mix(in srgb, var(--border) 50%, transparent)", borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          {[0,1,2].map(j => <div key={j} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--sage)", opacity: 0.8, animation: `mindease-bounce 1.2s ease-in-out ${j * 0.18}s infinite` }} />)}
+                          <span style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)", marginLeft: "0.25rem" }}>Transcribing…</span>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* AI thinking indicator */}
+                    {voiceState === "thinking" && (
+                      <motion.div key="thinking" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}
+                        style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.875rem" }}
+                      >
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
+                        </div>
+                        <div style={{ padding: "0.625rem 0.875rem", borderRadius: "4px 14px 14px 14px", backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)", backdropFilter: "blur(12px)", border: "1px solid color-mix(in srgb, var(--border) 50%, transparent)", borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          {[0,1,2].map(j => <div key={j} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--primary)", opacity: 0.65, animation: `mindease-bounce 1.2s ease-in-out ${j * 0.18}s infinite` }} />)}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div ref={messagesEndRef} />
+                </div>
+              </div>
+
+              {/* Voice input bar */}
+              <div style={{
+                flexShrink: 0,
+                borderTop: "1px solid color-mix(in srgb, var(--border) 45%, transparent)",
+                backgroundColor: "color-mix(in srgb, var(--background) 65%, transparent)",
+                backdropFilter: "blur(12px)",
+                padding: "1rem 1.5rem 1.25rem",
+              }}>
+                <AIVoiceInput
+                  voiceState={voiceState}
+                  recordingTime={recordingTime}
+                  disabled={welcomeLoading}
+                  onMicClick={handleMicClick}
+                />
+              </div>
+            </>
+          )}
         </div>
-      </div>
+
+        <style>{`
+          @keyframes mindease-bounce { 0%,60%,100%{transform:translateY(0);opacity:.65} 30%{transform:translateY(-5px);opacity:1} }
+          @keyframes voice-bar { from { height: 4px } to { height: 14px } }
+        `}</style>
+      </Shell>
     </AuthGuard>
   )
 }
-
-function StarIcon({ filled }: { filled: boolean }) {
-  return (
-    <Star
-      className="h-4 w-4"
-      strokeWidth={1.5}
-      fill={filled ? "currentColor" : "none"}
-    />
-  )
-}
-

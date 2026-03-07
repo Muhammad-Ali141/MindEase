@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f5f1e6"/>
+      <stop offset="100%" stop-color="#ede5d8"/>
+    </linearGradient>
+    <filter id="s3"><feDropShadow dx="0" dy="3" stdDeviation="8" flood-color="#a67c52" flood-opacity="0.12"/></filter>
+  </defs>
+  <rect width="800" height="420" fill="url(#bg3)"/>
+
+  <!-- Browser window -->
+  <rect x="48" y="18" width="704" height="384" rx="12" fill="white" filter="url(#s3)"/>
+  <!-- Title bar -->
+  <rect x="48" y="18" width="704" height="38" rx="12" fill="#f0ebe0"/>
+  <rect x="48" y="44" width="704" height="12" fill="#f0ebe0"/>
+  <circle cx="72" cy="37" r="5.5" fill="#ff5f57"/>
+  <circle cx="90" cy="37" r="5.5" fill="#febc2e"/>
+  <circle cx="108" cy="37" r="5.5" fill="#28c840"/>
+  <rect x="190" y="28" width="280" height="18" rx="9" fill="white" opacity="0.7"/>
+  <text x="330" y="41" text-anchor="middle" font-family="system-ui" font-size="10" fill="#a67c52">mindease.app/assessment</text>
+
+  <!-- Page header bar -->
+  <rect x="48" y="56" width="704" height="46" fill="#faf7f2"/>
+  <rect x="48" y="101" width="704" height="1" fill="#ede5d8"/>
+  <text x="76" y="74" font-family="Georgia,serif" font-size="14" fill="#4a3f35" font-weight="bold">PHQ-9</text>
+  <text x="76" y="90" font-family="system-ui" font-size="9.5" fill="#7d6b56">Patient Health Questionnaire — Depression Screening</text>
+  <!-- Progress -->
+  <rect x="530" y="68" width="196" height="5" rx="2.5" fill="#ede5d8"/>
+  <rect x="530" y="68" width="130" height="5" rx="2.5" fill="#a67c52"/>
+  <text x="530" y="85" font-family="system-ui" font-size="9" fill="#7d6b56">Question 6 of 9</text>
+  <text x="722" y="85" text-anchor="end" font-family="system-ui" font-size="9" fill="#a67c52" font-weight="600">67%</text>
+
+  <!-- Left panel: question + options -->
+  <rect x="60" y="112" width="430" height="280" rx="10" fill="white" stroke="#ede5d8" stroke-width="1"/>
+
+  <!-- Question badge + text -->
+  <rect x="76" y="126" width="26" height="26" rx="6" fill="#a67c52"/>
+  <text x="89" y="144" text-anchor="middle" font-family="system-ui" font-size="11" fill="white" font-weight="700">6</text>
+  <text x="112" y="140" font-family="system-ui" font-size="11" fill="#4a3f35" font-weight="600">Feeling bad about yourself?</text>
+  <text x="112" y="154" font-family="system-ui" font-size="9" fill="#7d6b56">Or that you are a failure or have let yourself down</text>
+
+  <!-- Option 1 -->
+  <rect x="76" y="168" width="398" height="34" rx="8" fill="#faf7f2" stroke="#ede5d8" stroke-width="1"/>
+  <circle cx="98" cy="185" r="7.5" fill="none" stroke="#dbd0ba" stroke-width="1.5"/>
+  <text x="114" y="189" font-family="system-ui" font-size="10" fill="#7d6b56">Not at all</text>
+  <text x="462" y="189" text-anchor="end" font-family="system-ui" font-size="9" fill="#c5bcac">0</text>
+
+  <!-- Option 2 — Selected -->
+  <rect x="76" y="208" width="398" height="34" rx="8" fill="#fdf3ec" stroke="#a67c52" stroke-width="1.5"/>
+  <circle cx="98" cy="225" r="7.5" fill="#a67c52"/>
+  <circle cx="98" cy="225" r="3" fill="white"/>
+  <text x="114" y="229" font-family="system-ui" font-size="10" fill="#4a3f35" font-weight="600">Several days</text>
+  <text x="462" y="229" text-anchor="end" font-family="system-ui" font-size="9" fill="#a67c52" font-weight="600">1</text>
+
+  <!-- Option 3 -->
+  <rect x="76" y="248" width="398" height="34" rx="8" fill="#faf7f2" stroke="#ede5d8" stroke-width="1"/>
+  <circle cx="98" cy="265" r="7.5" fill="none" stroke="#dbd0ba" stroke-width="1.5"/>
+  <text x="114" y="269" font-family="system-ui" font-size="10" fill="#7d6b56">More than half the days</text>
+  <text x="462" y="269" text-anchor="end" font-family="system-ui" font-size="9" fill="#c5bcac">2</text>
+
+  <!-- Option 4 -->
+  <rect x="76" y="288" width="398" height="34" rx="8" fill="#faf7f2" stroke="#ede5d8" stroke-width="1"/>
+  <circle cx="98" cy="305" r="7.5" fill="none" stroke="#dbd0ba" stroke-width="1.5"/>
+  <text x="114" y="309" font-family="system-ui" font-size="10" fill="#7d6b56">Nearly every day</text>
+  <text x="462" y="309" text-anchor="end" font-family="system-ui" font-size="9" fill="#c5bcac">3</text>
+
+  <!-- Nav buttons -->
+  <rect x="76" y="336" width="76" height="28" rx="8" fill="white" stroke="#dbd0ba" stroke-width="1"/>
+  <text x="114" y="354" text-anchor="middle" font-family="system-ui" font-size="9.5" fill="#7d6b56">← Back</text>
+  <rect x="302" y="336" width="168" height="28" rx="8" fill="#a67c52"/>
+  <text x="386" y="354" text-anchor="middle" font-family="system-ui" font-size="9.5" fill="white" font-weight="600">Next Question →</text>
+
+  <!-- Right panel: score + history -->
+  <rect x="502" y="112" width="238" height="118" rx="10" fill="white" stroke="#ede5d8" stroke-width="1"/>
+  <text x="518" y="132" font-family="system-ui" font-size="9" fill="#7d6b56" font-weight="700" letter-spacing="0.07em">CURRENT SCORE</text>
+  <text x="518" y="168" font-family="Georgia,serif" font-size="36" fill="#a67c52">7</text>
+  <text x="554" y="168" font-family="system-ui" font-size="11" fill="#c5bcac">/ 27</text>
+  <rect x="518" y="176" width="70" height="18" rx="9" fill="#fdf3ec" stroke="#dbd0ba" stroke-width="1"/>
+  <text x="553" y="189" text-anchor="middle" font-family="system-ui" font-size="9" fill="#a67c52" font-weight="600">Mild</text>
+  <text x="518" y="220" font-family="system-ui" font-size="8.5" fill="#c5bcac">6 questions remaining</text>
+
+  <!-- Right: history -->
+  <rect x="502" y="242" width="238" height="150" rx="10" fill="white" stroke="#ede5d8" stroke-width="1"/>
+  <text x="518" y="261" font-family="system-ui" font-size="9" fill="#7d6b56" font-weight="700" letter-spacing="0.07em">PREVIOUS ANSWERS</text>
+
+  <text x="518" y="280" font-family="system-ui" font-size="8.5" fill="#4a3f35">Q1 — Little interest or pleasure</text>
+  <rect x="694" y="271" width="30" height="13" rx="6.5" fill="#fdf3ec"/>
+  <text x="709" y="281" text-anchor="middle" font-family="system-ui" font-size="8" fill="#a67c52" font-weight="600">1</text>
+
+  <text x="518" y="298" font-family="system-ui" font-size="8.5" fill="#4a3f35">Q2 — Feeling down or hopeless</text>
+  <rect x="694" y="289" width="30" height="13" rx="6.5" fill="#e8f0eb"/>
+  <text x="709" y="299" text-anchor="middle" font-family="system-ui" font-size="8" fill="#5D8A6B" font-weight="600">0</text>
+
+  <text x="518" y="316" font-family="system-ui" font-size="8.5" fill="#4a3f35">Q3 — Trouble sleeping</text>
+  <rect x="694" y="307" width="30" height="13" rx="6.5" fill="#fdf3ec"/>
+  <text x="709" y="317" text-anchor="middle" font-family="system-ui" font-size="8" fill="#a67c52" font-weight="600">2</text>
+
+  <text x="518" y="334" font-family="system-ui" font-size="8.5" fill="#4a3f35">Q4 — Feeling tired or low energy</text>
+  <rect x="694" y="325" width="30" height="13" rx="6.5" fill="#fdf3ec"/>
+  <text x="709" y="335" text-anchor="middle" font-family="system-ui" font-size="8" fill="#a67c52" font-weight="600">1</text>
+
+  <text x="518" y="352" font-family="system-ui" font-size="8.5" fill="#4a3f35">Q5 — Poor appetite or overeating</text>
+  <rect x="694" y="343" width="30" height="13" rx="6.5" fill="#fdf3ec"/>
+  <text x="709" y="353" text-anchor="middle" font-family="system-ui" font-size="8" fill="#a67c52" font-weight="600">3</text>
+
+  <text x="518" y="370" font-family="system-ui" font-size="8.5" fill="#c5bcac">Q6 — Feeling bad about yourself</text>
+  <rect x="694" y="361" width="30" height="13" rx="6.5" fill="#f5f1e6"/>
+  <text x="709" y="371" text-anchor="middle" font-family="system-ui" font-size="8" fill="#c5bcac">—</text>
+</svg>
