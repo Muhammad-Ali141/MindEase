@@ -20,18 +20,6 @@ export function SessionHistory() {
     }
   }, [user?.id])
 
-  // Refresh when component becomes visible
-  useEffect(() => {
-    const handleFocus = () => {
-      if (user?.id) {
-        loadRecentSessions()
-      }
-    }
-    
-    window.addEventListener('focus', handleFocus)
-    return () => window.removeEventListener('focus', handleFocus)
-  }, [user?.id])
-
   const loadRecentSessions = async () => {
     if (!user?.id) return
     

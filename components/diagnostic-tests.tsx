@@ -24,18 +24,6 @@ export function DiagnosticTests() {
     }
   }, [user?.id])
 
-  // Refresh test data when component becomes visible (after test completion)
-  useEffect(() => {
-    const handleFocus = () => {
-      if (user?.id) {
-        loadTestData()
-      }
-    }
-    
-    window.addEventListener('focus', handleFocus)
-    return () => window.removeEventListener('focus', handleFocus)
-  }, [user?.id])
-
   const loadTestData = async () => {
     if (!user?.id) return
 

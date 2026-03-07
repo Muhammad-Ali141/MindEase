@@ -86,6 +86,7 @@ export default function AuthPage() {
   const [googleOtpCode, setGoogleOtpCode] = useState("")
   const [sendingGoogleOtp, setSendingGoogleOtp] = useState(false)
   const [verifyingGoogleOtp, setVerifyingGoogleOtp] = useState(false)
+  const [isOauthSyncing, setIsOauthSyncing] = useState(false)
   const clerkSyncedRef = useRef(false)
 
   useEffect(() => {
@@ -93,16 +94,36 @@ export default function AuthPage() {
     setMode(m)
   }, [searchParams])
 
+  // When redirected from dashboard with from_oauth=1 (new Google user), show profile form
+  useEffect(() => {
+    if (searchParams.get("from_oauth") !== "1" || !clerkLoaded || !isSignedIn || !clerkUser || googleUser) return
+    const email = clerkUser.primaryEmailAddress?.emailAddress
+    if (!email) return
+    setGoogleUser({
+      email,
+      firstName: clerkUser.firstName || "",
+      lastName: clerkUser.lastName || "",
+    })
+    setGoogleFlow("profile")
+  }, [searchParams, clerkLoaded, isSignedIn, clerkUser, googleUser])
+
   // When Clerk user is signed in (e.g. after Google redirect), sync with backend
+  // Only sync when we just returned from Google OAuth - prevents auto-login from stale Clerk sessions
+  // Skip when from_oauth=1 (we came from dashboard after USER_NOT_FOUND)
   useEffect(() => {
     if (!clerkLoaded || !isSignedIn || !clerkUser || clerkSyncedRef.current) return
+    if (searchParams.get("from_oauth") === "1") return
+    if (typeof window === "undefined" || sessionStorage.getItem("mindease_oauth_pending") !== "1") return
     const email = clerkUser.primaryEmailAddress?.emailAddress
     if (!email) return
     clerkSyncedRef.current = true
+    sessionStorage.removeItem("mindease_oauth_pending")
+    setIsOauthSyncing(true)
     const firstName = clerkUser.firstName || ""
     const lastName = clerkUser.lastName || ""
     apiLoginOauth(email)
       .then((res) => {
+        setIsOauthSyncing(false)
         setAuth({
           token: res.user_id.toString(),
           user: {
@@ -119,27 +140,52 @@ export default function AuthPage() {
         router.push("/dashboard")
       })
       .catch((err) => {
+        setIsOauthSyncing(false)
         if (err?.message === "USER_NOT_FOUND") {
           setGoogleUser({ email, firstName, lastName })
-          setGoogleFlow("otp")
-          setSendingGoogleOtp(true)
-          apiSendOtp(email)
-            .then(() => {
-              setGoogleOtpSent(true)
-              toast({ title: t.otpSentSuccess, variant: "default" })
-            })
-            .catch((e) => toast({ title: "Failed to send OTP", description: e?.message, variant: "destructive" }))
-            .finally(() => setSendingGoogleOtp(false))
+          setGoogleFlow("profile")
         }
       })
-  }, [clerkLoaded, isSignedIn, clerkUser, setAuth, router, toast, t.otpSentSuccess])
+  }, [clerkLoaded, isSignedIn, clerkUser, setAuth, router, toast])
 
-  const handleSignInWithGoogle = () => {
+  const handleSignInWithGoogle = async () => {
+    // If already signed in to Clerk (e.g. stale session), sync with backend instead of redirecting
+    if (clerkLoaded && isSignedIn && clerkUser) {
+      const email = clerkUser.primaryEmailAddress?.emailAddress
+      if (!email) return
+      clerkSyncedRef.current = true
+      try {
+        const res = await apiLoginOauth(email)
+        setAuth({
+          token: res.user_id.toString(),
+          user: {
+            id: res.user_id.toString(),
+            email: res.email,
+            first_name: res.first_name,
+            last_name: res.last_name || "",
+            gender: res.gender,
+            city: res.city,
+            nearest_major_city: res.nearest_major_city,
+            dashboard_tour_seen: res.dashboard_tour_seen ?? false,
+          },
+        })
+        router.push("/dashboard")
+      } catch (err: any) {
+        if (err?.message === "USER_NOT_FOUND") {
+          const firstName = clerkUser.firstName || ""
+          const lastName = clerkUser.lastName || ""
+          setGoogleUser({ email, firstName, lastName })
+          setGoogleFlow("profile")
+        }
+      }
+      return
+    }
+    if (typeof window !== "undefined") sessionStorage.setItem("mindease_oauth_pending", "1")
     const origin = typeof window !== "undefined" ? window.location.origin : ""
     signIn?.authenticateWithRedirect({
       strategy: "oauth_google",
       redirectUrl: `${origin}/auth/callback`,
-      redirectUrlComplete: `${origin}/auth`,
+      redirectUrlComplete: `${origin}/dashboard`,
     })
   }
 
@@ -162,6 +208,14 @@ export default function AuthPage() {
   }
 
   const showGoogleFlow = googleFlow !== "idle" && googleUser
+  const showOauthLoading =
+    isOauthSyncing ||
+    (clerkLoaded &&
+      isSignedIn &&
+      !!clerkUser?.primaryEmailAddress?.emailAddress &&
+      typeof window !== "undefined" &&
+      sessionStorage.getItem("mindease_oauth_pending") === "1" &&
+      !showGoogleFlow)
 
   return (
     <div className="min-h-dvh flex flex-col bg-slate-50 dark:bg-[#0f1216]">
@@ -177,6 +231,12 @@ export default function AuthPage() {
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
+        {showOauthLoading ? (
+          <div className="flex flex-col items-center gap-4 text-slate-700 dark:text-slate-300">
+            <Loader2 className="h-10 w-10 animate-spin text-[#4a6a85] dark:text-[#7b9cb8]" />
+            <p className="text-sm">Signing you in…</p>
+          </div>
+        ) : (
         <div className="w-full max-w-5xl min-h-[32rem] rounded-2xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.35)] bg-white dark:bg-slate-900/95 border border-slate-300 dark:border-slate-700/60 grid grid-cols-1 lg:grid-cols-2">
           {showGoogleFlow ? (
             <div className="col-span-1 lg:col-span-2 flex flex-col justify-center p-8 sm:p-10 bg-white dark:bg-slate-900/95">
@@ -266,6 +326,7 @@ export default function AuthPage() {
             </>
           )}
         </div>
+        )}
       </main>
     </div>
   )
@@ -462,6 +523,7 @@ function GoogleCompleteProfileForm({
         dob: values.dob,
         gender: values.gender,
         preferred_language: values.preferred_language,
+        oauth_verified: true,
       })
       onSuccess(res)
     } catch (e: any) {

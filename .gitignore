@@ -16,8 +16,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
-.env*
+# env files (tracked in private repo - remove these lines to ignore)
+# .env*
 
 # vercel
 .vercel
@@ -70,9 +70,9 @@ deberta_best/*.pth
 # Dataset (may be large - partner should download separately)
 dataset/MentalChat16K.csv
 
-# Environment variables
-.env
-backend/chatbot/.env
+# Environment variables (commented for private repo - uncomment for public)
+# .env
+# backend/chatbot/.env
 
 # Python cache
 __pycache__/
@@ -138,3 +138,5 @@ models/**/*.safetensors
 
 # Scraper output (scraped JSON)
 scraper/output/
+# clerk configuration (can include secrets)
+/.clerk/
