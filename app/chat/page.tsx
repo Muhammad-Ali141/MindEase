@@ -2,45 +2,57 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
-import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
-import { apiChatMessage, apiChatWelcome, apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar, type ChatMessage, type Session } from "@/lib/api"
+import { BeamsBackground } from "@/components/ui/beams-background"
+import { useTheme } from "next-themes"
+import { Header } from "@/components/header"
+import { ChatSidebar } from "@/components/chat-sidebar"
+import {
+  apiChatMessage, apiChatWelcome, apiChatSummary, apiSaveSession,
+  apiGetSessionById, apiToggleSessionStar,
+  type ChatMessage, type Session, type SessionPreview,
+} from "@/lib/api"
 import { ChatInterface } from "@/components/chat-interface"
 import { ShareTestModal } from "@/components/share-test-modal"
-import { ArrowLeft, Loader2, Star } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { ArrowLeft, Star, Loader2, CheckCircle2, MessageCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 export default function ChatPage() {
   const router = useRouter()
   const { user, token } = useAuth()
   const { toast } = useToast()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [loading, setLoading] = useState(false)
-  const [welcomeLoading, setWelcomeLoading] = useState(true)
-  const [showSummary, setShowSummary] = useState(false)
-  const [summary, setSummary] = useState<string>("")
-  const [savedSession, setSavedSession] = useState<Session | null>(null)
-  const [isEnding, setIsEnding] = useState(false)
+  const { resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const isDark = mounted ? resolvedTheme === "dark" : false
+
+  const [sidebarOpen, setSidebarOpen]           = useState(true)
+  const [messages, setMessages]                 = useState<ChatMessage[]>([])
+  const [loading, setLoading]                   = useState(false)
+  const [welcomeLoading, setWelcomeLoading]     = useState(true)
+  const [showSummary, setShowSummary]           = useState(false)
+  const [summary, setSummary]                   = useState("")
+  const [savedSession, setSavedSession]         = useState<Session | null>(null)
+  const [isEnding, setIsEnding]                 = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [baselineUserMessageCount, setBaselineUserMessageCount] = useState(0)
-  const [showShareModal, setShowShareModal] = useState(false)
-  const [testContext, setTestContext] = useState<string | null>(null)
+  const [showShareModal, setShowShareModal]     = useState(false)
+  const [testContext, setTestContext]           = useState<string | null>(null)
   const shareModalShownRef = useRef(false)
 
-  // Check for session_id in URL query params
+  const sessionTitle = savedSession?.title || (currentSessionId ? "Conversation" : "New Conversation")
+
   useEffect(() => {
     if (user && token) {
       const params = new URLSearchParams(window.location.search)
       const sessionId = params.get("session_id")
-      
       if (sessionId) {
-        // Load existing session (don't show share modal for existing sessions)
         loadSession(sessionId)
       } else {
-        // For new sessions, show share modal first
         if (!shareModalShownRef.current) {
           shareModalShownRef.current = true
           setShowShareModal(true)
@@ -49,37 +61,112 @@ export default function ChatPage() {
     }
   }, [user, token])
 
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
   const loadWelcomeMessage = async (sharedTestContext?: string) => {
     try {
       setWelcomeLoading(true)
       setSavedSession(null)
       setShowSummary(false)
       setSummary("")
-      const response = await apiChatWelcome(
-        user!.id,
-        user!.first_name || null,
-        sharedTestContext || null
-      )
-      
-      // Add welcome message to messages
-      setMessages([
-        {
-          role: "assistant",
-          content: response.welcome_message,
-          content_type: "text",
-        },
-      ])
-      setCurrentSessionId(null) // New session
+      const response = await apiChatWelcome(user!.id, user!.first_name || null, sharedTestContext || null)
+      setMessages([{ role: "assistant", content: response.welcome_message, content_type: "text" }])
+      setCurrentSessionId(null)
       setBaselineUserMessageCount(0)
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load welcome message",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: error.message || "Failed to load welcome message", variant: "destructive" })
     } finally {
       setWelcomeLoading(false)
     }
+  }
+
+  /** Background-save current session (fire-and-forget). Safe to call while navigating away. */
+  const backgroundSaveCurrentSession = () => {
+    if (!user || !token) return
+    const currentUserMessages = messages.filter(m => m.role === "user").length
+    if (currentUserMessages <= baselineUserMessageCount) return
+    const msgSnapshot     = [...messages]
+    const sessionSnapshot = currentSessionId
+
+    apiChatSummary(user.id, user.first_name || null, user.gender || null, msgSnapshot)
+      .then(res => {
+        if (!res.summary || res.summary.includes("No conversation to summarize")) return
+        return apiSaveSession(
+          user.id, msgSnapshot, res.summary,
+          sessionSnapshot || undefined, user.first_name || null, user.gender || null
+        )
+      })
+      .catch(err => console.error("[chat] background save failed:", err))
+  }
+
+  const loadSession = async (sessionId: string) => {
+    try {
+      setWelcomeLoading(true)
+      const response = await apiGetSessionById(user!.id, sessionId)
+      const session  = response.session
+      setCurrentSessionId(session.session_id)
+      setSavedSession(session)
+      setBaselineUserMessageCount(
+        session.has_full_transcript ? session.messages.filter(m => m.role === "user").length : 0
+      )
+      let initialMessages: ChatMessage[] = []
+      if (session.has_full_transcript && session.messages.length > 0) {
+        initialMessages = session.messages.map(msg => ({
+          role: msg.role, content: msg.content,
+          emotion_label: msg.emotion_label, emotion_score: msg.emotion_score,
+          metadata: msg.metadata, content_type: msg.content_type,
+        }))
+      } else {
+        const reminder = session.resume_message
+          ? session.resume_message
+          : session.summary
+            ? `${session.summary}\n\nLet's pick up from where we left off. How are you feeling now?`
+            : "Let's continue from our previous conversation. How are you feeling now?"
+        initialMessages = [{ role: "assistant", content: reminder, content_type: "text" }]
+      }
+      setMessages(initialMessages)
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to load session", variant: "destructive" })
+      loadWelcomeMessage()
+    } finally {
+      setWelcomeLoading(false)
+    }
+  }
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  const handleNewChat = () => {
+    backgroundSaveCurrentSession()
+    setMessages([])
+    setCurrentSessionId(null)
+    setSavedSession(null)
+    setShowSummary(false)
+    setSummary("")
+    setTestContext(null)
+    setBaselineUserMessageCount(0)
+    shareModalShownRef.current = false
+    window.history.pushState({}, "", "/chat")
+    setShowShareModal(true)
+  }
+
+  /** Called when user clicks an older session in the sidebar */
+  const handleSessionSelect = (session: SessionPreview) => {
+    // Voice sessions: route away normally
+    if (session.has_voice) {
+      backgroundSaveCurrentSession()
+      router.push(`/voice-chat?session_id=${session.session_id}`)
+      return
+    }
+    // Text session: background-save current, then load inline
+    backgroundSaveCurrentSession()
+    setMessages([])
+    setCurrentSessionId(null)
+    setSavedSession(null)
+    setShowSummary(false)
+    setSummary("")
+    setTestContext(null)
+    window.history.pushState({}, "", `/chat?session_id=${session.session_id}`)
+    loadSession(session.session_id)
   }
 
   const handleShareTest = (context: string) => {
@@ -94,103 +181,25 @@ export default function ChatPage() {
     loadWelcomeMessage()
   }
 
-  const loadSession = async (sessionId: string) => {
-    try {
-      setWelcomeLoading(true)
-      const response = await apiGetSessionById(user!.id, sessionId)
-      
-      // Load messages from session
-      const session = response.session
-      setCurrentSessionId(session.session_id)
-      setSavedSession(session)
-      setBaselineUserMessageCount(
-        session.has_full_transcript
-          ? session.messages.filter((msg) => msg.role === "user").length
-          : 0
-      )
-
-      let initialMessages: ChatMessage[] = []
-
-      if (session.has_full_transcript && session.messages.length > 0) {
-        initialMessages = session.messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-          emotion_label: msg.emotion_label,
-          emotion_score: msg.emotion_score,
-          metadata: msg.metadata,
-          content_type: msg.content_type,
-        }))
-      } else {
-        const reminder = session.resume_message
-          ? session.resume_message
-          : session.summary
-            ? `${session.summary}\n\nLet's pick up from where we left off. How are you feeling now?`
-            : "Let's continue from our previous conversation. How are you feeling now?"
-        initialMessages = [
-          {
-            role: "assistant",
-            content: reminder,
-            content_type: "text",
-          },
-        ]
-      }
-
-      setMessages(initialMessages)
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load session",
-        variant: "destructive",
-      })
-      // Fallback to welcome message
-      loadWelcomeMessage()
-    } finally {
-      setWelcomeLoading(false)
-    }
-  }
-
   const handleSendMessage = async (message: string) => {
     if (!message.trim() || loading || !user || !token) return
-
-    // Add user message immediately
-    const userMessage: ChatMessage = {
-      role: "user",
-      content: message,
-      content_type: "text",
-    }
+    const userMessage: ChatMessage = { role: "user", content: message, content_type: "text" }
     const historyForRequest = [...messages, userMessage]
     setMessages(historyForRequest)
     setLoading(true)
-
     try {
       const response = await apiChatMessage(
-        message,
-        user.id,
-        user.first_name || null,
-        user.gender || null,
-        historyForRequest,
-        testContext || null
+        message, user.id, user.first_name || null,
+        user.gender || null, historyForRequest, testContext || null
       )
-
       const primaryEmotion = response.emotions?.[0]
-
-      // Add assistant response
-      const assistantMessage: ChatMessage = {
-        role: "assistant",
-        content: response.response,
-        content_type: "text",
-      }
-      setMessages((prev) => {
+      const assistantMessage: ChatMessage = { role: "assistant", content: response.response, content_type: "text" }
+      setMessages(prev => {
         const updated = [...prev]
         if (primaryEmotion) {
           for (let i = updated.length - 1; i >= 0; i--) {
-            const msg = updated[i]
-            if (msg.role === "user") {
-              updated[i] = {
-                ...msg,
-                emotion_label: primaryEmotion.emotion,
-                emotion_score: primaryEmotion.score,
-              }
+            if (updated[i].role === "user") {
+              updated[i] = { ...updated[i], emotion_label: primaryEmotion.emotion, emotion_score: primaryEmotion.score }
               break
             }
           }
@@ -199,13 +208,8 @@ export default function ChatPage() {
         return updated
       })
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to send message",
-        variant: "destructive",
-      })
-      // Remove user message on error
-      setMessages((prev) => prev.slice(0, -1))
+      toast({ title: "Error", description: error.message || "Failed to send message", variant: "destructive" })
+      setMessages(prev => prev.slice(0, -1))
     } finally {
       setLoading(false)
     }
@@ -213,61 +217,26 @@ export default function ChatPage() {
 
   const handleEndChat = async () => {
     if (isEnding || !user || !token || messages.length === 0) return
-
-    const currentUserMessages = messages.filter((msg) => msg.role === "user").length
-    if (currentUserMessages <= baselineUserMessageCount) {
-      router.push("/dashboard")
-      return
-    }
-
+    const currentUserMessages = messages.filter(m => m.role === "user").length
+    if (currentUserMessages <= baselineUserMessageCount) { router.push("/dashboard"); return }
     setIsEnding(true)
     setLoading(true)
-
     try {
-      // Get summary
-      const response = await apiChatSummary(
-        user.id,
-        user.first_name || null,
-        user.gender || null,
-        messages
-      )
-      
-      // Check if summary indicates no conversation
-      if (response.summary && response.summary.includes("No conversation to summarize")) {
-        // No actual conversation, just go back to dashboard (don't increment count)
-        router.push("/dashboard")
-        return
-      }
-      
-      // Save session (create new or update existing)
+      const response = await apiChatSummary(user.id, user.first_name || null, user.gender || null, messages)
+      if (response.summary?.includes("No conversation to summarize")) { router.push("/dashboard"); return }
       try {
         const saveResponse = await apiSaveSession(
-          user.id,
-          messages,
-          response.summary,
-          currentSessionId || undefined,
-          user.first_name || null,
-          user.gender || null
+          user.id, messages, response.summary,
+          currentSessionId || undefined, user.first_name || null, user.gender || null
         )
         setSavedSession(saveResponse.session)
         setCurrentSessionId(saveResponse.session.session_id)
-        setBaselineUserMessageCount(
-          saveResponse.session.messages.filter((msg) => msg.role === "user").length
-        )
-      } catch (error) {
-        // Log error but don't block summary display
-        console.error("Failed to save session:", error)
-      }
-      
+        setBaselineUserMessageCount(saveResponse.session.messages.filter(m => m.role === "user").length)
+      } catch (err) { console.error("Failed to save session:", err) }
       setSummary(response.summary)
       setShowSummary(true)
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to generate summary",
-        variant: "destructive",
-      })
-      // Still allow navigation even if summary fails
+      toast({ title: "Error", description: error.message || "Failed to generate summary", variant: "destructive" })
       router.push("/dashboard")
     } finally {
       setLoading(false)
@@ -275,185 +244,172 @@ export default function ChatPage() {
     }
   }
 
-  const handleBackToDashboard = () => {
-    router.push("/dashboard")
-  }
-
   const handleToggleStar = async () => {
     if (!user || !savedSession) return
-
     if (savedSession.state !== "full" && !savedSession.is_starred) {
-      toast({
-        title: "Cannot star this session",
-        description: "Archived sessions cannot be starred because the detailed transcript is no longer available.",
-        variant: "destructive",
-      })
+      toast({ title: "Cannot star this session", description: "Archived sessions cannot be starred.", variant: "destructive" })
       return
     }
-
     try {
       const response = await apiToggleSessionStar(user.id, savedSession.session_id, !savedSession.is_starred)
-      setSavedSession((prev) =>
-        prev
-          ? {
-              ...prev,
-              is_starred: response.session.is_starred,
-              state: response.session.state,
-              has_full_transcript: response.session.has_full_transcript,
-              resume_message: response.session.resume_message ?? prev.resume_message,
-            }
-          : prev
-      )
-      toast({
-        title: response.session.is_starred ? "Session starred" : "Session unstarred",
-        description: response.session.is_starred
-          ? "We'll keep this session in full detail for you."
-          : "This session may be archived if newer ones are created.",
-      })
+      setSavedSession(prev => prev ? {
+        ...prev, is_starred: response.session.is_starred, state: response.session.state,
+        has_full_transcript: response.session.has_full_transcript,
+        resume_message: response.session.resume_message ?? prev.resume_message,
+      } : prev)
+      toast({ title: response.session.is_starred ? "Session starred" : "Session unstarred" })
     } catch (error: any) {
-      toast({
-        title: "Unable to update star",
-        description: error.message || "Please try again later.",
-        variant: "destructive",
-      })
+      toast({ title: "Unable to update star", description: error.message, variant: "destructive" })
     }
   }
 
+  // ── Page shell ─────────────────────────────────────────────────────────────
+  const Shell = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
+      {/* Background */}
+      <div style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none" }}>
+        <BeamsBackground isDark={isDark} intensity="subtle" />
+        <div style={{ position: "absolute", inset: 0, backgroundColor: isDark ? "rgba(0,0,0,0.36)" : "rgba(255,255,255,0.18)" }} />
+      </div>
+
+      {/* Chat sidebar */}
+      <div style={{ position: "relative", zIndex: 10, flexShrink: 0, height: "100%" }}>
+        <ChatSidebar
+          currentSessionId={currentSessionId}
+          onNewChat={handleNewChat}
+          onSessionSelect={handleSessionSelect}
+          open={sidebarOpen}
+          onToggle={() => setSidebarOpen(v => !v)}
+        />
+      </div>
+
+      {/* Main column */}
+      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {children}
+      </div>
+    </div>
+  )
+
+  // ── Summary screen ─────────────────────────────────────────────────────────
   if (showSummary) {
     return (
       <AuthGuard>
-        <div className="fixed inset-0 flex h-screen w-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-slate-950 dark:via-purple-950/20 dark:to-pink-950/20 z-50">
-          <Sidebar />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header />
-            <div className="flex-1 overflow-auto p-6">
-              <div className="max-w-4xl mx-auto">
-                <Button
-                  onClick={handleBackToDashboard}
-                  variant="ghost"
-                  className="mb-6"
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Dashboard
-                </Button>
-                
-                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 border border-purple-100 dark:border-purple-900/30">
-                  <h2 className="text-3xl font-bold mb-6 bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                    Session Summary
-                  </h2>
-                {savedSession && (
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(savedSession.updated_at).toLocaleString()}
-                      </p>
-                      <p className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-                        {savedSession.title || "Therapy Session"}
-                      </p>
+        <Shell>
+          <Header />
+          <main style={{ flex: 1, overflowY: "auto" }}>
+            <div style={{ maxWidth: 680, margin: "0 auto", padding: "1.75rem 1.5rem 3rem" }}>
+              <button
+                onClick={() => router.push("/dashboard")}
+                style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", marginBottom: "2rem", padding: 0 }}
+              >
+                <ArrowLeft size={13} /> Dashboard
+              </button>
+
+              <div style={{ marginBottom: "1.625rem" }}>
+                <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.25rem" }}>Session Complete</p>
+                <h1 style={{ ...serif, fontSize: "2rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1 }}>Your Session Summary</h1>
+              </div>
+
+              <div style={{ backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)", backdropFilter: "blur(14px)", borderRadius: 18, border: "1px solid var(--border)", boxShadow: "0 4px 24px rgba(0,0,0,0.07)", overflow: "hidden" }}>
+                <div style={{ height: 4, background: "linear-gradient(90deg, #7a5535, #a67c52, #5D8A6B)" }} />
+                <div style={{ padding: "1.5rem 1.75rem" }}>
+                  {savedSession && (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", paddingBottom: "1rem", borderBottom: "1px solid var(--border)" }}>
+                      <div>
+                        <h2 style={{ ...sans, fontSize: "0.9375rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.15rem" }}>{savedSession.title || "Therapy Session"}</h2>
+                        <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{new Date(savedSession.updated_at).toLocaleString()}</p>
+                      </div>
+                      <button
+                        onClick={handleToggleStar}
+                        style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem", height: 32, padding: "0 0.875rem", borderRadius: 9, fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", border: savedSession.is_starred ? "1px solid rgba(245,158,11,0.4)" : "1px solid var(--border)", backgroundColor: savedSession.is_starred ? "color-mix(in srgb, #f59e0b 10%, transparent)" : "transparent", color: savedSession.is_starred ? "#f59e0b" : "var(--muted-foreground)", transition: "all 0.15s ease" }}
+                      >
+                        <Star size={12} strokeWidth={1.75} fill={savedSession.is_starred ? "currentColor" : "none"} />
+                        {savedSession.is_starred ? "Starred" : "Star"}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleToggleStar}
-                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${
-                        savedSession.is_starred
-                          ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                          : "border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-slate-600 dark:text-gray-200 dark:hover:bg-slate-700/60"
-                      }`}
-                    >
-                      <StarIcon filled={savedSession.is_starred} />
-                      {savedSession.is_starred ? "Starred" : "Star Session"}
+                  )}
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <CheckCircle2 size={13} color="white" strokeWidth={2} />
+                    </div>
+                    <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)" }}>Session saved to your history</span>
+                  </div>
+
+                  <div style={{ ...sans, fontSize: "0.9375rem", color: "var(--foreground)", lineHeight: 1.82 }}>
+                    {summary.split(/\n{2,}/).map((p, i, arr) => (
+                      <p key={i} style={{ marginBottom: i < arr.length - 1 ? "1rem" : 0, whiteSpace: "pre-line" }}>{p.trim()}</p>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem", paddingTop: "1.25rem", borderTop: "1px solid var(--border)", justifyContent: "flex-end" }}>
+                    <button onClick={handleNewChat} style={{ ...sans, height: 36, padding: "0 1rem", borderRadius: 10, background: "none", border: "1px solid var(--border)", color: "var(--foreground)", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem", transition: "border-color 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.borderColor = "var(--primary)"} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}>
+                      <MessageCircle size={13} /> New Chat
                     </button>
-                  </div>
-                )}
-                  <div className="prose prose-lg max-w-none dark:prose-invert">
-                    <div className="space-y-3 text-gray-700 dark:text-gray-300 leading-relaxed">
-                      {summary.split(/\n{2,}/).map((paragraph, index) => (
-                        <p key={index} className="whitespace-pre-line">
-                          {paragraph.trim()}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="mt-8 flex justify-end">
-                    <Button
-                      onClick={handleBackToDashboard}
-                      className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                    >
+                    <button onClick={() => router.push("/dashboard")} style={{ ...sans, height: 36, padding: "0 1.125rem", borderRadius: 10, background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)", border: "none", color: "white", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 10px rgba(166,124,82,0.28)", transition: "opacity 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.opacity = "0.87"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
                       Return to Dashboard
-                    </Button>
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </main>
+        </Shell>
       </AuthGuard>
     )
   }
 
+  // ── Chat screen ────────────────────────────────────────────────────────────
   return (
     <AuthGuard>
-      <div className="fixed inset-0 flex h-screen w-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-slate-950 dark:via-purple-950/20 dark:to-pink-950/20 z-50">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="p-6 pb-0">
-              <Button
-                onClick={handleEndChat}
-                variant="ghost"
-                disabled={isEnding || loading}
-                className="mb-4"
-              >
-                {isEnding ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Ending chat...
-                  </>
-                ) : (
-                  <>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    End Chat
-                  </>
-                )}
-              </Button>
-            </div>
-            
-            <ShareTestModal
-              open={showShareModal}
-              onClose={() => setShowShareModal(false)}
-              onShare={handleShareTest}
-              onSkip={handleSkipShare}
-            />
-            
-            <ChatInterface
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              loading={loading || welcomeLoading}
-              onResponseComplete={() => {
-                // Auto-focus input after AI response
-                setTimeout(() => {
-                  const textarea = document.querySelector('textarea[placeholder*="Type your message"]') as HTMLTextAreaElement
-                  if (textarea) {
-                    textarea.focus()
-                  }
-                }, 100)
-              }}
-            />
+      <Shell>
+        {/* Header (greeting + date + theme + avatar) */}
+        <Header />
+
+        {/* Slim session bar */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 1.25rem", height: 44, flexShrink: 0,
+          borderBottom: "1px solid color-mix(in srgb, var(--border) 55%, transparent)",
+          backgroundColor: "color-mix(in srgb, var(--card) 70%, transparent)",
+          backdropFilter: "blur(10px)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: welcomeLoading ? "var(--muted-foreground)" : "#5D8A6B", boxShadow: welcomeLoading ? "none" : "0 0 0 2px rgba(93,138,107,0.22)", transition: "background-color 0.3s ease" }} />
+            <span style={{ ...sans, fontSize: "0.875rem", fontWeight: 600, color: "var(--foreground)" }}>
+              {welcomeLoading ? "Starting…" : sessionTitle}
+            </span>
+            {testContext && (
+              <span style={{ ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--primary)", backgroundColor: "color-mix(in srgb, var(--primary) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 22%, transparent)", padding: "0.15rem 0.45rem", borderRadius: 100 }}>
+                With results
+              </span>
+            )}
           </div>
+
+          <button
+            onClick={handleEndChat}
+            disabled={isEnding || loading || welcomeLoading}
+            style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.35rem", height: 28, padding: "0 0.75rem", borderRadius: 7, fontSize: "0.8125rem", fontWeight: 600, border: "1px solid var(--border)", backgroundColor: "transparent", color: "var(--muted-foreground)", cursor: (isEnding || loading || welcomeLoading) ? "default" : "pointer", opacity: (isEnding || loading || welcomeLoading) ? 0.45 : 1, transition: "border-color 0.15s ease, color 0.15s ease" }}
+            onMouseEnter={e => { if (!isEnding && !loading && !welcomeLoading) { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)" } }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-foreground)" }}
+          >
+            {isEnding ? <><Loader2 size={11} className="animate-spin" /> Saving…</> : <><ArrowLeft size={11} /> End Chat</>}
+          </button>
         </div>
-      </div>
+
+        <ShareTestModal open={showShareModal} onClose={() => setShowShareModal(false)} onShare={handleShareTest} onSkip={handleSkipShare} />
+
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <ChatInterface
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            loading={loading || welcomeLoading}
+            onResponseComplete={() => {
+              setTimeout(() => { const ta = document.querySelector("textarea") as HTMLTextAreaElement; if (ta) ta.focus() }, 100)
+            }}
+          />
+        </div>
+      </Shell>
     </AuthGuard>
   )
 }
-
-function StarIcon({ filled }: { filled: boolean }) {
-  return (
-    <Star
-      className="h-4 w-4"
-      strokeWidth={1.5}
-      fill={filled ? "currentColor" : "none"}
-    />
-  )
-}
-

@@ -10,7 +10,26 @@
       "Bash(\"venv/Scripts/python.exe\" scraper/debug_marham.py)",
       "Bash(\"venv/Scripts/python.exe\" scraper/debug_marham2.py)",
       "Bash(\"venv/Scripts/python.exe\" scraper/scrape_marham.py -o scraper/output/marham_therapists.json --no-headless)",
-      "Bash(claude mcp:*)"
+      "Bash(claude mcp:*)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_pages",
+      "Bash(curl:*)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__wait_for",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__evaluate_script",
+      "Bash(npx next:*)",
+      "Bash(taskkill:*)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__resize_page",
+      "Bash(npm run:*)",
+      "Bash(npm install:*)",
+      "Bash(netstat:*)",
+      "Bash(cmd:*)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_snapshot",
+      "Bash(node:*)",
+      "Bash(dir:*)",
+      "Bash(npx tsc:*)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__click",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_console_messages"
     ]
   }
 }

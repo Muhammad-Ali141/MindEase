@@ -3,30 +3,28 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
-import { 
-  apiGetDiagnosticTestStatus, 
+import {
+  apiGetDiagnosticTestStatus,
   apiGetDiagnosticTestHistory,
   type DiagnosticTestStatus,
   type TestHistoryItem
 } from "@/lib/api"
-import { CheckCircle2, Clock, Brain, AlertCircle, Heart, Smile, ArrowRight, Loader2 } from "lucide-react"
+import { CheckCircle2, Brain, AlertCircle, Heart, Smile, ArrowRight, Loader2 } from "lucide-react"
+
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 export function DiagnosticTests() {
   const router = useRouter()
   const { user } = useAuth()
-  const [testStatus, setTestStatus] = useState<DiagnosticTestStatus | null>(null)
+  const [testStatus, setTestStatus]   = useState<DiagnosticTestStatus | null>(null)
   const [testHistory, setTestHistory] = useState<TestHistoryItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]         = useState(true)
 
-  useEffect(() => {
-    if (user?.id) {
-      loadTestData()
-    }
-  }, [user?.id])
+  useEffect(() => { if (user?.id) loadTestData() }, [user?.id])
 
   const loadTestData = async () => {
     if (!user?.id) return
-
     try {
       setLoading(true)
       const [status, history] = await Promise.all([
@@ -35,203 +33,184 @@ export function DiagnosticTests() {
       ])
       setTestStatus(status)
       setTestHistory(history.results)
-    } catch (error) {
-      console.error("Failed to load test data:", error)
+    } catch {
+      // keep defaults
     } finally {
       setLoading(false)
     }
   }
 
-  const handleTakeTest = (testType: string) => {
-    router.push(`/diagnostic-test/${testType}`)
-  }
-
   const getTestInfo = (testType: string | null) => {
     if (!testType) return null
-
-    const testInfoMap: Record<string, { name: string; icon: any; color: string; description: string }> = {
-      "generic-screening": {
-        name: "Generic Screening Test",
-        icon: Brain,
-        color: "from-purple-500 to-indigo-600",
-        description: "A brief 8-question screening to identify your primary concern"
-      },
-      "phq9": {
-        name: "PHQ-9 (Depression)",
-        icon: Heart,
-        color: "from-blue-500 to-blue-600",
-        description: "Check how you've been feeling lately"
-      },
-      "gad7": {
-        name: "GAD-7 (Anxiety)",
-        icon: AlertCircle,
-        color: "from-orange-500 to-orange-600",
-        description: "See if you're feeling worried or on edge"
-      },
-      "pss10": {
-        name: "PSS-10 (Stress)",
-        icon: Brain,
-        color: "from-red-500 to-red-600",
-        description: "Find out how much stress you're feeling"
-      },
-      "mood_test": {
-        name: "General Mood Assessment",
-        icon: Smile,
-        color: "from-green-500 to-green-600",
-        description: "Get a quick look at your overall mood"
-      }
+    const map: Record<string, { name: string; icon: any; bg: string; color: string; desc: string }> = {
+      "generic-screening": { name: "Generic Screening", icon: Brain, bg: "linear-gradient(135deg,#3d2d55,#6d4fa8)", color: "#c4a8ff", desc: "Brief 8-question screening" },
+      "phq9":  { name: "PHQ-9 Depression",  icon: Heart,        bg: "linear-gradient(135deg,#7a5535,#a67c52)", color: "#d4a87c", desc: "Track how you've been feeling" },
+      "gad7":  { name: "GAD-7 Anxiety",     icon: AlertCircle,  bg: "linear-gradient(135deg,#7a4a25,#b06030)", color: "#f0aa80", desc: "Check worry and anxiety levels" },
+      "pss10": { name: "PSS-10 Stress",     icon: Brain,        bg: "linear-gradient(135deg,#6b2020,#a63030)", color: "#f09090", desc: "Measure your stress levels" },
+      "mood_test": { name: "Mood Assessment", icon: Smile,       bg: "linear-gradient(135deg,#325944,#5D8A6B)", color: "#90d0a0", desc: "Quick look at your overall mood" },
     }
-
-    return testInfoMap[testType] || null
+    return map[testType] || null
   }
 
-  if (loading) {
-    return (
-      <div
-        data-tour-target="mental-health-assessments"
-        className="bg-white dark:bg-slate-800 overflow-hidden h-full flex flex-col rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm"
-      >
-        <div className="p-6 border-b border-gray-100 dark:border-slate-700">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Mental Health Assessments</h2>
-        </div>
-        <div className="p-6 flex-1 flex items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-purple-600 dark:text-purple-400" />
-        </div>
-      </div>
-    )
+  const severityStyle = (level: string): React.CSSProperties => {
+    const map: Record<string, { bg: string; color: string }> = {
+      minimal:          { bg: "color-mix(in srgb,#5D8A6B 12%,transparent)", color: "#4a7358" },
+      mild:             { bg: "color-mix(in srgb,#d97706 12%,transparent)", color: "#b45309" },
+      moderate:         { bg: "color-mix(in srgb,#ea580c 12%,transparent)", color: "#c2410c" },
+      severe:           { bg: "color-mix(in srgb,#dc2626 12%,transparent)", color: "#991b1b" },
+      "extremely severe":{ bg: "color-mix(in srgb,#dc2626 18%,transparent)", color: "#7f1d1d" },
+    }
+    const s = map[level] || map.minimal
+    return { backgroundColor: s.bg, color: s.color, ...sans, fontSize: "0.625rem", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", padding: "0.2rem 0.5rem", borderRadius: 5 }
   }
 
   const availableTest = testStatus?.available_test
-  const testInfo = getTestInfo(availableTest || null)
-  const TestIcon = testInfo?.icon || Brain
+  const testInfo      = getTestInfo(availableTest || null)
+  const TestIcon      = testInfo?.icon || Brain
 
   return (
     <div
       data-tour-target="mental-health-assessments"
-      className="bg-white dark:bg-slate-800 overflow-hidden h-full flex flex-col rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm"
+      style={{
+        ...sans,
+        backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
+        backdropFilter: "blur(8px)",
+        borderRadius: 16, border: "1px solid var(--border)",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}
     >
-      <div className="p-6 border-b border-gray-100 dark:border-slate-700">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Mental Health Assessments</h2>
+      {/* Header */}
+      <div style={{ padding: "1.125rem 1.375rem 0.875rem", borderBottom: "1px solid var(--border)" }}>
+        <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.2rem" }}>
+          Clinical
+        </p>
+        <h2 style={{ ...serif, fontSize: "1.25rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
+          Assessments
+        </h2>
       </div>
-      
-      <div className="p-6 flex-1 overflow-y-auto space-y-4">
-        {/* Available Test Card */}
-        {availableTest && testInfo && (
-          <div className={`bg-gradient-to-br ${testInfo.color} rounded-xl p-6 text-white shadow-lg`}>
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
-                  <TestIcon size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold">{testInfo.name}</h3>
-                  <p className="text-sm text-white/90 mt-1">{testInfo.description}</p>
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => handleTakeTest(availableTest)}
-              className="w-full mt-4 bg-white text-gray-900 font-semibold py-2.5 px-4 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
-            >
-              {testStatus?.generic_screening_completed ? "Take Daily Test" : "Start Screening"}
-              <ArrowRight size={18} />
-            </button>
-            {testStatus?.generic_screening_completed && (
-              <p className="text-xs text-white/80 mt-3 text-center">
-                💡 One test per day helps us track your mood effectively
-              </p>
-            )}
+
+      {/* Body */}
+      <div style={{ flex: 1, padding: "0.875rem 1.125rem", overflowY: "auto" }}>
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "2.5rem 0" }}>
+            <Loader2 size={20} style={{ color: "var(--primary)" }} className="animate-spin" />
           </div>
-        )}
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
 
-        {/* No Test Available - Test Already Taken Today */}
-        {!availableTest && testStatus?.generic_screening_completed && (
-          <div className="text-center py-8">
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 mb-4">
-              <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-green-500" />
-              <p className="font-medium text-gray-900 dark:text-white mb-2">
-                Today's Assessment Complete! ✅
-              </p>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                You've already completed your daily assessment today.
-              </p>
-              <div className="bg-white dark:bg-slate-800 rounded-lg p-4 mt-4">
-                <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
-                  <strong>Why one test per day?</strong><br />
-                  Taking one assessment daily helps us monitor your mood patterns more effectively and provide better insights into your mental health journey. This allows us to track changes over time and offer more personalized support. Check back tomorrow for your next assessment!
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* No Test Available - No Screening Completed */}
-        {!availableTest && !testStatus?.generic_screening_completed && (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <p>Complete your initial screening to get started</p>
-            <p className="text-sm mt-2">Mental health assessments will appear here</p>
-          </div>
-        )}
-
-        {/* Test History */}
-        {testHistory.length > 0 && (
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-              Recent Assessments
-            </h3>
-            <div className="space-y-2">
-              {testHistory.slice(0, 5).map((result) => {
-                const resultTestInfo = getTestInfo(result.test_type)
-                const ResultIcon = resultTestInfo?.icon || Brain
-                const severityColors: Record<string, string> = {
-                  minimal: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-                  mild: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-                  moderate: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-                  severe: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-                  "extremely severe": "bg-red-200 text-red-900 dark:bg-red-900/50 dark:text-red-300"
-                }
-
-                return (
-                  <div
-                    key={result.result_id}
-                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg"
+            {/* Available test card */}
+            {availableTest && testInfo && (
+              <div style={{
+                position: "relative", overflow: "hidden",
+                borderRadius: 13, padding: "1.125rem",
+                background: testInfo.bg,
+                boxShadow: "0 6px 24px rgba(0,0,0,0.15)",
+              }}>
+                <div style={{ position: "absolute", top: -30, right: -30, width: 110, height: 110, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.08)" }} />
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.875rem" }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <TestIcon size={17} color="white" />
+                    </div>
+                    <div>
+                      <p style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "rgba(255,255,255,0.95)" }}>{testInfo.name}</p>
+                      <p style={{ ...sans, fontSize: "0.6875rem", color: "rgba(255,255,255,0.55)" }}>{testInfo.desc}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => router.push(`/diagnostic-test/${availableTest}`)}
+                    style={{
+                      ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem",
+                      height: 34, padding: "0 0.875rem", borderRadius: 100,
+                      backgroundColor: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.2)",
+                      color: "rgba(255,255,255,0.9)", fontSize: "0.78125rem", fontWeight: 600, cursor: "pointer",
+                      transition: "background-color 0.15s ease",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.22)"}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.14)"}
                   >
-                    <div className="flex items-center gap-3 flex-1">
-                      {resultTestInfo && (
-                        <div className={`p-2 rounded-lg bg-gradient-to-br ${resultTestInfo.color} text-white`}>
-                          <ResultIcon size={16} />
-                        </div>
+                    {testStatus?.generic_screening_completed ? "Take Daily Test" : "Start Screening"}
+                    <ArrowRight size={13} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Test taken today */}
+            {!availableTest && testStatus?.generic_screening_completed && (
+              <div style={{
+                borderRadius: 13, padding: "1rem",
+                backgroundColor: "color-mix(in srgb, var(--sage) 10%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--sage) 22%, transparent)",
+                display: "flex", alignItems: "flex-start", gap: "0.625rem",
+              }}>
+                <CheckCircle2 size={18} style={{ color: "var(--sage)", flexShrink: 0, marginTop: "0.1rem" }} />
+                <div>
+                  <p style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)" }}>Today's assessment complete</p>
+                  <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.2rem", lineHeight: 1.5 }}>
+                    Check back tomorrow for your next daily assessment.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* No screening completed */}
+            {!availableTest && !testStatus?.generic_screening_completed && (
+              <div style={{ padding: "1.5rem 0", textAlign: "center" }}>
+                <Brain size={26} style={{ color: "var(--muted-foreground)", margin: "0 auto 0.625rem" }} />
+                <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>Complete initial screening</p>
+                <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", opacity: 0.7, marginTop: "0.25rem" }}>Assessments will appear here</p>
+              </div>
+            )}
+
+            {/* History */}
+            {testHistory.length > 0 && (
+              <div style={{
+                backgroundColor: "color-mix(in srgb, var(--muted) 25%, transparent)",
+                borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden",
+              }}>
+                <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted-foreground)", padding: "0.625rem 1rem 0.5rem" }}>
+                  Recent Assessments
+                </p>
+                {testHistory.slice(0, 5).map((r, idx) => {
+                  const rInfo = getTestInfo(r.test_type)
+                  const RIcon = rInfo?.icon || Brain
+                  return (
+                    <div key={r.result_id}>
+                      {idx > 0 && (
+                        <div style={{ height: 1, backgroundColor: "var(--border)", margin: "0 1rem", opacity: 0.6 }} />
                       )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                          {result.test_name}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {new Date(result.taken_at).toLocaleDateString()}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            Score: {result.score}
-                          </span>
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "28px 1fr auto auto",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        padding: "0.625rem 1rem",
+                      }}>
+                        {/* Icon */}
+                        <div style={{ width: 28, height: 28, borderRadius: 7, background: rInfo?.bg || "linear-gradient(135deg,#7a5535,#a67c52)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <RIcon size={13} color="white" />
                         </div>
+
+                        {/* Name */}
+                        <p style={{ ...sans, fontSize: "0.75rem", fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {r.test_name}
+                        </p>
+
+                        {/* Date */}
+                        <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                          {new Date(r.taken_at).toLocaleDateString()}
+                        </p>
+
+                        {/* Severity */}
+                        <span style={severityStyle(r.severity_level)}>{r.severity_level}</span>
                       </div>
                     </div>
-                    <span className={`text-xs font-medium px-2 py-1 rounded ${severityColors[result.severity_level] || severityColors.minimal}`}>
-                      {result.severity_level}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!availableTest && !testStatus?.generic_screening_completed && testHistory.length === 0 && (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-            <p>No assessments available</p>
-            <p className="text-sm mt-2">Mental health assessments will appear here</p>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

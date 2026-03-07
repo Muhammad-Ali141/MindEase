@@ -1,104 +1,177 @@
 "use client"
 
-import { MessageCircle, Mic2, Zap } from "lucide-react"
+import { MessageCircle, Mic2, Zap, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetDiagnosticTestStatus } from "@/lib/api"
 import { useState } from "react"
+
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 export function TherapyOptions() {
   const router = useRouter()
   const { user } = useAuth()
   const [loading, setLoading] = useState(false)
 
-  const handleStartChat = () => {
-    router.push("/chat")
-  }
-
   const handleStartCheckin = async () => {
-    if (!user?.id) {
-      router.push("/diagnostic-test/generic-screening")
-      return
-    }
-
+    if (!user?.id) { router.push("/diagnostic-test/generic-screening"); return }
     try {
       setLoading(true)
       const status = await apiGetDiagnosticTestStatus(user.id)
-      
-      if (status.available_test) {
-        router.push(`/diagnostic-test/${status.available_test}`)
-      } else {
-        // No test available, go to diagnostic-test page to see message
-        router.push("/diagnostic-test")
-      }
-    } catch (error) {
-      console.error("Failed to get test status:", error)
-      // Fallback to generic screening if API fails
+      router.push(status.available_test ? `/diagnostic-test/${status.available_test}` : "/diagnostic-test")
+    } catch {
       router.push("/diagnostic-test/generic-screening")
     } finally {
       setLoading(false)
     }
   }
 
+  const cards = [
+    {
+      tourTarget: "quick-check-in",
+      primary: true,
+      icon: <Zap size={20} strokeWidth={2} />,
+      eyebrow: "DAILY WELLNESS",
+      title: "Quick\nCheck-in",
+      desc: "Track your mood with a brief daily assessment",
+      action: handleStartCheckin,
+      label: loading ? "Loading…" : "Start Check-in",
+      disabled: loading,
+      bg: "linear-gradient(140deg, #7a5535 0%, #a67c52 60%, #8b6745 100%)",
+      ring: "rgba(166,124,82,0.22)",
+      shine: "rgba(255,220,160,0.07)",
+    },
+    {
+      tourTarget: "text-chat",
+      primary: false,
+      icon: <MessageCircle size={18} strokeWidth={2} />,
+      eyebrow: "AI COMPANION",
+      title: "Text\nChat",
+      desc: "Thoughtful conversation with your AI therapist",
+      action: () => router.push("/chat"),
+      label: "Start Chat",
+      disabled: false,
+      bg: "linear-gradient(140deg, #2d5040 0%, #4f7d60 60%, #375e49 100%)",
+      ring: "rgba(79,125,96,0.2)",
+      shine: "rgba(160,230,190,0.06)",
+    },
+    {
+      tourTarget: "voice-chat",
+      primary: false,
+      icon: <Mic2 size={18} strokeWidth={2} />,
+      eyebrow: "VOICE SESSION",
+      title: "Voice\nCall",
+      desc: "Natural spoken conversation, hands-free",
+      action: () => router.push("/voice-chat"),
+      label: "Start Call",
+      disabled: false,
+      bg: "linear-gradient(140deg, #1a130d 0%, #2e2016 60%, #231812 100%)",
+      ring: "rgba(166,124,82,0.12)",
+      shine: "rgba(255,200,120,0.045)",
+    },
+  ]
+
   return (
-    <div className="grid grid-cols-3 gap-6">
-      {/* Quick Check-in Option - Blue */}
-      <div
-        data-tour-target="quick-check-in"
-        className="bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-700/80 dark:to-blue-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <Zap size={32} className="group-hover:scale-110 transition" />
-        </div>
-        <h3 className="text-2xl font-bold mb-2">Quick Check-in</h3>
-        <p className="text-blue-100 dark:text-blue-200/80 mb-6">A brief mood assessment</p>
-        <button 
-          onClick={handleStartCheckin}
-          disabled={loading}
-          className="w-full bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 font-semibold py-3 rounded-lg hover:bg-white dark:hover:bg-slate-700 hover:ring-2 hover:ring-blue-300 dark:hover:ring-blue-500 hover:ring-offset-2 dark:hover:ring-offset-blue-900/50 transition border-2 border-transparent hover:border-blue-200 dark:hover:border-blue-600/50 disabled:opacity-50 disabled:cursor-not-allowed">
-          {loading ? "Loading..." : "Start Check-in"}
-        </button>
-      </div>
-
-      {/* Text Chat Option - Purple */}
-      <div
-        data-tour-target="text-chat"
-        className="bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-700/80 dark:to-purple-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <MessageCircle size={32} className="group-hover:scale-110 transition" />
-        </div>
-        <h3 className="text-2xl font-bold mb-2">Text Chat</h3>
-        <p className="text-purple-100 dark:text-purple-200/80 mb-6">
-          Chat with our AI companion
-        </p>
-        <button 
-          onClick={handleStartChat}
-          className="w-full bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-300 font-semibold py-3 rounded-lg hover:bg-white dark:hover:bg-slate-700 hover:ring-2 hover:ring-purple-300 dark:hover:ring-purple-500 hover:ring-offset-2 dark:hover:ring-offset-purple-900/50 transition border-2 border-transparent hover:border-purple-200 dark:hover:border-purple-600/50"
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1.125rem" }}>
+      {cards.map((c) => (
+        <div
+          key={c.tourTarget}
+          data-tour-target={c.tourTarget}
+          style={{
+            position: "relative", overflow: "hidden",
+            borderRadius: 18,
+            padding: c.primary ? "1.75rem 1.5rem" : "1.5rem 1.375rem",
+            background: c.bg,
+            boxShadow: `0 5px 18px ${c.ring}, 0 1px 4px rgba(0,0,0,0.1)`,
+            border: `1px solid ${c.primary ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.06)"}`,
+            cursor: "pointer",
+          }}
         >
-          Start Chat
-        </button>
-      </div>
+          {/* Decorative ring */}
+          <div style={{
+            position: "absolute", top: -50, right: -50, width: 160, height: 160,
+            borderRadius: "50%", border: `1px solid ${c.primary ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)"}`,
+          }} />
+          {/* Diffuse glow blobs — kept subtle */}
+          <div style={{
+            position: "absolute", top: -20, right: -20, width: 80, height: 80,
+            borderRadius: "50%", backgroundColor: c.shine, filter: "blur(28px)",
+          }} />
+          <div style={{
+            position: "absolute", bottom: -25, left: -25, width: 90, height: 90,
+            borderRadius: "50%", backgroundColor: c.shine, filter: "blur(32px)",
+          }} />
 
-      {/* Voice Call Option - Green */}
-      <div
-        data-tour-target="voice-chat"
-        className="bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-700/80 dark:to-emerald-800/80 p-8 text-white hover:shadow-xl transition cursor-pointer group rounded-lg"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <Mic2 size={32} className="group-hover:scale-110 transition" />
+          {/* Content */}
+          <div style={{ position: "relative", zIndex: 1 }}>
+            {/* Icon bubble */}
+            <div style={{
+              width: c.primary ? 42 : 38, height: c.primary ? 42 : 38,
+              borderRadius: 11, marginBottom: "1.125rem",
+              backgroundColor: "rgba(255,255,255,0.1)",
+              border: "1px solid rgba(255,255,255,0.13)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "rgba(255,255,255,0.85)",
+            }}>
+              {c.icon}
+            </div>
+
+            {/* Eyebrow */}
+            <p style={{
+              ...sans, fontSize: "0.5625rem", fontWeight: 700,
+              letterSpacing: "0.1em", textTransform: "uppercase",
+              color: "rgba(255,255,255,0.52)", marginBottom: "0.3rem",
+            }}>
+              {c.eyebrow}
+            </p>
+
+            {/* Title */}
+            <h3 style={{
+              ...serif,
+              fontSize: c.primary ? "clamp(1.5rem,2.2vw,1.875rem)" : "clamp(1.375rem,2vw,1.625rem)",
+              fontWeight: 400,
+              letterSpacing: "-0.025em", color: "rgba(255,255,255,0.95)",
+              lineHeight: 1.1, marginBottom: "0.5rem", whiteSpace: "pre-line",
+            }}>
+              {c.title}
+            </h3>
+
+            {/* Desc */}
+            <p style={{
+              ...sans,
+              fontSize: c.primary ? "0.78125rem" : "0.75rem",
+              color: c.primary ? "rgba(255,255,255,0.62)" : "rgba(255,255,255,0.5)",
+              lineHeight: 1.6, marginBottom: "1.25rem",
+            }}>
+              {c.desc}
+            </p>
+
+            {/* CTA */}
+            <button
+              onClick={c.action}
+              disabled={c.disabled}
+              style={{
+                ...sans,
+                display: "inline-flex", alignItems: "center", gap: "0.375rem",
+                height: c.primary ? 38 : 34, padding: "0 0.9rem", borderRadius: 100,
+                backgroundColor: c.primary ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.1)",
+                border: `1px solid ${c.primary ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.14)"}`,
+                color: c.primary ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.78)",
+                fontSize: "0.78125rem", fontWeight: 600,
+                cursor: c.disabled ? "not-allowed" : "pointer",
+                opacity: c.disabled ? 0.6 : 1,
+                transition: "background-color 0.18s ease",
+              }}
+              onMouseEnter={e => { if (!c.disabled) e.currentTarget.style.backgroundColor = c.primary ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.17)" }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = c.primary ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.1)" }}
+            >
+              {c.label}
+              <ArrowRight size={12} />
+            </button>
+          </div>
         </div>
-        <h3 className="text-2xl font-bold mb-2">Voice Call</h3>
-        <p className="text-emerald-100 dark:text-emerald-200/80 mb-6">
-          Have a natural conversation
-        </p>
-        <button 
-          onClick={() => router.push("/voice-chat")}
-          className="w-full bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-300 font-semibold py-3 rounded-lg hover:bg-white dark:hover:bg-slate-700 hover:ring-2 hover:ring-emerald-300 dark:hover:ring-emerald-500 hover:ring-offset-2 dark:hover:ring-offset-emerald-900/50 transition border-2 border-transparent hover:border-emerald-200 dark:hover:border-emerald-600/50"
-        >
-          Start Call
-        </button>
-      </div>
+      ))}
     </div>
   )
 }

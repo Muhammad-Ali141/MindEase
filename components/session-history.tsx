@@ -4,203 +4,208 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from "@/lib/api"
-import { MessageCircle, Star, Mic2 } from "lucide-react"
+import { MessageCircle, Star, Mic2, ArrowRight, Clock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 export function SessionHistory() {
   const router = useRouter()
   const { user } = useAuth()
   const [sessions, setSessions] = useState<SessionPreview[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]   = useState(true)
   const { toast } = useToast()
 
-  useEffect(() => {
-    if (user?.id) {
-      loadRecentSessions()
-    }
-  }, [user?.id])
+  useEffect(() => { if (user?.id) loadRecentSessions() }, [user?.id])
 
   const loadRecentSessions = async () => {
     if (!user?.id) return
-    
     try {
       setLoading(true)
-      const response = await apiGetRecentSessions(user.id, 3)
-      setSessions(response.sessions)
-    } catch (error) {
-      console.error("Failed to load recent sessions:", error)
+      const res = await apiGetRecentSessions(user.id, 5)
+      setSessions(res.sessions)
+    } catch {
       setSessions([])
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSessionClick = (session: SessionPreview) => {
-    if (session.has_voice) {
-      router.push(`/voice-chat?session_id=${session.session_id}`)
-    } else {
-      router.push(`/chat?session_id=${session.session_id}`)
-    }
+  const handleSessionClick = (s: SessionPreview) => {
+    router.push(s.has_voice ? `/voice-chat?session_id=${s.session_id}` : `/chat?session_id=${s.session_id}`)
   }
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (d: string) => {
     try {
-      const date = new Date(dateString)
-      const now = new Date()
-      const diffTime = Math.abs(now.getTime() - date.getTime())
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-      
-      if (diffDays === 0) return "Today"
-      if (diffDays === 1) return "Yesterday"
-      if (diffDays < 7) return `${diffDays} days ago`
+      const date = new Date(d), now = new Date()
+      const diff = Math.floor(Math.abs(now.getTime() - date.getTime()) / 86400000)
+      if (diff === 0) return "Today"
+      if (diff === 1) return "Yesterday"
+      if (diff < 7) return `${diff}d ago`
       return date.toLocaleDateString()
-    } catch {
-      return "Recent"
-    }
+    } catch { return "Recent" }
   }
 
-  const toggleStar = async (session: SessionPreview) => {
+  const toggleStar = async (s: SessionPreview) => {
     if (!user) return
-
-    if (session.state !== "full" && !session.is_starred) {
-      toast({
-        title: "Cannot star session",
-        description: "Archived sessions cannot be starred because the detailed transcript is no longer available.",
-        variant: "destructive",
-      })
+    if (s.state !== "full" && !s.is_starred) {
+      toast({ title: "Cannot star session", description: "Archived sessions cannot be starred.", variant: "destructive" })
       return
     }
-
     try {
-      const response = await apiToggleSessionStar(user.id, session.session_id, !session.is_starred)
-      setSessions((prev) =>
-        prev.map((item) =>
-          item.session_id === session.session_id
-            ? { ...item, ...response.session }
-            : item
-        )
-      )
-      toast({
-        title: response.session.is_starred ? "Session starred" : "Session unstarred",
-        description: response.session.is_starred
-          ? "We'll keep this session available in detail for you."
-          : "This session may be archived if newer sessions are created.",
-      })
-    } catch (error: any) {
-      toast({
-        title: "Unable to update session",
-        description: error.message || "Please try again later.",
-        variant: "destructive",
-      })
+      const res = await apiToggleSessionStar(user.id, s.session_id, !s.is_starred)
+      setSessions(prev => prev.map(item => item.session_id === s.session_id ? { ...item, ...res.session } : item))
+      toast({ title: res.session.is_starred ? "Session starred" : "Session unstarred" })
+    } catch (e: any) {
+      toast({ title: "Unable to update session", description: e.message, variant: "destructive" })
     }
   }
 
   return (
     <div
       data-tour-target="recent-sessions"
-      className="bg-white dark:bg-slate-800 overflow-hidden h-full flex flex-col rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm"
+      style={{
+        ...sans,
+        backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
+        backdropFilter: "blur(8px)",
+        borderRadius: 16, border: "1px solid var(--border)",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}
     >
-      <div className="p-6 border-b border-gray-100 dark:border-slate-700">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Recent Sessions</h2>
+      {/* Header */}
+      <div style={{ padding: "1.125rem 1.375rem 0.875rem", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.2rem" }}>
+              History
+            </p>
+            <h2 style={{ ...serif, fontSize: "1.25rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
+              Recent Sessions
+            </h2>
+          </div>
+          <button
+            onClick={() => router.push("/sessions")}
+            style={{
+              ...sans, display: "flex", alignItems: "center", gap: "0.25rem",
+              fontSize: "0.75rem", fontWeight: 600, color: "var(--primary)",
+              background: "none", border: "none", cursor: "pointer",
+            }}
+          >
+            View all <ArrowRight size={13} />
+          </button>
+        </div>
       </div>
-      <div className="p-6 flex-1 overflow-y-auto">
+
+      {/* Body */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
         {loading ? (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-            <p>Loading sessions...</p>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>Loading…</p>
           </div>
         ) : sessions.length === 0 ? (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-            <p>No recent sessions found</p>
-            <p className="text-sm mt-2">Your session history will appear here</p>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem 1.375rem" }}>
+            <Clock size={28} style={{ color: "var(--muted-foreground)", marginBottom: "0.75rem" }} />
+            <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>No sessions yet</p>
+            <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem", opacity: 0.7 }}>Your history will appear here</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {sessions.map((session) => (
+          sessions.map((s, idx) => (
+            <div
+              key={s.session_id}
+              style={{
+                flex: 1,
+                borderTop: idx > 0 ? "1px solid var(--border)" : "none",
+              }}
+            >
+              {/* Row */}
               <div
-                key={session.session_id}
                 role="button"
                 tabIndex={0}
-                onClick={() => handleSessionClick(session)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    handleSessionClick(session)
-                  }
+                onClick={() => handleSessionClick(s)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSessionClick(s) } }}
+                style={{
+                  height: "100%",
+                  display: "grid",
+                  gridTemplateColumns: "30px 1.7fr 1fr auto",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                  padding: "0 1.125rem",
+                  cursor: "pointer",
+                  transition: "background-color 0.15s ease",
+                  boxSizing: "border-box",
                 }}
-                className="w-full text-left p-4 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition cursor-pointer group"
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--muted) 40%, transparent)"}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
               >
-                <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                    session.has_voice
-                      ? "bg-gradient-to-br from-emerald-500 to-teal-500"
-                      : "bg-gradient-to-br from-purple-500 to-blue-500"
-                  }`}>
-                    {session.has_voice ? (
-                      <Mic2 className="h-5 w-5 text-white" />
-                    ) : (
-                      <MessageCircle className="h-5 w-5 text-white" />
-                    )}
+                {/* Icon */}
+                <div style={{
+                  width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: s.has_voice
+                    ? "linear-gradient(135deg, #325944, #5D8A6B)"
+                    : "linear-gradient(135deg, #7a5535, #a67c52)",
+                }}>
+                  {s.has_voice
+                    ? <Mic2 size={13} color="white" />
+                    : <MessageCircle size={13} color="white" />}
+                </div>
+
+                {/* Title + badge */}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                    <span style={{ ...sans, fontSize: "0.84375rem", fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.title}
+                    </span>
+                    <span style={{
+                      ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.07em",
+                      textTransform: "uppercase", padding: "0.1rem 0.35rem", borderRadius: 3, flexShrink: 0,
+                      backgroundColor: s.has_voice ? "color-mix(in srgb, var(--sage) 15%, transparent)" : "color-mix(in srgb, var(--primary) 12%, transparent)",
+                      color: s.has_voice ? "var(--sage)" : "var(--primary)",
+                    }}>
+                      {s.has_voice ? "Voice" : "Text"}
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold text-gray-900 dark:text-white truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">
-                        {session.title}
-                      </h3>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        session.has_voice
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                      }`}>
-                        {session.has_voice ? "Voice" : "Text"}
-                      </span>
-                    </div>
-                    {(session.short_summary || session.summary) && (
-                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
-                        {session.short_summary || session.summary}
-                      </p>
-                    )}
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      {formatDate(session.updated_at)}
-                    </p>
-                    {!session.has_full_transcript && (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        Summary view only
-                      </p>
-                    )}
-                  </div>
+                  <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.1rem" }}>
+                    {formatDate(s.updated_at)}
+                    {!s.has_full_transcript && <span style={{ color: "#d97706", marginLeft: "0.3rem" }}>· Summary only</span>}
+                  </p>
+                </div>
+
+                {/* Summary */}
+                <p style={{
+                  ...sans, fontSize: "0.71875rem", color: "var(--muted-foreground)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  minWidth: 0, opacity: 0.85,
+                }}>
+                  {s.short_summary || s.summary || "—"}
+                </p>
+
+                {/* Actions */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", flexShrink: 0 }}>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      toggleStar(session)
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); toggleStar(s) }}
+                    style={{
+                      width: 24, height: 24, borderRadius: 5,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      backgroundColor: s.is_starred ? "color-mix(in srgb, #f59e0b 12%, transparent)" : "transparent",
+                      border: `1px solid ${s.is_starred ? "rgba(245,158,11,0.3)" : "var(--border)"}`,
+                      cursor: "pointer", color: s.is_starred ? "#f59e0b" : "var(--muted-foreground)",
+                      transition: "all 0.15s ease",
                     }}
-                    className={`ml-auto inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium transition ${
-                      session.is_starred
-                        ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                        : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-700/60"
-                    }`}
                   >
-                    <Star
-                      className="h-4 w-4 mr-1"
-                      strokeWidth={1.5}
-                      fill={session.is_starred ? "currentColor" : "none"}
-                    />
-                    {session.is_starred ? "Starred" : "Star"}
+                    <Star size={10} strokeWidth={1.75} fill={s.is_starred ? "currentColor" : "none"} />
                   </button>
+                  <div style={{ width: 24, height: 24, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-foreground)", opacity: 0.6 }}>
+                    <ArrowRight size={12} />
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))
         )}
-      </div>
-      <div className="p-4 bg-gray-50 dark:bg-slate-700/50 text-center">
-        <button 
-          onClick={() => router.push("/sessions")}
-          className="text-blue-600 dark:text-blue-400 font-semibold hover:text-blue-700 dark:hover:text-blue-300 transition"
-        >
-          View All Sessions
-        </button>
       </div>
     </div>
   )

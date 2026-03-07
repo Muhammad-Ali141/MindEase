@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { Button } from "@/components/ui/button"
+
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 type TourStep = {
   id: string
@@ -381,45 +383,144 @@ export function DashboardTour({ open, onComplete }: DashboardTourProps) {
 
       <div
         ref={tooltipRef}
-        className="tour-tooltip-card"
-        style={tooltipPositionStyle}
+        style={{
+          ...sans,
+          pointerEvents: "auto",
+          position: "fixed",
+          width: 340,
+          padding: "1.25rem 1.375rem 1.125rem",
+          borderRadius: 18,
+          backgroundColor: "var(--card)",
+          border: "1px solid rgba(166,124,82,0.22)",
+          boxShadow: "0 24px 64px rgba(40,22,8,0.22), 0 4px 16px rgba(166,124,82,0.1)",
+          ...tooltipPositionStyle,
+        }}
         data-placement={targetRect ? tooltipStyle.placement : undefined}
         role="dialog"
         aria-live="assertive"
       >
-        <div className="tour-tooltip-header">
-          <span className="tour-tooltip-step">
-            Step {currentStep + 1} of {totalSteps}
-          </span>
-          <button type="button" onClick={handleSkip} className="tour-tooltip-skip">
-            Skip
+        {/* Arrow */}
+        {targetRect && (
+          <div style={{
+            position: "absolute",
+            width: 0, height: 0,
+            borderLeft: "10px solid transparent",
+            borderRight: "10px solid transparent",
+            ...(tooltipStyle.placement === "bottom"
+              ? { top: -10, left: "calc(50% - 10px)", borderBottom: "10px solid var(--card)" }
+              : { bottom: -10, left: "calc(50% - 10px)", borderTop: "10px solid var(--card)" }
+            ),
+          }} />
+        )}
+
+        {/* Header row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            {/* Brand icon */}
+            <div style={{
+              width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+              backgroundColor: "rgba(166,124,82,0.13)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                <path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="#a67c52" />
+              </svg>
+            </div>
+            <span style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)" }}>
+              Step {currentStep + 1} of {totalSteps}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleSkip}
+            style={{
+              ...sans, background: "none", border: "none", cursor: "pointer",
+              fontSize: "0.6875rem", color: "var(--muted-foreground)",
+              textDecoration: "underline", textDecorationStyle: "dashed",
+              textUnderlineOffset: 3,
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = "var(--foreground)"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--muted-foreground)"}
+          >
+            Skip tour
           </button>
         </div>
 
-        <h2 className="tour-tooltip-title">{step.title}</h2>
-        <p className="tour-tooltip-body">{step.description}</p>
+        {/* Title */}
+        <h2 style={{ ...serif, fontSize: "1.3125rem", fontWeight: 600, color: "var(--foreground)", lineHeight: 1.2, marginBottom: "0.4rem" }}>
+          {step.title}
+        </h2>
 
+        {/* Body */}
+        <p style={{ ...sans, fontSize: "0.8125rem", lineHeight: 1.65, color: "var(--muted-foreground)", marginBottom: "1rem" }}>
+          {step.description}
+        </p>
+
+        {/* Warning */}
         {missingTarget && (
-          <p className="tour-tooltip-warning">
-            We couldn’t highlight this section. Please make sure the dashboard is fully loaded and try again.
-          </p>
+          <div style={{
+            ...sans, marginBottom: "0.75rem",
+            padding: "0.5rem 0.75rem", borderRadius: 10,
+            border: "1px solid rgba(181,74,53,0.3)",
+            backgroundColor: "rgba(181,74,53,0.08)",
+            fontSize: "0.6875rem", color: "var(--destructive)", lineHeight: 1.5,
+          }}>
+            Couldn’t highlight this section — make sure the dashboard is fully loaded.
+          </div>
         )}
 
-        <div className="tour-tooltip-actions">
-          <div className="tour-tooltip-primary">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleBack}
-              disabled={currentStep === 0}
-              className="min-w-[88px]"
-            >
-              Back
-            </Button>
-            <Button type="button" onClick={handleNext} className="min-w-[105px]">
-              {currentStep === totalSteps - 1 ? "Finish" : "Next"}
-            </Button>
-          </div>
+        {/* Progress bar */}
+        <div style={{ height: 2, borderRadius: 100, backgroundColor: "rgba(166,124,82,0.12)", marginBottom: "1rem" }}>
+          <div style={{
+            height: "100%", borderRadius: 100,
+            backgroundColor: "var(--primary)",
+            width: `${((currentStep + 1) / totalSteps) * 100}%`,
+            transition: "width 0.3s ease",
+          }} />
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
+          <button
+            type="button"
+            onClick={handleBack}
+            disabled={currentStep === 0}
+            style={{
+              ...sans, height: 34, padding: "0 1rem", borderRadius: 100,
+              border: "1px solid rgba(166,124,82,0.3)",
+              backgroundColor: "transparent",
+              color: currentStep === 0 ? "rgba(166,124,82,0.28)" : "var(--primary)",
+              fontSize: "0.8125rem", fontWeight: 600,
+              cursor: currentStep === 0 ? "not-allowed" : "pointer",
+              transition: "background-color 0.15s ease",
+              minWidth: 80,
+            }}
+            onMouseEnter={e => { if (currentStep > 0) e.currentTarget.style.backgroundColor = "rgba(166,124,82,0.08)" }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent" }}
+          >
+            Back
+          </button>
+
+          <button
+            type="button"
+            onClick={handleNext}
+            style={{
+              ...sans, height: 34, padding: "0 1.25rem", borderRadius: 100,
+              border: "none",
+              backgroundColor: "var(--primary)",
+              color: "white",
+              fontSize: "0.8125rem", fontWeight: 600,
+              cursor: "pointer",
+              boxShadow: "0 2px 10px rgba(166,124,82,0.35)",
+              transition: "opacity 0.15s ease",
+              minWidth: 100,
+            }}
+            onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
+            onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+          >
+            {currentStep === totalSteps - 1 ? "Finish ✓" : "Next →"}
+          </button>
         </div>
       </div>
     </div>,

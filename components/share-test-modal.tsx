@@ -1,16 +1,29 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Brain, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react"
+import { X, Brain, AlertCircle, CheckCircle2, ArrowRight, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetDiagnosticTestStatus, apiGetDiagnosticTestHistory, type TestHistoryItem } from "@/lib/api"
 import { useRouter } from "next/navigation"
 
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+
+const severityColor = (level?: string) => {
+  if (!level) return { bg: "color-mix(in srgb, var(--primary) 10%, transparent)", color: "var(--primary)", border: "color-mix(in srgb, var(--primary) 22%, transparent)" }
+  if (level === "severe" || level === "extremely severe")
+    return { bg: "rgba(220,38,38,0.1)", color: "#ef4444", border: "rgba(220,38,38,0.25)" }
+  if (level === "moderate")
+    return { bg: "rgba(234,88,12,0.1)", color: "#f97316", border: "rgba(234,88,12,0.25)" }
+  if (level === "mild")
+    return { bg: "rgba(202,138,4,0.1)", color: "#eab308", border: "rgba(202,138,4,0.25)" }
+  return { bg: "rgba(22,163,74,0.1)", color: "#22c55e", border: "rgba(22,163,74,0.25)" }
+}
+
 type ShareTestModalProps = {
   open: boolean
   onClose: () => void
-  /** Second arg is result_id for cache keying (voice chat); text chat can ignore it. */
   onShare: (testContext: string, resultId?: number) => void
   onSkip: () => void
 }
@@ -19,228 +32,275 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
   const { user } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [testStatus, setTestStatus] = useState<any>(null)
   const [latestTest, setLatestTest] = useState<TestHistoryItem | null>(null)
   const [hasTests, setHasTests] = useState(false)
 
   useEffect(() => {
-    if (open && user?.id) {
-      loadTestData()
-    }
+    if (open && user?.id) loadTestData()
   }, [open, user?.id])
 
   const loadTestData = async () => {
     if (!user?.id) return
-
     try {
       setLoading(true)
-      const [status, history] = await Promise.all([
+      const [, history] = await Promise.all([
         apiGetDiagnosticTestStatus(user.id).catch(() => null),
-        apiGetDiagnosticTestHistory(user.id).catch(() => ({ results: [] }))
+        apiGetDiagnosticTestHistory(user.id).catch(() => ({ results: [] })),
       ])
-
-      setTestStatus(status)
-      
-      // Get latest test result (exclude generic screening)
-      const dailyTests = history.results.filter(r => r.test_type !== "generic-screening")
-      if (dailyTests.length > 0) {
-        setLatestTest(dailyTests[0]) // Most recent is first
-        setHasTests(true)
-      } else {
-        setHasTests(false)
-      }
-    } catch (error) {
-      console.error("Failed to load test data:", error)
-      setHasTests(false)
-    } finally {
-      setLoading(false)
-    }
+      const dailyTests = history.results.filter((r: TestHistoryItem) => r.test_type !== "generic-screening")
+      if (dailyTests.length > 0) { setLatestTest(dailyTests[0]); setHasTests(true) }
+      else setHasTests(false)
+    } catch { setHasTests(false) }
+    finally { setLoading(false) }
   }
 
   const handleShare = () => {
     if (!latestTest) return
-
-    const takenDate = new Date(latestTest.taken_at)
-    const dateStr = takenDate.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
-    const severityCapitalized =
-      latestTest.severity_level?.replace(/\b\w/g, (c) => c.toUpperCase()) || latestTest.severity_level
-
-    const testContext = `The user has completed a ${latestTest.test_name} assessment.
-
-Assessment results:
-- Assessment: ${latestTest.test_name}
-- Total score: ${latestTest.score} (higher scores indicate greater symptom burden, except for Daily Mood Check-In where higher means better mood)
-- Severity: ${severityCapitalized}
-- Date completed: ${dateStr}
-
-Use this information to understand the user's current mental health context and provide appropriate, personalized support. You do not need to ask them to repeat their assessment results.`
-
+    const dateStr = new Date(latestTest.taken_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+    const severityCapitalized = latestTest.severity_level?.replace(/\b\w/g, c => c.toUpperCase()) || latestTest.severity_level
+    const testContext = `The user has completed a ${latestTest.test_name} assessment.\n\nAssessment results:\n- Assessment: ${latestTest.test_name}\n- Total score: ${latestTest.score} (higher scores indicate greater symptom burden, except for Daily Mood Check-In where higher means better mood)\n- Severity: ${severityCapitalized}\n- Date completed: ${dateStr}\n\nUse this information to understand the user's current mental health context and provide appropriate, personalized support. You do not need to ask them to repeat their assessment results.`
     onShare(testContext, latestTest.result_id)
-  }
-
-  const handleTakeTest = () => {
-    onClose()
-    router.push("/diagnostic-test")
   }
 
   if (!open) return null
 
+  const sev = severityColor(latestTest?.severity_level)
+
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4"
-        style={{ isolation: "isolate" }}
+        style={{
+          position: "fixed", inset: 0, zIndex: 100,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          backgroundColor: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(8px)",
+          padding: "1rem",
+        }}
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6 relative z-[101]"
+          initial={{ opacity: 0, scale: 0.94, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.94, y: 12 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            ...sans,
+            position: "relative",
+            width: "100%", maxWidth: 440,
+            backgroundColor: "color-mix(in srgb, var(--card) 96%, transparent)",
+            backdropFilter: "blur(16px)",
+            borderRadius: 20,
+            border: "1px solid var(--border)",
+            boxShadow: "0 24px 60px rgba(0,0,0,0.25), 0 8px 20px rgba(0,0,0,0.12)",
+            overflow: "hidden",
+          }}
         >
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              onClose()
-            }}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
-          >
-            <X size={20} />
-          </button>
+          {/* Top gradient strip */}
+          <div style={{ height: 4, background: "linear-gradient(90deg, #7a5535 0%, #a67c52 50%, #5D8A6B 100%)" }} />
 
-          {loading ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
-              <p className="text-gray-600 dark:text-gray-400">Loading...</p>
-            </div>
-          ) : hasTests && latestTest ? (
-            <>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                  <Brain className="text-purple-600 dark:text-purple-400" size={24} />
-                </div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  Share Test Results with Therapist?
-                </h2>
+          <div style={{ padding: "1.5rem 1.625rem 1.625rem" }}>
+            {/* Close button */}
+            <button
+              type="button"
+              onClick={e => { e.preventDefault(); e.stopPropagation(); onClose() }}
+              style={{
+                position: "absolute", top: 16, right: 16,
+                width: 28, height: 28, borderRadius: 8,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                border: "1px solid var(--border)", background: "none",
+                color: "var(--muted-foreground)", cursor: "pointer",
+                transition: "color 0.15s ease, border-color 0.15s ease",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = "var(--foreground)"; e.currentTarget.style.borderColor = "var(--foreground)" }}
+              onMouseLeave={e => { e.currentTarget.style.color = "var(--muted-foreground)"; e.currentTarget.style.borderColor = "var(--border)" }}
+            >
+              <X size={14} />
+            </button>
+
+            {loading ? (
+              <div style={{ textAlign: "center", padding: "2rem 0" }}>
+                <Loader2 size={24} style={{ color: "var(--primary)", margin: "0 auto 0.875rem", display: "block" }} className="animate-spin" />
+                <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>Loading…</p>
               </div>
-
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Sharing your latest assessment results will help your therapist understand your current condition better and provide more personalized support.
-              </p>
-
-              {/* Latest Test Info */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">
-                      {latestTest.test_name}
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {new Date(latestTest.taken_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
-                    </p>
+            ) : hasTests && latestTest ? (
+              <>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "0.875rem", marginBottom: "1.125rem", paddingRight: "1.5rem" }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 11, flexShrink: 0,
+                    background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "0 3px 10px rgba(166,124,82,0.3)",
+                  }}>
+                    <Brain size={20} color="white" strokeWidth={1.75} />
                   </div>
-                  <span className={`text-xs font-medium px-2 py-1 rounded ${
-                    latestTest.severity_level === "severe" || latestTest.severity_level === "extremely severe"
-                      ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                      : latestTest.severity_level === "moderate"
-                      ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
-                      : latestTest.severity_level === "mild"
-                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
-                      : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                  }`}>
-                    {latestTest.severity_level}
-                  </span>
+                  <div>
+                    <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.15rem" }}>
+                      Assessment Context
+                    </p>
+                    <h2 style={{ ...serif, fontSize: "1.4rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)", lineHeight: 1.2 }}>
+                      Share your results?
+                    </h2>
+                  </div>
                 </div>
-                <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                  <span className="font-medium">Score:</span> {latestTest.score}
-                </div>
-              </div>
 
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleShare()
-                  }}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer select-none"
-                >
-                  <CheckCircle2 size={18} />
-                  Share Results
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onSkip()
-                  }}
-                  className="flex-1 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer select-none"
-                >
-                  Skip
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-                  <AlertCircle className="text-orange-600 dark:text-orange-400" size={24} />
-                </div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  No Test Results Found
-                </h2>
-              </div>
-
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Taking a mental health assessment can help your therapist understand your condition better and provide more personalized support.
-              </p>
-
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  <strong>Benefits of sharing test results:</strong>
+                <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7, marginBottom: "1.25rem" }}>
+                  Sharing your latest assessment helps personalize the conversation without you having to explain your situation from scratch.
                 </p>
-                <ul className="text-sm text-gray-600 dark:text-gray-400 mt-2 space-y-1 list-disc list-inside">
-                  <li>Your therapist will understand your condition without asking</li>
-                  <li>More personalized and relevant support</li>
-                  <li>Better tracking of your progress over time</li>
-                </ul>
-              </div>
 
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleTakeTest()
-                  }}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer select-none"
-                >
-                  Take Assessment
-                  <ArrowRight size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onSkip()
-                  }}
-                  className="flex-1 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer select-none"
-                >
-                  Continue Without Test
-                </button>
-              </div>
-            </>
-          )}
+                {/* Test result card */}
+                <div style={{
+                  backgroundColor: "color-mix(in srgb, var(--muted) 35%, transparent)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  padding: "1rem 1.125rem",
+                  marginBottom: "1.375rem",
+                }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                    <div>
+                      <p style={{ ...sans, fontSize: "0.9375rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.15rem" }}>
+                        {latestTest.test_name}
+                      </p>
+                      <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>
+                        {new Date(latestTest.taken_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+                      </p>
+                    </div>
+                    {latestTest.severity_level && (
+                      <span style={{
+                        ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.07em",
+                        textTransform: "uppercase",
+                        color: sev.color,
+                        backgroundColor: sev.bg,
+                        border: `1px solid ${sev.border}`,
+                        padding: "0.2rem 0.55rem", borderRadius: 100,
+                        flexShrink: 0,
+                      }}>
+                        {latestTest.severity_level}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ height: 1, backgroundColor: "var(--border)", margin: "0.625rem 0" }} />
+                  <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>
+                    Score: <span style={{ color: "var(--foreground)", fontWeight: 600 }}>{latestTest.score}</span>
+                  </p>
+                </div>
+
+                {/* Buttons */}
+                <div style={{ display: "flex", gap: "0.75rem" }}>
+                  <button
+                    type="button"
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); handleShare() }}
+                    style={{
+                      flex: 1, height: 44, borderRadius: 11, border: "none",
+                      background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)",
+                      color: "white", ...sans, fontSize: "0.9rem", fontWeight: 600,
+                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem",
+                      boxShadow: "0 3px 12px rgba(166,124,82,0.35)",
+                      transition: "opacity 0.15s ease",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = "0.87"}
+                    onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                  >
+                    <CheckCircle2 size={15} /> Share Results
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); onSkip() }}
+                    style={{
+                      flex: 1, height: 44, borderRadius: 11,
+                      border: "1px solid var(--border)", background: "none",
+                      color: "var(--muted-foreground)", ...sans, fontSize: "0.9rem", fontWeight: 600,
+                      cursor: "pointer", transition: "border-color 0.15s ease, color 0.15s ease",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--foreground)"; e.currentTarget.style.color = "var(--foreground)" }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-foreground)" }}
+                  >
+                    Skip
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* No tests header */}
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "0.875rem", marginBottom: "1.125rem", paddingRight: "1.5rem" }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 11, flexShrink: 0,
+                    background: "linear-gradient(135deg, #5a4a1a, #a67c52)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "0 3px 10px rgba(166,124,82,0.25)",
+                  }}>
+                    <AlertCircle size={20} color="white" strokeWidth={1.75} />
+                  </div>
+                  <div>
+                    <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.15rem" }}>
+                      No Results Yet
+                    </p>
+                    <h2 style={{ ...serif, fontSize: "1.4rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)", lineHeight: 1.2 }}>
+                      Take an assessment first?
+                    </h2>
+                  </div>
+                </div>
+
+                <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7, marginBottom: "1.25rem" }}>
+                  A quick mental health check-in helps personalize your session with context your AI therapist can act on immediately.
+                </p>
+
+                {/* Benefits */}
+                <div style={{
+                  backgroundColor: "color-mix(in srgb, var(--muted) 35%, transparent)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 12, padding: "1rem 1.125rem",
+                  marginBottom: "1.375rem",
+                  display: "flex", flexDirection: "column", gap: "0.5rem",
+                }}>
+                  {["Personalized support from your first message", "Track mood and progress over time", "No need to explain your situation from scratch"].map((benefit, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+                      <div style={{
+                        width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
+                        background: "linear-gradient(135deg, #7a5535, #a67c52)",
+                      }} />
+                      <span style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>{benefit}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Buttons */}
+                <div style={{ display: "flex", gap: "0.75rem" }}>
+                  <button
+                    type="button"
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); onClose(); router.push("/diagnostic-test") }}
+                    style={{
+                      flex: 1, height: 44, borderRadius: 11, border: "none",
+                      background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)",
+                      color: "white", ...sans, fontSize: "0.875rem", fontWeight: 600,
+                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem",
+                      boxShadow: "0 3px 12px rgba(166,124,82,0.35)",
+                      transition: "opacity 0.15s ease",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = "0.87"}
+                    onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                  >
+                    Take Assessment <ArrowRight size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); onSkip() }}
+                    style={{
+                      flex: 1, height: 44, borderRadius: 11,
+                      border: "1px solid var(--border)", background: "none",
+                      color: "var(--muted-foreground)", ...sans, fontSize: "0.875rem", fontWeight: 600,
+                      cursor: "pointer", transition: "border-color 0.15s ease, color 0.15s ease",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--foreground)"; e.currentTarget.style.color = "var(--foreground)" }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-foreground)" }}
+                  >
+                    Continue Without
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </motion.div>
       </div>
     </AnimatePresence>
   )
 }
-
-
-

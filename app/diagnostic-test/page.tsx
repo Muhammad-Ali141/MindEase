@@ -1,543 +1,329 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { Brain, Heart, AlertCircle, Smile, ArrowLeft, Info, Clock, CheckCircle2, Sparkles } from "lucide-react"
+import { Brain, Heart, AlertCircle, Smile, ArrowLeft, Clock, CheckCircle2, Zap, Loader2 } from "lucide-react"
 import { Header } from "@/components/header"
+import { Sidebar } from "@/components/sidebar"
+import { BeamsBackground } from "@/components/ui/beams-background"
 import { motion } from "framer-motion"
-import Link from "next/link"
 import { useEffect, useState } from "react"
 import { useAuth } from "@/context/AuthContext"
+import { useTheme } from "next-themes"
 import { apiGetDiagnosticTestStatus } from "@/lib/api"
 
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+
+const testOptions = [
+  {
+    id: "depression",
+    name: "Depression",
+    testName: "PHQ-9",
+    description: "Track how you've been feeling lately — this helps identify patterns of low mood.",
+    duration: "5-7 min",
+    questions: 9,
+    icon: Heart,
+    bg: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)",
+    ring: "rgba(166,124,82,0.2)",
+  },
+  {
+    id: "anxiety",
+    name: "Anxiety",
+    testName: "GAD-7",
+    description: "Understand if worry or nervousness is affecting your day-to-day life.",
+    duration: "3-5 min",
+    questions: 7,
+    icon: AlertCircle,
+    bg: "linear-gradient(135deg, #6b3f1f 0%, #a0622f 100%)",
+    ring: "rgba(160,98,47,0.2)",
+  },
+  {
+    id: "stress",
+    name: "Stress",
+    testName: "PSS-10",
+    description: "Find out how much pressure you're under and if things feel overwhelming.",
+    duration: "5-7 min",
+    questions: 10,
+    icon: Brain,
+    bg: "linear-gradient(135deg, #5a2020 0%, #8c3a3a 100%)",
+    ring: "rgba(140,58,58,0.2)",
+  },
+  {
+    id: "general-mood",
+    name: "General Mood",
+    testName: "Mood Check",
+    description: "A quick emotional temperature check — see how you're really feeling right now.",
+    duration: "3-5 min",
+    questions: 8,
+    icon: Smile,
+    bg: "linear-gradient(135deg, #325944 0%, #5D8A6B 100%)",
+    ring: "rgba(93,138,107,0.2)",
+  },
+]
+
 export default function DiagnosticTestPage() {
-  const router = useRouter()
-  const { user } = useAuth()
+  const router  = useRouter()
+  const { user }= useAuth()
+  const { resolvedTheme } = useTheme()
+  const isDark  = resolvedTheme === "dark"
+
+  const [sidebarOpen,      setSidebarOpen]      = useState(true)
   const [primaryCondition, setPrimaryCondition] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [availableTest, setAvailableTest] = useState<string | null>(null)
+  const [loading,          setLoading]          = useState(true)
 
-  // Get test status from backend and redirect to available test
   useEffect(() => {
-    const loadTestStatus = async () => {
-      if (!user?.id) {
-        setLoading(false)
-        return
-      }
-
+    const load = async () => {
+      if (!user?.id) { setLoading(false); return }
       try {
         const status = await apiGetDiagnosticTestStatus(user.id)
         setPrimaryCondition(status.primary_condition)
-        setAvailableTest(status.available_test)
-        
-        // If there's an available test, redirect to it
         if (status.available_test) {
           router.push(`/diagnostic-test/${status.available_test}`)
+          return
         }
-      } catch (error) {
-        console.error("Failed to load test status:", error)
-      } finally {
-        setLoading(false)
-      }
+      } catch {}
+      setLoading(false)
     }
-    
-    loadTestStatus()
+    load()
   }, [user?.id, router])
-
-  const handleTestSelect = (testType: string) => {
-    // If no primary condition, redirect to generic screening
-    if (!primaryCondition) {
-      router.push("/diagnostic-test/generic-screening")
-    } else {
-      router.push(`/diagnostic-test/${testType}`)
-    }
-  }
-
-  const handleStartScreening = () => {
-    router.push("/diagnostic-test/generic-screening")
-  }
-
-  const handleBack = () => {
-    router.push("/dashboard")
-  }
-
-  const testOptions = [
-    {
-      id: "depression",
-      name: "Depression",
-      testName: "PHQ-9",
-      description: "Check how you've been feeling lately. This helps you see if you might be dealing with sadness or low mood that's affecting your daily life.",
-      duration: "5-7 minutes",
-      questions: 9,
-      icon: Heart,
-      gradient: "from-blue-500 to-blue-600 dark:from-blue-700/80 dark:to-blue-800/80",
-      bgLight: "bg-blue-50 dark:bg-blue-900/20",
-      textColor: "text-blue-600 dark:text-blue-300",
-      borderColor: "border-blue-200 dark:border-blue-800/50"
-    },
-    {
-      id: "anxiety",
-      name: "Anxiety",
-      testName: "GAD-7",
-      description: "See if you're feeling worried, nervous, or on edge more than usual. This helps you understand if anxiety is affecting your day-to-day life.",
-      duration: "3-5 minutes",
-      questions: 7,
-      icon: AlertCircle,
-      gradient: "from-orange-500 to-orange-600 dark:from-orange-700/80 dark:to-orange-800/80",
-      bgLight: "bg-orange-50 dark:bg-orange-900/20",
-      textColor: "text-orange-600 dark:text-orange-300",
-      borderColor: "border-orange-200 dark:border-orange-800/50"
-    },
-    {
-      id: "stress",
-      name: "Stress",
-      testName: "PSS-10",
-      description: "Find out how much stress you're feeling in your life right now. This helps you see if things feel overwhelming or hard to handle.",
-      duration: "5-7 minutes",
-      questions: 10,
-      icon: Brain,
-      gradient: "from-red-500 to-red-600 dark:from-red-700/80 dark:to-red-800/80",
-      bgLight: "bg-red-50 dark:bg-red-900/20",
-      textColor: "text-red-600 dark:text-red-300",
-      borderColor: "border-red-200 dark:border-red-800/50"
-    },
-    {
-      id: "general-mood",
-      name: "General Mood",
-      testName: "Mood Check",
-      description: "Get a quick look at your overall mood and how you're feeling emotionally. This gives you a simple way to check in with yourself.",
-      duration: "3-5 minutes",
-      questions: 8,
-      icon: Smile,
-      gradient: "from-green-500 to-green-600 dark:from-green-700/80 dark:to-green-800/80",
-      bgLight: "bg-green-50 dark:bg-green-900/20",
-      textColor: "text-green-600 dark:text-green-300",
-      borderColor: "border-green-200 dark:border-green-800/50"
-    }
-  ]
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-        <Header />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="text-center text-gray-600 dark:text-gray-400">Loading...</div>
+      <div style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
+        <BeamsBackground isDark={isDark} intensity="subtle" />
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Loader2 size={28} style={{ color: "var(--primary)" }} className="animate-spin" />
         </div>
       </div>
     )
   }
 
-  // If primary condition exists, show only that test option
-  if (primaryCondition) {
-    const primaryTest = testOptions.find(test => test.id === primaryCondition)
-    if (primaryTest) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-          <Header />
-          
-          {/* Hero Section */}
-          <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-700 dark:from-blue-900 dark:via-purple-900 dark:to-indigo-900">
-            <div className="absolute inset-0 opacity-10">
-              <div className="absolute inset-0" style={{
-                backgroundImage: `radial-gradient(circle at 2px 2px, white 1px, transparent 0)`,
-                backgroundSize: '40px 40px'
-              }}></div>
+  return (
+    <div style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)", overflow: "hidden" }}>
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+        <BeamsBackground isDark={isDark} intensity="subtle" />
+      </div>
+
+      <div style={{ position: "relative", zIndex: 10, flexShrink: 0, height: "100%" }}>
+        <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(v => !v)} />
+      </div>
+
+      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <Header />
+
+        <main style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ maxWidth: 860, margin: "0 auto", padding: "1.75rem 1.5rem 3rem" }}>
+
+            {/* Back */}
+            <button
+              onClick={() => router.push("/dashboard")}
+              style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", marginBottom: "2rem", padding: 0 }}
+            >
+              <ArrowLeft size={14} /> Dashboard
+            </button>
+
+            {/* Page heading */}
+            <div style={{ marginBottom: "2rem" }}>
+              <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.25rem" }}>
+                Clinical
+              </p>
+              <h1 style={{ ...serif, fontSize: "2.25rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1, marginBottom: "0.75rem" }}>
+                Mental Health Check-ups
+              </h1>
+              <p style={{ ...sans, fontSize: "0.9375rem", color: "var(--muted-foreground)", lineHeight: 1.7, maxWidth: 520 }}>
+                Brief, clinically-validated assessments to track how you're feeling over time.
+              </p>
             </div>
 
-            <div className="absolute top-0 left-1/4 w-64 h-64 bg-blue-400/20 rounded-full blur-3xl animate-pulse"></div>
-            <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-purple-400/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-
-            <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
-              <motion.nav
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="mb-6"
-              >
-                <button
-                  onClick={handleBack}
-                  className="inline-flex items-center gap-2 text-white/80 hover:text-white transition-colors group"
-                >
-                  <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-                  <span className="font-medium text-sm">Back to Dashboard</span>
-                </button>
-              </motion.nav>
-
+            {/* Screening card (primary CTA) */}
+            {!primaryCondition && (
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                className="max-w-4xl"
+                transition={{ duration: 0.4 }}
+                style={{
+                  position: "relative", overflow: "hidden",
+                  borderRadius: 20, marginBottom: "2rem",
+                  background: "linear-gradient(135deg, #4a3220 0%, #7a5535 45%, #5a7a5a 100%)",
+                  boxShadow: "0 12px 40px rgba(166,124,82,0.25)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
               >
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full">
-                  <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
-                  <span className="text-xs font-medium text-white/90">Your Personalized Check-up</span>
-                </div>
+                {/* Decorative orbs */}
+                <div style={{ position: "absolute", top: -40, right: -40, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,0.04)", pointerEvents: "none" }} />
+                <div style={{ position: "absolute", bottom: -60, left: "30%", width: 300, height: 300, borderRadius: "50%", background: "rgba(93,138,107,0.12)", pointerEvents: "none" }} />
 
-                <div className="flex items-start gap-3 mb-4">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ duration: 0.5, delay: 0.3, type: "spring" }}
-                    className="p-3 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 shadow-lg"
-                  >
-                    <Brain className="text-white" size={32} />
-                  </motion.div>
-                  <div className="flex-1">
-                    <h1 className="text-3xl sm:text-4xl font-bold text-white leading-tight">
-                      Mental Health <span className="bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-transparent">Check-up</span>
-                    </h1>
+                <div style={{ position: "relative", zIndex: 1, padding: "2rem 2.25rem", display: "flex", alignItems: "center", gap: "2rem", flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 240 }}>
+                    <div style={{
+                      display: "inline-flex", alignItems: "center", gap: "0.4rem",
+                      ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em",
+                      textTransform: "uppercase", color: "rgba(255,255,255,0.6)",
+                      padding: "0.2rem 0.6rem", borderRadius: 100,
+                      border: "1px solid rgba(255,255,255,0.18)",
+                      marginBottom: "0.875rem",
+                    }}>
+                      <Zap size={10} /> Start here
+                    </div>
+                    <h2 style={{ ...serif, fontSize: "1.875rem", fontWeight: 400, color: "white", letterSpacing: "-0.02em", marginBottom: "0.625rem" }}>
+                      Initial Screening
+                    </h2>
+                    <p style={{ ...sans, fontSize: "0.875rem", color: "rgba(255,255,255,0.72)", lineHeight: 1.7, marginBottom: "1.25rem" }}>
+                      8 quick questions to identify your primary concern. We'll then guide you to the most relevant daily assessment.
+                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: "1.25rem", marginBottom: "1.5rem" }}>
+                      <span style={{ ...sans, fontSize: "0.75rem", color: "rgba(255,255,255,0.55)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        <Clock size={12} /> 3-5 minutes
+                      </span>
+                      <span style={{ ...sans, fontSize: "0.75rem", color: "rgba(255,255,255,0.55)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        <CheckCircle2 size={12} /> 8 questions
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => router.push("/diagnostic-test/generic-screening")}
+                      style={{
+                        ...sans, height: 46, padding: "0 1.75rem", borderRadius: 12,
+                        backgroundColor: "rgba(255,255,255,0.18)",
+                        border: "1px solid rgba(255,255,255,0.28)",
+                        color: "white", fontSize: "0.9375rem", fontWeight: 600,
+                        cursor: "pointer", backdropFilter: "blur(8px)",
+                        display: "inline-flex", alignItems: "center", gap: "0.5rem",
+                        transition: "background-color 0.15s ease",
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.26)"}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.18)"}
+                    >
+                      Begin Screening →
+                    </button>
+                  </div>
+
+                  {/* Icon visual */}
+                  <div style={{
+                    width: 88, height: 88, borderRadius: 22, flexShrink: 0,
+                    backgroundColor: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    backdropFilter: "blur(8px)",
+                  }}>
+                    <Brain size={44} color="rgba(255,255,255,0.85)" strokeWidth={1.5} />
                   </div>
                 </div>
-
-                <p className="text-base text-white/90 leading-relaxed max-w-2xl mb-6">
-                  Based on your initial screening, we've identified your primary concern. Complete this check-up to get detailed insights.
-                </p>
               </motion.div>
-            </div>
-          </div>
+            )}
 
-          {/* Main Content */}
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <div className="grid grid-cols-1 lg:grid-cols-1 gap-6 mb-8 max-w-2xl mx-auto">
-              {(() => {
-                const TestIcon = primaryTest.icon
+            {/* Section divider */}
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+              <div style={{ flex: 1, height: 1, backgroundColor: "var(--border)" }} />
+              <p style={{ ...sans, fontSize: "0.6875rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)", flexShrink: 0 }}>
+                {primaryCondition ? "Available Assessments" : "Or explore a specific area"}
+              </p>
+              <div style={{ flex: 1, height: 1, backgroundColor: "var(--border)" }} />
+            </div>
+
+            {/* Test cards grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.875rem" }}>
+              {testOptions.map((test, i) => {
+                const Icon = test.icon
+                const isPrimary = test.id === primaryCondition
                 return (
-                  <div
-                    className={`bg-white dark:bg-slate-800 rounded-xl border-2 ${primaryTest.borderColor} shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group`}
+                  <motion.div
+                    key={test.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.07, duration: 0.35 }}
+                    style={{
+                      position: "relative", overflow: "hidden",
+                      borderRadius: 16,
+                      backgroundColor: "color-mix(in srgb, var(--card) 88%, transparent)",
+                      backdropFilter: "blur(10px)",
+                      border: isPrimary
+                        ? "1px solid color-mix(in srgb, var(--primary) 40%, transparent)"
+                        : "1px solid var(--border)",
+                      boxShadow: isPrimary ? `0 4px 20px ${test.ring}` : "0 2px 8px rgba(0,0,0,0.04)",
+                      transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                      cursor: "default",
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = `color-mix(in srgb, var(--primary) 35%, transparent)`
+                      e.currentTarget.style.boxShadow = `0 6px 24px ${test.ring}`
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = isPrimary ? `color-mix(in srgb, var(--primary) 40%, transparent)` : "var(--border)"
+                      e.currentTarget.style.boxShadow = isPrimary ? `0 4px 20px ${test.ring}` : "0 2px 8px rgba(0,0,0,0.04)"
+                    }}
                   >
-                    <div className={`bg-gradient-to-br ${primaryTest.gradient} p-6 text-white`}>
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="p-3 bg-white/20 rounded-lg backdrop-blur-sm">
-                          <TestIcon size={32} className="group-hover:scale-110 transition-transform duration-300" />
+                    {isPrimary && (
+                      <div style={{
+                        position: "absolute", top: 12, right: 12,
+                        ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.08em",
+                        textTransform: "uppercase", color: "var(--primary)",
+                        backgroundColor: "color-mix(in srgb, var(--primary) 12%, transparent)",
+                        padding: "0.2rem 0.5rem", borderRadius: 100,
+                        border: "1px solid color-mix(in srgb, var(--primary) 25%, transparent)",
+                      }}>
+                        Your focus
+                      </div>
+                    )}
+
+                    {/* Card gradient strip */}
+                    <div style={{ height: 6, background: test.bg }} />
+
+                    <div style={{ padding: "1.375rem 1.375rem 1.25rem" }}>
+                      {/* Icon + meta */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "0.875rem", marginBottom: "0.875rem" }}>
+                        <div style={{
+                          width: 42, height: 42, borderRadius: 11, flexShrink: 0,
+                          background: test.bg,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          boxShadow: `0 4px 12px ${test.ring}`,
+                        }}>
+                          <Icon size={20} color="white" strokeWidth={1.75} />
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm font-medium opacity-90 mb-1">{primaryTest.testName}</div>
-                          <div className="flex items-center gap-1 text-xs opacity-75">
-                            <Clock size={14} />
-                            <span>{primaryTest.duration}</span>
-                          </div>
+                        <div style={{ flex: 1 }}>
+                          <h3 style={{ ...sans, fontSize: "0.9375rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.1rem" }}>
+                            {test.name}
+                          </h3>
+                          <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)" }}>
+                            {test.testName} · {test.questions} questions
+                          </p>
                         </div>
                       </div>
-                      <h3 className="text-2xl font-bold mb-2">{primaryTest.name} Check-up</h3>
-                    </div>
 
-                    <div className="p-6">
-                      <p className="text-gray-700 dark:text-gray-300 mb-6 leading-relaxed">
-                        {primaryTest.description}
+                      <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)", lineHeight: 1.65, marginBottom: "1.125rem" }}>
+                        {test.description}
                       </p>
 
-                      <div className={`${primaryTest.bgLight} rounded-lg p-4 mb-6 border ${primaryTest.borderColor}`}>
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                            <CheckCircle2 size={16} className={primaryTest.textColor} />
-                            <span className="font-medium">{primaryTest.questions} Questions</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                            <Clock size={16} className={primaryTest.textColor} />
-                            <span className="font-medium">{primaryTest.duration}</span>
-                          </div>
-                        </div>
+                      {/* Duration chip + CTA */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                          <Clock size={11} /> {test.duration}
+                        </span>
+                        <button
+                          onClick={() => router.push(`/diagnostic-test/${test.id}`)}
+                          style={{
+                            ...sans, height: 34, padding: "0 1rem", borderRadius: 8,
+                            background: test.bg,
+                            color: "white", fontSize: "0.8125rem", fontWeight: 600,
+                            border: "none", cursor: "pointer",
+                            boxShadow: `0 3px 10px ${test.ring}`,
+                            display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                            transition: "opacity 0.15s ease",
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
+                          onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                        >
+                          Start <ArrowLeft size={12} style={{ transform: "rotate(180deg)" }} />
+                        </button>
                       </div>
-
-                      <button
-                        onClick={() => handleTestSelect(primaryCondition)}
-                        className={`w-full ${primaryTest.textColor} bg-white dark:bg-slate-700 border-2 ${primaryTest.borderColor} font-semibold py-3.5 px-6 rounded-lg hover:bg-opacity-90 dark:hover:bg-slate-600 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
-                      >
-                        Begin Check-up
-                      </button>
                     </div>
-                  </div>
+                  </motion.div>
                 )
-              })()}
+              })}
             </div>
 
-            <motion.footer
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true }}
-              className="py-12 px-6 bg-slate-900 text-slate-400 rounded-xl"
-            >
-              <div className="max-w-7xl mx-auto text-center">
-                <motion.div
-                  whileHover={{ scale: 1.1 }}
-                  className="flex items-center justify-center gap-2 mb-4"
-                >
-                  <Heart className="h-5 w-5 text-purple-400 fill-purple-400" />
-                  <span className="text-lg font-bold text-white">MindEase</span>
-                </motion.div>
-                <p className="text-sm mb-4">© {new Date().getFullYear()} MindEase. All rights reserved.</p>
-                <div className="flex flex-wrap justify-center gap-6 text-sm">
-                  <Link href="/about" className="hover:text-white transition-colors">
-                    About Us
-                  </Link>
-                  <Link href="/contact" className="hover:text-white transition-colors">
-                    Contact
-                  </Link>
-                  <Link href="/privacy" className="hover:text-white transition-colors">
-                    Privacy Policy
-                  </Link>
-                </div>
-              </div>
-            </motion.footer>
           </div>
-        </div>
-      )
-    }
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      <Header />
-      
-      {/* Hero Section */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-700 dark:from-blue-900 dark:via-purple-900 dark:to-indigo-900">
-        {/* Background Pattern */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute inset-0" style={{
-            backgroundImage: `radial-gradient(circle at 2px 2px, white 1px, transparent 0)`,
-            backgroundSize: '40px 40px'
-          }}></div>
-        </div>
-        
-        {/* Animated Gradient Orbs */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-400/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
-          {/* Breadcrumb Navigation */}
-          <motion.nav
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="mb-6"
-          >
-            <button
-              onClick={handleBack}
-              className="inline-flex items-center gap-2 text-white/80 hover:text-white transition-colors group"
-            >
-              <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-              <span className="font-medium text-sm">Back to Dashboard</span>
-            </button>
-          </motion.nav>
-
-          {/* Hero Content */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="max-w-4xl"
-          >
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-xs font-medium text-white/90">Trusted & Easy to Use</span>
-            </div>
-
-            {/* Main Heading */}
-            <div className="flex items-start gap-3 mb-4">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ duration: 0.5, delay: 0.3, type: "spring" }}
-                className="p-3 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 shadow-xl"
-              >
-                <Brain className="text-white" size={32} />
-              </motion.div>
-              <div className="flex-1">
-                <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2 leading-tight">
-                  <span>Mental Health </span>
-                  <span className="bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-transparent">
-                    Check-ups
-                  </span>
-                </h1>
-                <p className="text-base text-white/90 leading-relaxed max-w-2xl">
-                  Simple questions to help you understand how you're feeling. These quick check-ups can help you see your emotional well-being and track how you're doing over time.
-                </p>
-              </div>
-            </div>
-
-            {/* Stats/Features */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-              className="flex flex-wrap gap-4 mt-4"
-            >
-              <div className="flex items-center gap-2 text-white/80">
-                <CheckCircle2 size={18} className="text-green-300" />
-                <span className="text-xs font-medium">Trusted by Professionals</span>
-              </div>
-              <div className="flex items-center gap-2 text-white/80">
-                <CheckCircle2 size={18} className="text-green-300" />
-                <span className="text-xs font-medium">Private & Safe</span>
-              </div>
-              <div className="flex items-center gap-2 text-white/80">
-                <CheckCircle2 size={18} className="text-green-300" />
-                <span className="text-xs font-medium">Takes 5-10 Minutes</span>
-              </div>
-            </motion.div>
-          </motion.div>
-        </div>
+        </main>
       </div>
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-
-        {/* Info Banner */}
-        <div className="mb-8 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg flex items-start gap-3">
-          <Info className="text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" size={20} />
-          <div className="text-sm text-blue-900 dark:text-blue-200">
-            <p className="font-semibold mb-1">Getting Started</p>
-            <p className="text-blue-700 dark:text-blue-300">
-              Begin with our quick screening test (6-8 questions) to identify your primary concern. Based on your responses, we'll guide you to the most relevant detailed check-up.
-            </p>
-          </div>
-        </div>
-
-        {/* Generic Screening Card - Prominent */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="mb-8 bg-gradient-to-br from-purple-500 via-indigo-600 to-blue-600 dark:from-purple-700/80 dark:to-indigo-800/80 rounded-2xl shadow-2xl overflow-hidden border-4 border-purple-300 dark:border-purple-600"
-        >
-          <div className="p-8 text-white">
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex-1">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-4 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full">
-                  <Sparkles size={16} />
-                  <span className="text-xs font-medium">Start Here</span>
-                </div>
-                <h2 className="text-3xl font-bold mb-3">Quick Screening Test</h2>
-                <p className="text-purple-100 dark:text-purple-200/80 mb-4 text-lg leading-relaxed">
-                  A brief 8-question screening to help us understand your primary concern. This takes just 3-5 minutes.
-                </p>
-                <div className="flex items-center gap-4 text-purple-100 dark:text-purple-200/80 text-sm mb-6">
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} />
-                    <span>3-5 minutes</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 size={16} />
-                    <span>8 questions</span>
-                  </div>
-                </div>
-              </div>
-              <div className="p-4 bg-white/20 rounded-xl backdrop-blur-sm border border-white/30">
-                <Brain size={48} />
-              </div>
-            </div>
-            <button
-              onClick={handleStartScreening}
-              className="w-full sm:w-auto px-8 py-4 bg-white text-purple-600 dark:text-purple-700 font-bold rounded-xl hover:bg-purple-50 dark:hover:bg-purple-100 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 text-lg"
-            >
-              Start Screening →
-            </button>
-          </div>
-        </motion.div>
-
-        {/* Divider */}
-        <div className="mb-8 flex items-center gap-4">
-          <div className="flex-1 h-px bg-gray-300 dark:bg-slate-700"></div>
-          <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Or explore specific check-ups</span>
-          <div className="flex-1 h-px bg-gray-300 dark:bg-slate-700"></div>
-        </div>
-
-        {/* Test Cards Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {testOptions.map((test) => {
-            const Icon = test.icon
-            return (
-              <div
-                key={test.id}
-                className={`bg-white dark:bg-slate-800 rounded-xl border-2 ${test.borderColor} shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group`}
-              >
-                {/* Card Header with Gradient */}
-                <div className={`bg-gradient-to-br ${test.gradient} p-6 text-white`}>
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="p-3 bg-white/20 rounded-lg backdrop-blur-sm">
-                      <Icon size={32} className="group-hover:scale-110 transition-transform duration-300" />
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium opacity-90 mb-1">{test.testName}</div>
-                      <div className="flex items-center gap-1 text-xs opacity-75">
-                        <Clock size={14} />
-                        <span>{test.duration}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-2">{test.name} Check-up</h3>
-                </div>
-
-                {/* Card Body */}
-                <div className="p-6">
-                  <p className="text-gray-700 dark:text-gray-300 mb-6 leading-relaxed">
-                    {test.description}
-                  </p>
-
-                  {/* Test Details */}
-                  <div className={`${test.bgLight} rounded-lg p-4 mb-6 border ${test.borderColor}`}>
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                        <CheckCircle2 size={16} className={test.textColor} />
-                        <span className="font-medium">{test.questions} Questions</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                        <Clock size={16} className={test.textColor} />
-                        <span className="font-medium">{test.duration}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action Button */}
-                  <button
-                    onClick={() => handleTestSelect(test.id)}
-                    className={`w-full ${test.textColor} bg-white dark:bg-slate-700 border-2 ${test.borderColor} font-semibold py-3.5 px-6 rounded-lg hover:bg-opacity-90 dark:hover:bg-slate-600 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
-                  >
-                    Start Check-up
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-      </div>
-
-      {/* Footer */}
-      <motion.footer
-        initial={{ opacity: 0 }}
-        whileInView={{ opacity: 1 }}
-        viewport={{ once: true }}
-        className="mt-16 py-12 px-6 bg-slate-900 text-slate-400"
-      >
-        <div className="max-w-7xl mx-auto text-center">
-          <motion.div
-            whileHover={{ scale: 1.1 }}
-            className="flex items-center justify-center gap-2 mb-4"
-          >
-            <Heart className="h-5 w-5 text-purple-400 fill-purple-400" />
-            <span className="text-lg font-bold text-white">MindEase</span>
-          </motion.div>
-          <p className="text-sm mb-2">© {new Date().getFullYear()} MindEase. All rights reserved.</p>
-          <p className="text-xs mb-4 text-slate-500">
-            All assessments are confidential and your responses are securely stored.
-          </p>
-          <div className="flex flex-wrap justify-center gap-6 text-sm">
-            <Link href="/about" className="hover:text-white transition-colors">
-              About Us
-            </Link>
-            <Link href="/contact" className="hover:text-white transition-colors">
-              Contact
-            </Link>
-            <Link href="/privacy" className="hover:text-white transition-colors">
-              Privacy Policy
-            </Link>
-          </div>
-        </div>
-      </motion.footer>
     </div>
   )
 }
-
-

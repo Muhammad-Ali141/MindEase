@@ -3,6 +3,9 @@
 import { MapPin, Globe, ExternalLink } from "lucide-react"
 import type { TherapistListItem } from "@/lib/api"
 
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+
 type TherapistCardProps = {
   therapist: TherapistListItem
   match?: "exact_city" | "nearest_region" | "other"
@@ -12,41 +15,91 @@ type TherapistCardProps = {
 export function TherapistCard({ therapist: t, match, compact = false }: TherapistCardProps) {
   const profileUrl = t.website || t.profile_url
   const isNear = match && match !== "other"
+  const initial = (t.name || "T").charAt(0).toUpperCase()
 
   if (compact) {
     return (
-      <div className="group rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800/80 p-4 shadow-sm hover:shadow-md hover:border-blue-200 dark:hover:border-blue-800/50 transition-all">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold text-gray-900 dark:text-white truncate">{t.name}</h3>
+      <div
+        style={{
+          ...sans,
+          borderRadius: 12, padding: "0.875rem 1rem",
+          backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
+          border: "1px solid var(--border)",
+          backdropFilter: "blur(8px)",
+          transition: "border-color 0.18s ease, box-shadow 0.18s ease",
+          cursor: profileUrl ? "pointer" : "default",
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.borderColor = "rgba(166,124,82,0.35)"
+          e.currentTarget.style.boxShadow = "0 4px 16px rgba(166,124,82,0.08)"
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = "var(--border)"
+          e.currentTarget.style.boxShadow = "none"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
+          {/* Avatar */}
+          <div style={{
+            width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+            background: "linear-gradient(135deg, #7a5535, #a67c52)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 2px 8px rgba(166,124,82,0.25)",
+          }}>
+            <span style={{ ...sans, fontSize: "0.875rem", fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>
+              {initial}
+            </span>
+          </div>
+
+          {/* Info */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+              <h3 style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {t.name}
+              </h3>
               {isNear && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300 shrink-0">
-                  <MapPin size={10} />
+                <span style={{
+                  ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.06em",
+                  padding: "0.15rem 0.45rem", borderRadius: 100,
+                  backgroundColor: "color-mix(in srgb, var(--sage) 15%, transparent)",
+                  color: "var(--sage)", textTransform: "uppercase", flexShrink: 0,
+                }}>
                   Near you
                 </span>
               )}
             </div>
             {t.credentials && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{t.credentials}</p>
+              <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {t.credentials}
+              </p>
             )}
             {(t.city || t.region) && (
-              <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 flex items-center gap-1">
-                <MapPin size={12} className="shrink-0 text-gray-400" />
-                <span className="truncate">{[t.city, t.region].filter(Boolean).join(", ")}</span>
+              <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "0.25rem" }}>
+                <MapPin size={10} style={{ flexShrink: 0, color: "var(--primary)" }} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {[t.city, t.region].filter(Boolean).join(", ")}
+                </span>
               </p>
             )}
           </div>
+
+          {/* Profile link */}
           {profileUrl && (
             <a
               href={profileUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+              style={{
+                ...sans, flexShrink: 0,
+                display: "inline-flex", alignItems: "center", gap: "0.25rem",
+                fontSize: "0.6875rem", fontWeight: 600, color: "var(--primary)",
+                textDecoration: "none",
+              }}
+              onClick={e => e.stopPropagation()}
             >
-              <Globe size={14} />
-              <span className="hidden sm:inline">Profile</span>
-              <ExternalLink size={12} />
+              <Globe size={12} />
+              Profile
+              <ExternalLink size={10} />
             </a>
           )}
         </div>
@@ -54,59 +107,136 @@ export function TherapistCard({ therapist: t, match, compact = false }: Therapis
     )
   }
 
+  // Full card (therapists directory page)
   return (
-    <article className="group rounded-2xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800/80 overflow-hidden shadow-sm hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-800/50 transition-all">
-      <div className="p-5 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">{t.name}</h2>
-              {isNear && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                  <MapPin size={12} />
-                  In your area
-                </span>
+    <article style={{
+      ...sans,
+      borderRadius: 16, overflow: "hidden",
+      backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
+      border: "1px solid var(--border)",
+      backdropFilter: "blur(8px)",
+      boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
+      transition: "border-color 0.18s ease, box-shadow 0.18s ease",
+    }}
+    onMouseEnter={e => {
+      (e.currentTarget as HTMLElement).style.borderColor = "rgba(166,124,82,0.35)"
+      ;(e.currentTarget as HTMLElement).style.boxShadow = "0 8px 28px rgba(166,124,82,0.1)"
+    }}
+    onMouseLeave={e => {
+      (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"
+      ;(e.currentTarget as HTMLElement).style.boxShadow = "0 2px 12px rgba(0,0,0,0.05)"
+    }}
+    >
+      <div style={{ padding: "1.25rem 1.375rem" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
+
+          {/* Left: avatar + info */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "0.875rem", flex: 1, minWidth: 0 }}>
+            {/* Avatar */}
+            <div style={{
+              width: 44, height: 44, borderRadius: 11, flexShrink: 0,
+              background: "linear-gradient(135deg, #7a5535, #a67c52)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 4px 12px rgba(166,124,82,0.3)",
+            }}>
+              <span style={{ ...serif, fontSize: "1.25rem", fontWeight: 600, color: "rgba(255,255,255,0.95)" }}>
+                {initial}
+              </span>
+            </div>
+
+            {/* Info */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+                <h2 style={{ ...sans, fontSize: "0.9375rem", fontWeight: 700, color: "var(--foreground)" }}>
+                  {t.name}
+                </h2>
+                {isNear && (
+                  <span style={{
+                    ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.06em",
+                    padding: "0.2rem 0.5rem", borderRadius: 100,
+                    backgroundColor: "color-mix(in srgb, var(--sage) 15%, transparent)",
+                    color: "var(--sage)", textTransform: "uppercase",
+                  }}>
+                    In your area
+                  </span>
+                )}
+              </div>
+              {t.credentials && (
+                <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)", marginTop: "0.2rem" }}>
+                  {t.credentials}
+                </p>
+              )}
+              {t.specialty && (
+                <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--primary)", marginTop: "0.375rem", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  {t.specialty}
+                </p>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem", marginTop: "0.625rem" }}>
+                {(t.city || t.region) && (
+                  <span style={{
+                    ...sans, display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                    fontSize: "0.6875rem", color: "var(--muted-foreground)",
+                    backgroundColor: "color-mix(in srgb, var(--muted) 60%, transparent)",
+                    padding: "0.2rem 0.55rem", borderRadius: 6,
+                    border: "1px solid var(--border)",
+                  }}>
+                    <MapPin size={11} style={{ color: "var(--primary)" }} />
+                    {[t.city, t.region].filter(Boolean).join(", ")}
+                  </span>
+                )}
+                {t.languages && t.languages.length > 0 && (
+                  <span style={{
+                    ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)",
+                    backgroundColor: "color-mix(in srgb, var(--muted) 60%, transparent)",
+                    padding: "0.2rem 0.55rem", borderRadius: 6,
+                    border: "1px solid var(--border)",
+                  }}>
+                    {t.languages.slice(0, 3).join(" · ")}{t.languages.length > 3 ? " …" : ""}
+                  </span>
+                )}
+                {t.service_type && t.service_type.length > 0 && (
+                  <span style={{
+                    ...sans, fontSize: "0.6875rem",
+                    color: "var(--primary)",
+                    backgroundColor: "color-mix(in srgb, var(--primary) 10%, transparent)",
+                    padding: "0.2rem 0.55rem", borderRadius: 6,
+                    border: "1px solid color-mix(in srgb, var(--primary) 20%, transparent)",
+                  }}>
+                    {t.service_type.join(" & ")}
+                  </span>
+                )}
+              </div>
+              {t.address && (
+                <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.375rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {t.address}
+                </p>
               )}
             </div>
-            {t.credentials && (
-              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{t.credentials}</p>
-            )}
-            {t.specialty && (
-              <p className="text-sm text-purple-600 dark:text-purple-400 mt-2 line-clamp-2">{t.specialty}</p>
-            )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {(t.city || t.region) && (
-                <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 px-2.5 py-1 rounded-lg">
-                  <MapPin size={12} />
-                  {[t.city, t.region].filter(Boolean).join(", ")}
-                </span>
-              )}
-              {t.languages && t.languages.length > 0 && (
-                <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-700/80 px-2.5 py-1 rounded-lg">
-                  {t.languages.slice(0, 3).join(" · ")}
-                  {t.languages.length > 3 ? " …" : ""}
-                </span>
-              )}
-              {t.service_type && t.service_type.length > 0 && (
-                <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1 rounded-lg">
-                  {t.service_type.join(" & ")}
-                </span>
-              )}
-            </div>
-            {t.address && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 line-clamp-1">{t.address}</p>
-            )}
           </div>
+
+          {/* Profile button */}
           {profileUrl && (
             <a
               href={profileUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white text-sm font-medium px-4 py-2.5 transition"
+              style={{
+                ...sans, flexShrink: 0,
+                display: "inline-flex", alignItems: "center", gap: "0.4rem",
+                padding: "0.5rem 0.875rem", borderRadius: 9,
+                backgroundColor: "var(--primary)",
+                color: "white",
+                fontSize: "0.8125rem", fontWeight: 600,
+                textDecoration: "none",
+                boxShadow: "0 2px 8px rgba(166,124,82,0.3)",
+                transition: "opacity 0.15s ease",
+              }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = "0.85"}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = "1"}
             >
-              <Globe size={16} />
+              <Globe size={14} />
               View profile
-              <ExternalLink size={14} />
+              <ExternalLink size={12} />
             </a>
           )}
         </div>

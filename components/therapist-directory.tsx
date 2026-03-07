@@ -5,7 +5,9 @@ import { useAuth } from "@/context/AuthContext"
 import { useMemo, useEffect, useState } from "react"
 import Link from "next/link"
 import { apiGetTherapists, type TherapistListItem } from "@/lib/api"
-import { TherapistCard } from "@/components/therapist-card"
+
+const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 function normalizeLocation(s: string | undefined | null): string {
   if (!s || typeof s !== "string") return ""
@@ -29,36 +31,29 @@ const PREVIEW_LIMIT = 4
 export function TherapistDirectory() {
   const { user } = useAuth()
   const [therapists, setTherapists] = useState<TherapistListItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
 
   const cityParam = useMemo(() => {
     const userCity = (user?.city || "").trim()
-    const nearest = (user?.nearest_major_city || "").trim()
+    const nearest  = (user?.nearest_major_city || "").trim()
     return userCity || nearest || undefined
   }, [user?.city, user?.nearest_major_city])
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     apiGetTherapists({ city: cityParam, limit: PREVIEW_LIMIT })
-      .then((res) => {
-        if (!cancelled) setTherapists(res.therapists)
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load")
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+      .then(res => { if (!cancelled) setTherapists(res.therapists) })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load") })
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [cityParam])
 
   const { therapistsWithMatch, locationLabel } = useMemo(() => {
-    const userCity = normalizeLocation(user?.city)
+    const userCity    = normalizeLocation(user?.city)
     const userNearest = normalizeLocation(user?.nearest_major_city)
-    const withMatch = therapists.map((t) => ({
+    const withMatch = therapists.map(t => ({
       therapist: t,
       match: therapistMatchesUserLocation(t, userCity, userNearest),
     }))
@@ -73,52 +68,146 @@ export function TherapistDirectory() {
   return (
     <div
       data-tour-target="find-therapist"
-      className="bg-white dark:bg-slate-800 overflow-hidden flex flex-col rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm"
+      style={{
+        ...sans,
+        backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
+        backdropFilter: "blur(8px)",
+        borderRadius: 16, border: "1px solid var(--border)",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
+        overflow: "hidden",
+      }}
     >
-      <div className="p-5 border-b border-gray-100 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* Header */}
+      <div style={{
+        padding: "1.125rem 1.375rem 0.875rem",
+        borderBottom: "1px solid var(--border)",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
         <div>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+          <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--sage)", marginBottom: "0.2rem" }}>
+            Connect
+          </p>
+          <h2 style={{ ...serif, fontSize: "1.25rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
             Find a Professional Therapist
           </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-            {cityParam ? (
-              <span className="inline-flex items-center gap-1">
-                <MapPin size={14} />
-                Showing near {locationLabel}
-              </span>
-            ) : (
-              "Connect with licensed mental health professionals"
-            )}
-          </p>
+          {cityParam && (
+            <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              <MapPin size={11} />
+              Showing near {locationLabel}
+            </p>
+          )}
         </div>
         <Link
           href="/dashboard/therapists"
-          className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+          style={{
+            ...sans, display: "inline-flex", alignItems: "center", gap: "0.25rem",
+            fontSize: "0.75rem", fontWeight: 600, color: "var(--primary)",
+            textDecoration: "none",
+          }}
         >
-          View all therapists
-          <ArrowRight size={16} />
+          View all <ArrowRight size={13} />
         </Link>
       </div>
 
-      <div className="p-5">
+      {/* 2×2 card grid */}
+      <div style={{ padding: "1rem 1.25rem" }}>
         {error && (
-          <p className="text-sm text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--destructive)", marginBottom: "0.75rem" }}>{error}</p>
         )}
         {loading ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+          <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>Loading…</p>
+        ) : therapistsWithMatch.length === 0 ? (
+          <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>
+            No therapists found for your area.{" "}
+            <Link href="/dashboard/therapists" style={{ color: "var(--primary)", textDecoration: "none" }}>Browse all</Link>
+          </p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {therapistsWithMatch.slice(0, PREVIEW_LIMIT).map(({ therapist, match }) => (
-              <TherapistCard key={therapist.id} therapist={therapist} match={match} compact />
-            ))}
-            {!loading && therapistsWithMatch.length === 0 && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 col-span-2">
-                No therapists found for your area.{" "}
-                <Link href="/dashboard/therapists" className="text-blue-600 dark:text-blue-400 hover:underline">
-                  Browse all
-                </Link>
-              </p>
-            )}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
+            {therapistsWithMatch.slice(0, PREVIEW_LIMIT).map(({ therapist: t, match }) => {
+              const isNear = match && match !== "other"
+              const initial = (t.name || "T").charAt(0).toUpperCase()
+              const profileUrl = t.website || t.profile_url
+              return (
+                <div
+                  key={t.id}
+                  style={{
+                    borderRadius: 11, padding: "0.75rem 0.875rem",
+                    border: "1px solid var(--border)",
+                    backgroundColor: "color-mix(in srgb, var(--muted) 25%, transparent)",
+                    transition: "border-color 0.15s ease, background-color 0.15s ease",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = "rgba(166,124,82,0.35)"
+                    e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--muted) 45%, transparent)"
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = "var(--border)"
+                    e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--muted) 25%, transparent)"
+                  }}
+                >
+                  {/* Top row: avatar + name + near badge */}
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+                    <div style={{
+                      width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                      background: "linear-gradient(135deg, #7a5535, #a67c52)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      boxShadow: "0 2px 6px rgba(166,124,82,0.2)",
+                    }}>
+                      <span style={{ ...sans, fontSize: "0.75rem", fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>
+                        {initial}
+                      </span>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", flexWrap: "wrap" }}>
+                        <p style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {t.name}
+                        </p>
+                        {isNear && (
+                          <span style={{
+                            ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.06em",
+                            padding: "0.1rem 0.35rem", borderRadius: 100, flexShrink: 0,
+                            backgroundColor: "color-mix(in srgb, var(--sage) 15%, transparent)",
+                            color: "var(--sage)", textTransform: "uppercase",
+                          }}>
+                            Near you
+                          </span>
+                        )}
+                      </div>
+                      {t.credentials && (
+                        <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: "0.05rem" }}>
+                          {t.credentials}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bottom row: location + profile link */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid color-mix(in srgb, var(--border) 60%, transparent)" }}>
+                    {(t.city || t.region) ? (
+                      <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", display: "flex", alignItems: "center", gap: "0.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <MapPin size={9} style={{ color: "var(--primary)", flexShrink: 0 }} />
+                        {[t.city, t.region].filter(Boolean).join(", ")}
+                      </p>
+                    ) : <span />}
+                    {profileUrl && (
+                      <a
+                        href={profileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          ...sans, flexShrink: 0,
+                          display: "inline-flex", alignItems: "center", gap: "0.2rem",
+                          fontSize: "0.6875rem", fontWeight: 600, color: "var(--primary)",
+                          textDecoration: "none",
+                        }}
+                      >
+                        Profile <ArrowRight size={10} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

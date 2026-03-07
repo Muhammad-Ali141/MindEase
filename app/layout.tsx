@@ -1,6 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Inter, Cormorant_Garamond, DM_Sans } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
 import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from "@/context/AuthContext"
@@ -10,6 +10,19 @@ import "./globals.css"
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
+  display: "swap",
+})
+
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  variable: "--font-cormorant",
+  weight: ["300", "400", "500", "600"],
+  display: "swap",
+})
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-dm-sans",
   display: "swap",
 })
 
@@ -26,7 +39,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
-        <body className={`font-sans ${inter.variable}`}>
+        <body className={`font-sans ${inter.variable} ${cormorant.variable} ${dmSans.variable}`}>
           <ThemeProvider
             attribute="class"
             defaultTheme="light"
