@@ -58,13 +58,13 @@ def _get_tts_service():
     return _tts_service_cache
 
 
-# Qwen3-TTS adapter cache (for pipeline experiment when tts_backend=qwen3)
+# Qwen3-TTS adapter cache (default TTS backend)
 _qwen3_tts_cache = None
 _qwen3_tts_lock = None
 
 
 def _get_qwen3_tts_service():
-    """Get or create Qwen3-TTS adapter (cached). Used when tts_backend=qwen3."""
+    """Get or create Qwen3-TTS adapter (cached). Default TTS backend for the API."""
     global _qwen3_tts_cache, _qwen3_tts_lock
     if _qwen3_tts_cache is None:
         if _qwen3_tts_lock is None:
@@ -80,6 +80,23 @@ def _get_qwen3_tts_service():
     return _qwen3_tts_cache
 
 
+def _resolve_tts_backend(data, language=None):
+    """
+    Prefer Qwen3. Coqui XTTS only when explicitly requested:
+    JSON body `tts_backend: \"xtts\"` or env `TTS_BACKEND=xtts`.
+    Urdu always uses Qwen3.
+    """
+    if language and str(language).lower() in ("ur", "urdu"):
+        return "qwen3"
+    req = (data.get("tts_backend") or "").strip().lower()
+    if req in ("xtts", "qwen3"):
+        return req
+    env = (os.environ.get("TTS_BACKEND") or "").strip().lower()
+    if env in ("xtts", "qwen3"):
+        return env
+    return "qwen3"
+
+
 def _sanitize_test_context_key(key):
     """Safe filename fragment from test context key (e.g. result_id)."""
     if key is None:
@@ -88,17 +105,50 @@ def _sanitize_test_context_key(key):
     return re.sub(r"[^a-zA-Z0-9_-]", "_", str(key)).strip("_") or None
 
 
-def _get_welcome_audio_path(user_id, include_context=False, test_context_key=None):
+def _urdu_voice_welcome_arabic_script(user_first_name=None):
+    """
+    Voice intro in Urdu (Arabic script), readable in RTL UIs.
+    Latin names use LRI/PDI isolates; product name is Urdu 'مائنڈ ایز' (MindEase) to avoid bidi jumps.
+    """
+    lri, pdi = "\u2066", "\u2069"  # LTR isolate / pop (Unicode TR #9)
+    brand = "مائنڈ ایز"
+    closing = (
+        "\n\nآج آپ کیسا محسوس کر رہے ہیں؟ آپ کے ذہن میں کیا ہے؟"
+    )
+    if user_first_name and str(user_first_name).strip():
+        name = str(user_first_name).strip()
+        if any(c.isascii() and c.isalpha() for c in name):
+            name_disp = f"{lri}{name}{pdi}"
+        else:
+            name_disp = name
+        return (
+            f"{name_disp}، {brand} میں خوش آمدید۔ "
+            f"میں آپ کی ذہنی اور جذباتی بہبود کے لیے یہاں ہوں۔{closing}"
+        )
+    return f"{brand} میں خوش آمدید۔ میں آپ کی ذہنی اور جذباتی بہبود کے لیے یہاں ہوں۔{closing}"
+
+
+def _welcome_audio_lang_suffix(lang_pref, voice_welcome_urdu_script=False):
+    """Urdu cached files are separate so English welcome audio is not reused for Urdu users."""
+    if lang_pref and str(lang_pref).lower() in ("ur", "urdu"):
+        return "_ur_ar" if voice_welcome_urdu_script else "_ur"
+    return ""
+
+
+def _get_welcome_audio_path(
+    user_id, include_context=False, test_context_key=None, lang_pref=None, voice_welcome_urdu_script=False
+):
     """Path to cached welcome audio. With context: keyed by test_context_key so each test result has its own cache."""
     base = getattr(settings, "MEDIA_ROOT", None) or os.path.join(settings.BASE_DIR, "media")
     welcome_dir = os.path.join(base, "welcome_audio")
     os.makedirs(welcome_dir, exist_ok=True)
+    lang_suffix = _welcome_audio_lang_suffix(lang_pref, voice_welcome_urdu_script=voice_welcome_urdu_script)
     if include_context and test_context_key:
         safe_key = _sanitize_test_context_key(test_context_key)
-        suffix = f"_with_context_{safe_key}.wav" if safe_key else "_with_context.wav"
+        mid = f"_with_context_{safe_key}" if safe_key else "_with_context"
     else:
-        suffix = "_with_context.wav" if include_context else ".wav"
-    return os.path.join(welcome_dir, f"{user_id}{suffix}")
+        mid = "_with_context" if include_context else ""
+    return os.path.join(welcome_dir, f"{user_id}{lang_suffix}{mid}.wav")
 
 
 def _resolve_session_for_user(user_id, identifier):
@@ -505,6 +555,7 @@ def chat_message(request):
             conversation_history = data.get("conversation_history", [])
             test_context = data.get("test_context")  # Optional test context
             emotions_from_client = data.get("emotions")  # Optional: from voice SER
+            lang_pref = data.get("lang_pref")  # Optional: "english"/"en" or "urdu"/"ur" for Urdu text chat
 
             if not message:
                 return JsonResponse({"error": "Message is required."}, status=400)
@@ -521,8 +572,12 @@ def chat_message(request):
             
             from chatbot.chat import MindEaseChat
             
-            # Initialize chatbot with user's first name and test context
-            chatbot = MindEaseChat(user_first_name=user_first_name, test_context=test_context)
+            # Initialize chatbot with user's first name, test context, and language preference
+            chatbot = MindEaseChat(
+                user_first_name=user_first_name,
+                test_context=test_context,
+                lang_pref=lang_pref,
+            )
             
             # Populate conversation history from frontend
             for msg in conversation_history:
@@ -594,6 +649,7 @@ def chat_message_stream(request):
         conversation_history = data.get("conversation_history", [])
         test_context = data.get("test_context")
         emotions_from_client = data.get("emotions")  # Optional: from audio SER (voice chat)
+        lang_pref = data.get("lang_pref")  # Optional: for Urdu text chat
         if not message:
             return JsonResponse({"error": "Message is required."}, status=400)
         if not user_id:
@@ -603,7 +659,11 @@ def chat_message_stream(request):
         if chatbot_dir not in sys.path:
             sys.path.insert(0, chatbot_dir)
         from chatbot.chat import MindEaseChat
-        chatbot = MindEaseChat(user_first_name=user_first_name, test_context=test_context)
+        chatbot = MindEaseChat(
+            user_first_name=user_first_name,
+            test_context=test_context,
+            lang_pref=lang_pref,
+        )
         for msg in conversation_history:
             role, content = msg.get("role"), msg.get("content")
             if role and content:
@@ -656,6 +716,7 @@ def voice_process(request):
             return JsonResponse({"error": "Audio file is required."}, status=400)
         audio_file = request.FILES["audio"]
         language = request.POST.get("language", "en")
+        is_urdu = language and str(language).lower() in ("urdu", "ur")
         import tempfile
         import sys
         import concurrent.futures
@@ -672,7 +733,22 @@ def voice_process(request):
             audio_path = tmp.name
         try:
             def run_stt():
+                if is_urdu:
+                    from urdu_stt.stt_urdu_service import UrduSpeechToTextService, MODEL_ID
+
+                    svc = UrduSpeechToTextService(
+                        model_id=MODEL_ID,
+                        device=None,
+                        compute_type=None,
+                        beam_size=2,
+                        best_of=4,
+                        temperature=0.0,
+                        vad_filter=True,
+                    )
+                    return svc.transcribe_file(audio_path, language="ur")
+
                 from stt.stt_service import SpeechToTextService
+
                 # Distil-large-v3: ~6x faster than large-v3, within ~1% WER (best speed+accuracy)
                 svc = SpeechToTextService(
                     model_id="Systran/faster-distil-whisper-large-v3",
@@ -730,9 +806,17 @@ def voice_welcome_audio(request):
             return JsonResponse({"error": "user_id required."}, status=400)
         include_context = request.GET.get("include_context", "false").lower() in ("true", "1", "yes")
         test_context_key = request.GET.get("test_context_key") or None
+        lang_pref = request.GET.get("lang_pref") or request.GET.get("language") or None
+        voice_welcome_urdu_script = request.GET.get("voice_welcome_urdu_script", "").lower() in ("1", "true", "yes")
         if include_context and not test_context_key:
             return JsonResponse({"error": "test_context_key required when include_context is true."}, status=400)
-        path = _get_welcome_audio_path(user_id, include_context=include_context, test_context_key=test_context_key)
+        path = _get_welcome_audio_path(
+            user_id,
+            include_context=include_context,
+            test_context_key=test_context_key,
+            lang_pref=lang_pref,
+            voice_welcome_urdu_script=voice_welcome_urdu_script,
+        )
         if not os.path.isfile(path):
             raise Http404("Welcome audio not found")
         with open(path, "rb") as f:
@@ -758,17 +842,24 @@ def voice_welcome_audio(request):
             lang_pref = data.get("lang_pref")
             include_test_context = data.get("include_test_context", False)
             test_context_key = data.get("test_context_key") or None
+            voice_welcome_urdu_script = bool(data.get("voice_welcome_urdu_script"))
             if not user_id or not welcome_message:
                 return JsonResponse({"error": "user_id and welcome_message required."}, status=400)
             if include_test_context and not test_context_key:
                 return JsonResponse({"error": "test_context_key required when include_test_context is true."}, status=400)
             language = "ur" if (lang_pref and str(lang_pref).lower() in ("urdu", "ur")) else "en"
-            path = _get_welcome_audio_path(user_id, include_context=bool(include_test_context), test_context_key=test_context_key)
-            tts_backend_env = (os.environ.get("TTS_BACKEND") or "").strip().lower()
-            if tts_backend_env == "qwen3":
-                tts_service = _get_qwen3_tts_service()
-            else:
+            path = _get_welcome_audio_path(
+                user_id,
+                include_context=bool(include_test_context),
+                test_context_key=test_context_key,
+                lang_pref=lang_pref,
+                voice_welcome_urdu_script=voice_welcome_urdu_script,
+            )
+            # Welcome audio uses Qwen3 by default (same as /api/tts/synthesize/). XTTS opt-in: TTS_BACKEND=xtts.
+            if _resolve_tts_backend({}, language=language) == "xtts":
                 tts_service = _get_tts_service()
+            else:
+                tts_service = _get_qwen3_tts_service()
             tts_service.synthesize_to_file(text=welcome_message, output_path=path, language=language)
             # Store welcome message so GET can return matching text
             sidecar = path.replace(".wav", ".json")
@@ -795,24 +886,32 @@ def chat_welcome(request):
             user_first_name = data.get("user_first_name")
             user_id = data.get("user_id")
             test_context = data.get("test_context")
+            lang_pref = data.get("lang_pref")
+            is_urdu = lang_pref and str(lang_pref).lower() in ("urdu", "ur")
+            voice_welcome_urdu_script = bool(data.get("voice_welcome_urdu_script"))
 
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
             # Generate welcome message with test context if provided
             if test_context:
-                # Use LLM to generate personalized welcome message with test context
                 import sys
                 import os
                 chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'chatbot')
                 if chatbot_dir not in sys.path:
                     sys.path.insert(0, chatbot_dir)
-                
-                from chatbot.llm_client import LLMClient
-                
-                llm_client = LLMClient()
-                
-                system_prompt = f"""You are a compassionate mental health therapist. The user has shared their assessment results with you. 
+
+                if is_urdu:
+                    if voice_welcome_urdu_script:
+                        from chatbot.urdu_qwen_chat import welcome_with_assessment_arabic_urdu
+                        welcome_msg = welcome_with_assessment_arabic_urdu(test_context, user_first_name).strip()
+                    else:
+                        from chatbot.urdu_qwen_chat import welcome_with_assessment_roman_urdu
+                        welcome_msg = welcome_with_assessment_roman_urdu(test_context, user_first_name).strip()
+                else:
+                    from chatbot.llm_client import LLMClient
+                    llm_client = LLMClient()
+                    system_prompt = f"""You are a compassionate mental health therapist. The user has shared their assessment results with you. 
 
 Test Context:
 {test_context}
@@ -826,13 +925,12 @@ Write a direct, warm welcome message (NOT a description of what to write, but th
 IMPORTANT: Write the actual welcome message directly. Do NOT include phrases like "Here is", "Here's a", "I'll write", or any meta-commentary. Just write the message as if you're speaking directly to the user.
 
 Keep it concise (2-3 sentences) and natural. Start directly with the greeting."""
-                
-                welcome_msg = llm_client.generate_response(
-                    user_message="Hello, I'm ready to chat.",
-                    system_prompt_override=system_prompt,
-                    user_first_name=user_first_name
-                )
-                
+                    welcome_msg = llm_client.generate_response(
+                        user_message="Hello, I'm ready to chat.",
+                        system_prompt_override=system_prompt,
+                        user_first_name=user_first_name
+                    ).strip()
+
                 # Clean up any meta-commentary that might have slipped through
                 welcome_msg = welcome_msg.strip()
                 # Remove common meta-phrases
@@ -848,21 +946,29 @@ Keep it concise (2-3 sentences) and natural. Start directly with the greeting.""
                     "Here is the welcome message:",
                     "Here's the welcome message:",
                 ]
-                for phrase in meta_phrases:
-                    if welcome_msg.lower().startswith(phrase.lower()):
-                        welcome_msg = welcome_msg[len(phrase):].strip()
-                        # Remove quotes if present
-                        if welcome_msg.startswith('"') and welcome_msg.endswith('"'):
-                            welcome_msg = welcome_msg[1:-1].strip()
-                        if welcome_msg.startswith("'") and welcome_msg.endswith("'"):
-                            welcome_msg = welcome_msg[1:-1].strip()
-                        break
+                if not is_urdu:
+                    for phrase in meta_phrases:
+                        if welcome_msg.lower().startswith(phrase.lower()):
+                            welcome_msg = welcome_msg[len(phrase):].strip()
+                            if welcome_msg.startswith('"') and welcome_msg.endswith('"'):
+                                welcome_msg = welcome_msg[1:-1].strip()
+                            if welcome_msg.startswith("'") and welcome_msg.endswith("'"):
+                                welcome_msg = welcome_msg[1:-1].strip()
+                            break
             else:
-                # Standard welcome message
-                if user_first_name:
-                    welcome_msg = f"Welcome to MindEase, {user_first_name}. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+                # Standard welcome message - Urdu or English based on lang_pref
+                if is_urdu:
+                    if voice_welcome_urdu_script:
+                        welcome_msg = _urdu_voice_welcome_arabic_script(user_first_name)
+                    elif user_first_name:
+                        welcome_msg = f"MindEase mein khush aamdeed, {user_first_name}. Main aap ki zehni aur jazbati behbood ke liye yahan hoon.\n\nAaj aap kaisa mehsoos kar rahe hain? Aap ke zehan mein kya hai?"
+                    else:
+                        welcome_msg = "MindEase mein khush aamdeed. Main aap ki zehni aur jazbati behbood ke liye yahan hoon.\n\nAaj aap kaisa mehsoos kar rahe hain? Aap ke zehan mein kya hai?"
                 else:
-                    welcome_msg = "Welcome to MindEase. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+                    if user_first_name:
+                        welcome_msg = f"Welcome to MindEase, {user_first_name}. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+                    else:
+                        welcome_msg = "Welcome to MindEase. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
 
             return JsonResponse({
                 "welcome_message": welcome_msg,
@@ -896,11 +1002,18 @@ def chat_summary(request):
                 msg for msg in conversation_history 
                 if msg.get("role") == "user"
             ]
-            
+            lang_pref = data.get("lang_pref")
+            is_urdu = lang_pref and str(lang_pref).lower() in ("urdu", "ur")
+
             if len(user_messages) == 0:
                 return JsonResponse({
-                    "summary": "No conversation to summarize. The session ended without any messages from the user.",
-                    "user_id": user_id
+                    "summary": (
+                        "Session khatam ho gayi bina aap ke koi paigham ke."
+                        if is_urdu
+                        else "No conversation to summarize. The session ended without any messages from the user."
+                    ),
+                    "user_id": user_id,
+                    "no_user_messages": True,
                 }, status=200)
 
             if not user_id:
@@ -914,19 +1027,18 @@ def chat_summary(request):
                 if role and content:
                     memory.add_message(role, content)
             
-            # Initialize LLM client for summary
             llm_client = LLMClient()
-            
-            # Generate summary
             summary = memory.get_conversation_summary(
                 llm_client=llm_client,
                 user_first_name=user_first_name,
-                user_gender=user_gender
+                user_gender=user_gender,
+                lang_pref=lang_pref,
             )
             
             return JsonResponse({
                 "summary": summary,
-                "user_id": user_id
+                "user_id": user_id,
+                "no_user_messages": False,
             }, status=200)
 
         except Exception as e:
@@ -1649,6 +1761,7 @@ def stt_transcribe(request):
             
             audio_file = request.FILES['audio']
             language = request.POST.get('language', 'en')
+            is_urdu = language and str(language).lower() in ("urdu", "ur")
             
             max_size = 10 * 1024 * 1024  # 10MB
             if audio_file.size > max_size:
@@ -1665,11 +1778,10 @@ def stt_transcribe(request):
             import os
             import tempfile
             
+            # English STT is kept exactly as-is; Urdu uses a separate finetuned service.
             stt_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'stt')
-            if stt_dir not in sys.path:
+            if stt_dir not in sys.path and not is_urdu:
                 sys.path.insert(0, stt_dir)
-            
-            from stt.stt_service import SpeechToTextService
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.name)[1]) as temp_file:
                 for chunk in audio_file.chunks():
@@ -1677,20 +1789,38 @@ def stt_transcribe(request):
                 temp_file_path = temp_file.name
             
             try:
-                # Distil-large-v3: ~6x faster than large-v3, within ~1% WER
-                stt_service = SpeechToTextService(
-                    model_id="Systran/faster-distil-whisper-large-v3",
-                    device=None,
-                    compute_type=None,
-                    beam_size=2,
-                    temperature=0.0,
-                    vad_filter=True,
-                )
-                
-                transcript = stt_service.transcribe_file(
-                    temp_file_path,
-                    language=language if language != 'auto' else None,
-                )
+                if is_urdu:
+                    from urdu_stt.stt_urdu_service import UrduSpeechToTextService, MODEL_ID
+
+                    stt_service = UrduSpeechToTextService(
+                        model_id=MODEL_ID,
+                        device=None,
+                        compute_type=None,
+                        beam_size=2,
+                        best_of=4,
+                        temperature=0.0,
+                        vad_filter=True,
+                    )
+                    transcript = stt_service.transcribe_file(
+                        temp_file_path,
+                        language="ur",
+                    )
+                else:
+                    from stt.stt_service import SpeechToTextService
+
+                    # Distil-large-v3: ~6x faster than large-v3, within ~1% WER
+                    stt_service = SpeechToTextService(
+                        model_id="Systran/faster-distil-whisper-large-v3",
+                        device=None,
+                        compute_type=None,
+                        beam_size=2,
+                        temperature=0.0,
+                        vad_filter=True,
+                    )
+                    transcript = stt_service.transcribe_file(
+                        temp_file_path,
+                        language=language if language != 'auto' else None,
+                    )
                 
                 try:
                     os.unlink(temp_file_path)
@@ -1822,9 +1952,7 @@ def tts_synthesize(request):
             data = json.loads(request.body)
             text = data.get("text")
             language = data.get("language", "en")
-            # Env TTS_BACKEND=qwen3 forces Qwen3 only (XTTS disabled); otherwise use request or default xtts
-            tts_backend_env = (os.environ.get("TTS_BACKEND") or "").strip().lower()
-            tts_backend = tts_backend_env if tts_backend_env in ("xtts", "qwen3") else (data.get("tts_backend") or "xtts").strip().lower()
+            tts_backend = _resolve_tts_backend(data, language=language)
             
             if not text:
                 return JsonResponse({"error": "Text is required."}, status=400)
@@ -1838,25 +1966,50 @@ def tts_synthesize(request):
             if language not in supported_languages:
                 language = "en"  # Default to English if invalid
             
-            import tempfile
-            
-            # Use XTTS (default) or Qwen3-TTS; env TTS_BACKEND=qwen3 disables XTTS and uses only Qwen3
             if tts_backend == "qwen3":
                 try:
                     tts_service = _get_qwen3_tts_service()
                 except RuntimeError as e:
                     return JsonResponse({
-                        "error": str(e) + " Then retry, or use default TTS (omit tts_backend)."
+                        "error": str(e) + " Install qwen-tts or set TTS_BACKEND=xtts to use Coqui XTTS."
                     }, status=503)
-            else:
-                tts_service = _get_tts_service()
-            
+                try:
+                    # In-memory WAV — avoids temp file read/write for API latency
+                    if hasattr(tts_service, "synthesize_to_wav_bytes"):
+                        audio_data = tts_service.synthesize_to_wav_bytes(text=text, language=language)
+                    else:
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+                            temp_file_path = temp_file.name
+                        try:
+                            tts_service.synthesize_to_file(
+                                text=text, output_path=temp_file_path, language=language
+                            )
+                            with open(temp_file_path, "rb") as audio_file:
+                                audio_data = audio_file.read()
+                        finally:
+                            try:
+                                os.unlink(temp_file_path)
+                            except Exception:
+                                pass
+                    from django.http import HttpResponse
+                    response = HttpResponse(audio_data, content_type="audio/wav")
+                    response["Content-Disposition"] = 'inline; filename="tts_audio.wav"'
+                    response["Content-Length"] = len(audio_data)
+                    return response
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    return JsonResponse({"error": f"TTS synthesis failed: {str(e)}"}, status=500)
+
+            import tempfile
+            tts_service = _get_tts_service()
+
             try:
                 # Create temporary file for audio output
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
                     temp_file_path = temp_file.name
                 
-                # Synthesize text to speech
                 tts_service.synthesize_to_file(
                     text=text,
                     output_path=temp_file_path,

@@ -32,7 +32,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt', 
     'corsheaders',  
-    'api',  # your backend app
+    'api.apps.ApiConfig',  # your backend app (AppConfig enables Qwen3 TTS warmup on server start)
 ]
 
 # ⚠️ Do NOT define AUTH_USER_MODEL since you’re using the default User table

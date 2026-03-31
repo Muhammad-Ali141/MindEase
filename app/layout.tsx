@@ -1,6 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter, Cormorant_Garamond, DM_Sans } from "next/font/google"
+import { Inter, Cormorant_Garamond, DM_Sans, Noto_Nastaliq_Urdu } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
 import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from "@/context/AuthContext"
@@ -26,6 +26,13 @@ const dmSans = DM_Sans({
   display: "swap",
 })
 
+const notoUrdu = Noto_Nastaliq_Urdu({
+  subsets: ["arabic"],
+  weight: ["400", "700"],
+  variable: "--font-noto-urdu",
+  display: "swap",
+})
+
 export const metadata: Metadata = {
   title: "MindEase",
   description: "Bilingual mental health and wellness platform with AI-powered therapy sessions",
@@ -39,7 +46,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
-        <body className={`font-sans ${inter.variable} ${cormorant.variable} ${dmSans.variable}`}>
+        <body className={`font-sans ${inter.variable} ${cormorant.variable} ${dmSans.variable} ${notoUrdu.variable}`}>
           <ThemeProvider
             attribute="class"
             defaultTheme="light"

@@ -7,18 +7,10 @@ import { type ChatMessage as ChatMessageType } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { Brain } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
-
-const SUGGESTIONS = [
-  "I've been feeling anxious lately",
-  "I need to talk something through",
-  "Help me process my thoughts",
-  "I had a really difficult day",
-]
-
-// No column width cap — messages use full available width with side padding
 
 interface ChatInterfaceProps {
   messages: ChatMessageType[]
@@ -31,9 +23,11 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
   const messagesEndRef   = useRef<HTMLDivElement>(null)
   const prevLoadingRef   = useRef(loading)
   const { user } = useAuth()
+  const t = useProfileDict()
   const userInitial      = user?.first_name?.[0]?.toUpperCase() ?? "U"
   const hasUserMessages  = messages.some(m => m.role === "user")
   const welcomeMessage   = !hasUserMessages ? messages.find(m => m.role === "assistant") : null
+  const suggestions = [t.chatSug1, t.chatSug2, t.chatSug3, t.chatSug4]
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -57,16 +51,17 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
             style={{ textAlign: "center", marginBottom: "1.75rem" }}
           >
             <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.5rem" }}>
-              Your safe space
+              {t.chatSafeSpace}
             </p>
             <h1 style={{ ...serif, fontSize: "clamp(1.875rem, 3.5vw, 2.625rem)", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1, marginBottom: "0.6rem" }}>
-              What's on your mind,{" "}
+              {t.chatWhatsOnMind}{" "}
               <span style={{ fontStyle: "italic", color: "var(--primary)" }}>
-                {user?.first_name || "today"}
-              </span>?
+                {user?.first_name || t.chatToday}
+              </span>
+              ?
             </h1>
             <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7 }}>
-              Share freely — I'm here to listen without judgement.
+              {t.chatShareFreely}
             </p>
           </motion.div>
 
@@ -104,7 +99,7 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
             transition={{ duration: 0.38, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
             style={{ marginBottom: "1rem", width: "100%" }}
           >
-            <ChatInput onSendMessage={onSendMessage} disabled={loading} autoFocus placeholder="Tell me how you're feeling…" />
+            <ChatInput onSendMessage={onSendMessage} disabled={loading} autoFocus placeholder={t.chatPlaceholder} />
           </motion.div>
 
           {/* Suggestion chips */}
@@ -115,7 +110,7 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
               transition={{ duration: 0.3, delay: 0.18 }}
               style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center" }}
             >
-              {SUGGESTIONS.map((s, i) => (
+              {suggestions.map((s, i) => (
                 <motion.button
                   key={s}
                   initial={{ opacity: 0, y: 5 }}
@@ -151,7 +146,6 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
 
       {/* Scroll area — full width with side padding */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-        {/* Flex spacer — anchors content toward bottom when messages are few */}
         <div style={{ flex: 1, minHeight: "1.5rem" }} />
 
         <div
@@ -180,7 +174,6 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
             })}
           </AnimatePresence>
 
-          {/* Typing indicator */}
           <AnimatePresence>
             {loading && (
               <motion.div
@@ -206,12 +199,11 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
         </div>
       </div>
 
-      {/* Input — same column width as messages */}
       <div style={{ flexShrink: 0, borderTop: "1px solid color-mix(in srgb, var(--border) 45%, transparent)", backgroundColor: "color-mix(in srgb, var(--background) 65%, transparent)", backdropFilter: "blur(12px)", padding: "0.75rem 1.5rem 0.875rem" }}>
         <div>
           <ChatInput onSendMessage={onSendMessage} disabled={loading} />
           <p style={{ ...sans, fontSize: "0.5625rem", textAlign: "center", color: "var(--muted-foreground)", marginTop: "0.4rem", opacity: 0.45, letterSpacing: "0.02em" }}>
-            Enter to send · Shift+Enter for new line
+            {t.chatEnterHint}
           </p>
         </div>
       </div>

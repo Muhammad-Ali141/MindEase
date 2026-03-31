@@ -56,6 +56,13 @@ const majorCitySuggestions = [
   { value: "Faisalabad",labelUr: "فیصل آباد" },
 ]
 
+/** Normalize lang_pref from backend (English/Urdu) to frontend (en/ur) */
+function normalizeLangPref(v: string | null | undefined): "en" | "ur" {
+  const s = (v || "").toLowerCase()
+  if (s === "ur" || s === "urdu") return "ur"
+  return "en"
+}
+
 const ease = { type: "tween", duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }
 type GoogleUser = { email: string; firstName: string; lastName: string }
 
@@ -339,7 +346,7 @@ export default function AuthPage() {
     apiLoginOauth(email)
       .then((res) => {
         setIsOauthSyncing(false)
-        setAuth({ token: res.user_id.toString(), user: { id: res.user_id.toString(), email: res.email, first_name: res.first_name, last_name: res.last_name || "", gender: res.gender, city: res.city, nearest_major_city: res.nearest_major_city, dashboard_tour_seen: res.dashboard_tour_seen ?? false } })
+        setAuth({ token: res.user_id.toString(), user: { id: res.user_id.toString(), email: res.email, first_name: res.first_name, last_name: res.last_name || "", gender: res.gender, city: res.city, nearest_major_city: res.nearest_major_city, lang_pref: normalizeLangPref(res.lang_pref), dashboard_tour_seen: res.dashboard_tour_seen ?? false } })
         router.push("/dashboard")
       })
       .catch((err) => {
@@ -355,7 +362,7 @@ export default function AuthPage() {
       clerkSyncedRef.current = true
       try {
         const res = await apiLoginOauth(email)
-        setAuth({ token: res.user_id.toString(), user: { id: res.user_id.toString(), email: res.email, first_name: res.first_name, last_name: res.last_name || "", gender: res.gender, city: res.city, nearest_major_city: res.nearest_major_city, dashboard_tour_seen: res.dashboard_tour_seen ?? false } })
+        setAuth({ token: res.user_id.toString(), user: { id: res.user_id.toString(), email: res.email, first_name: res.first_name, last_name: res.last_name || "", gender: res.gender, city: res.city, nearest_major_city: res.nearest_major_city, lang_pref: normalizeLangPref(res.lang_pref), dashboard_tour_seen: res.dashboard_tour_seen ?? false } })
         router.push("/dashboard")
       } catch (err: any) {
         if (err?.message === "USER_NOT_FOUND") { setGoogleUser({ email, firstName: clerkUser.firstName || "", lastName: clerkUser.lastName || "" }); setGoogleFlow("profile") }
@@ -440,7 +447,7 @@ export default function AuthPage() {
                     )}
                     {googleFlow === "profile" && googleUser && (
                       <GoogleCompleteProfileForm key="gprofile" googleUser={googleUser} t={t} isUrdu={isUrdu}
-                        onSuccess={(res) => { setAuth({ token: res.user_id.toString(), user: { id: res.user_id.toString(), email: res.email, first_name: res.first_name, last_name: res.last_name || "", gender: res.gender, city: res.city, nearest_major_city: res.nearest_major_city, dashboard_tour_seen: res.dashboard_tour_seen ?? false } }); router.push("/dashboard") }} />
+                        onSuccess={(res) => { setAuth({ token: res.user_id.toString(), user: { id: res.user_id.toString(), email: res.email, first_name: res.first_name, last_name: res.last_name || "", gender: res.gender, city: res.city, nearest_major_city: res.nearest_major_city, lang_pref: normalizeLangPref(res.lang_pref), dashboard_tour_seen: res.dashboard_tour_seen ?? false } }); router.push("/dashboard") }} />
                     )}
                   </AnimatePresence>
                 </div>
@@ -508,7 +515,7 @@ function LoginForm({ t, isUrdu, onSuccess, onSwitch, onSignInWithGoogle }: {
     setLoading(true); setLoginError(null)
     try {
       const res = await apiLogin(values)
-      setAuth({ token: res.user_id.toString(), user: { id: res.user_id.toString(), email: res.email, first_name: res.first_name, last_name: res.last_name || "", gender: res.gender || "Other", city: res.city || "", nearest_major_city: res.nearest_major_city || "", dashboard_tour_seen: Boolean(res.dashboard_tour_seen) } })
+      setAuth({ token: res.user_id.toString(), user: { id: res.user_id.toString(), email: res.email, first_name: res.first_name, last_name: res.last_name || "", gender: res.gender || "Other", city: res.city || "", nearest_major_city: res.nearest_major_city || "", lang_pref: normalizeLangPref(res.lang_pref), dashboard_tour_seen: Boolean(res.dashboard_tour_seen) } })
       toast({ title: "Login successful!" }); onSuccess()
     } catch {
       setLoginError(isUrdu ? "ایمیل یا پاس ورڈ غلط ہیں" : "Invalid email or password")

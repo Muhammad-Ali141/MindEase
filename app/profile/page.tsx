@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { useToast } from "@/hooks/use-toast"
 import { AuthGuard } from "@/components/AuthGuard"
 import { Sidebar } from "@/components/sidebar"
@@ -24,14 +24,64 @@ const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 const majorCitySuggestions = ["Islamabad", "Lahore", "Karachi", "Multan", "Peshawar", "Faisalabad"]
 
+/** Normalize lang_pref from API (en/ur/english/urdu/English/Urdu) to form value en|ur */
+function toFormLangPref(v: string | null | undefined): "en" | "ur" {
+  const s = (v || "").toLowerCase()
+  if (s === "ur" || s === "urdu") return "ur"
+  return "en"
+}
+
+/** Normalize API date to YYYY-MM-DD for input[type=date]. Handles ISO, YYYY-MM-DD, MM/DD/YYYY, etc. */
+function toFormDob(v: string | null | undefined): string {
+  const s = (v || "").trim()
+  if (!s) return ""
+  const iso = s.split("T")[0]
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso
+  const mmdd = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec(s)
+  if (mmdd) {
+    const [, month, day, year] = mmdd
+    return `${year}-${month!.padStart(2, "0")}-${day!.padStart(2, "0")}`
+  }
+  const d = new Date(s)
+  if (!Number.isNaN(d.getTime())) {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, "0")
+    const day = String(d.getDate()).padStart(2, "0")
+    return `${y}-${m}-${day}`
+  }
+  return ""
+}
+
+/** Normalize API gender to schema enum (Male | Female | Other). */
+function toFormGender(v: string | null | undefined): "Male" | "Female" | "Other" {
+  const s = (v || "").trim().toLowerCase()
+  if (s === "male") return "Male"
+  if (s === "female") return "Female"
+  return "Other"
+}
+
 const profileSchema = z.object({
-  first_name: z.string().min(1, "First name is required").max(100),
-  last_name: z.string().max(100).optional().or(z.literal("")),
-  dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
-  gender: z.enum(["Male", "Female", "Other"], { required_error: "Select a gender" }),
-  lang_pref: z.enum(["en", "ur"], { required_error: "Select a language" }),
-  city: z.string().min(1, "City is required").max(100),
-  nearest_major_city: z.string().min(1, "Nearest major city is required").max(100),
+  first_name: z.string().min(1, "First name is required").max(100).transform(s => (s || "").trim()),
+  last_name: z.string().max(100).optional().or(z.literal("")).transform(s => (s ?? "").trim()),
+  dob: z.string()
+    .min(1, "Date of birth is required")
+    .refine(val => /^\d{4}-\d{2}-\d{2}$/.test(val), "Please enter a valid date (YYYY-MM-DD)"),
+  gender: z.preprocess(
+    (val) => {
+      if (val === "Male" || val === "Female" || val === "Other") return val
+      const s = String(val ?? "").trim().toLowerCase()
+      if (s === "male") return "Male"
+      if (s === "female") return "Female"
+      return "Other"
+    },
+    z.enum(["Male", "Female", "Other"], { required_error: "Select a gender" })
+  ),
+  lang_pref: z.preprocess(
+    (val) => (val === "ur" || val === "urdu" || (typeof val === "string" && val.toLowerCase() === "urdu") ? "ur" : "en"),
+    z.enum(["en", "ur"], { required_error: "Select a language" })
+  ),
+  city: z.string().min(1, "City is required").max(100).transform(s => (s || "").trim()),
+  nearest_major_city: z.string().min(1, "Nearest major city is required").max(100).transform(s => (s || "").trim()),
   password: z.string().min(8, "Min 8 characters").optional().or(z.literal("")),
   confirm_password: z.string().optional(),
 }).refine(d => {
@@ -270,10 +320,12 @@ export default function ProfilePage() {
     handleSubmit,
     reset,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema),
-    mode: "onTouched",
+    mode: "onSubmit",
+    defaultValues: { lang_pref: "en" },
   })
 
   const password = watch("password")
@@ -282,18 +334,17 @@ export default function ProfilePage() {
     if (user?.id) loadProfile()
   }, [user?.id])
 
-  // Reset form AFTER profileData is set (and loading guard drops) so inputs are mounted
+  // Reset form AFTER profileData is set so inputs get normalized, validation-friendly values
   useEffect(() => {
     if (!profileData) return
-    const dobFormatted = profileData.dob ? profileData.dob.split("T")[0] : ""
     reset({
-      first_name: profileData.first_name || "",
-      last_name: profileData.last_name || "",
-      dob: dobFormatted,
-      gender: (profileData.gender as "Male" | "Female" | "Other") || "Other",
-      lang_pref: (profileData.lang_pref as "en" | "ur") || "en",
-      city: profileData.city || "",
-      nearest_major_city: profileData.nearest_major_city || "",
+      first_name: (profileData.first_name || "").trim(),
+      last_name: (profileData.last_name || "").trim(),
+      dob: toFormDob(profileData.dob),
+      gender: toFormGender(profileData.gender),
+      lang_pref: toFormLangPref(profileData.lang_pref),
+      city: (profileData.city || "").trim(),
+      nearest_major_city: (profileData.nearest_major_city || "").trim(),
       password: "",
       confirm_password: "",
     })
@@ -338,6 +389,8 @@ export default function ProfilePage() {
             gender: updated.gender || "Other",
             city: updated.city || "",
             nearest_major_city: updated.nearest_major_city || "",
+            lang_pref: toFormLangPref(updated.lang_pref),
+            dashboard_tour_seen: user.dashboard_tour_seen ?? false,
           },
         })
       }
@@ -497,38 +550,77 @@ export default function ProfilePage() {
                   <div ref={sectionRefs.personal}>
                     <SectionCard id="personal" icon={UserCircle2} eyebrow="Personal" title="Personal Information">
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                        <StyledInput
-                          label="First Name"
-                          icon={User}
-                          error={errors.first_name?.message}
-                          placeholder="First name"
-                          {...register("first_name")}
+                        <Controller
+                          name="first_name"
+                          control={control}
+                          defaultValue=""
+                          render={({ field }) => (
+                            <StyledInput
+                              label="First Name"
+                              icon={User}
+                              error={errors.first_name?.message}
+                              placeholder="First name"
+                              value={field.value ?? ""}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              onBlur={field.onBlur}
+                              ref={field.ref}
+                            />
+                          )}
                         />
-                        <StyledInput
-                          label="Last Name"
-                          icon={User}
-                          error={errors.last_name?.message}
-                          placeholder="Last name"
-                          {...register("last_name")}
+                        <Controller
+                          name="last_name"
+                          control={control}
+                          defaultValue=""
+                          render={({ field }) => (
+                            <StyledInput
+                              label="Last Name"
+                              icon={User}
+                              error={errors.last_name?.message}
+                              placeholder="Last name"
+                              value={field.value ?? ""}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              onBlur={field.onBlur}
+                              ref={field.ref}
+                            />
+                          )}
                         />
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
-                        <StyledInput
-                          label="Date of Birth"
-                          icon={Calendar}
-                          type="date"
-                          error={errors.dob?.message}
-                          {...register("dob")}
+                        <Controller
+                          name="dob"
+                          control={control}
+                          defaultValue=""
+                          render={({ field }) => (
+                            <StyledInput
+                              label="Date of Birth"
+                              icon={Calendar}
+                              type="date"
+                              error={errors.dob?.message}
+                              value={field.value ?? ""}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              onBlur={field.onBlur}
+                              ref={field.ref}
+                            />
+                          )}
                         />
-                        <StyledSelect
-                          label="Gender"
-                          error={errors.gender?.message}
-                          options={[
-                            { value: "Male",   label: "Male" },
-                            { value: "Female", label: "Female" },
-                            { value: "Other",  label: "Other" },
-                          ]}
-                          {...register("gender")}
+                        <Controller
+                          name="gender"
+                          control={control}
+                          render={({ field }) => (
+                            <StyledSelect
+                              label="Gender"
+                              error={errors.gender?.message}
+                              options={[
+                                { value: "Male",   label: "Male" },
+                                { value: "Female", label: "Female" },
+                                { value: "Other",  label: "Other" },
+                              ]}
+                              value={field.value ?? "Other"}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              onBlur={field.onBlur}
+                              ref={field.ref}
+                            />
+                          )}
                         />
                       </div>
                     </SectionCard>
@@ -566,44 +658,64 @@ export default function ProfilePage() {
                         </p>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
-                        <StyledInput
-                          label="City"
-                          icon={MapPin}
-                          error={errors.city?.message}
-                          placeholder="Your city"
-                          {...register("city")}
-                        />
-                        <div>
-                          <FieldLabel>Nearest Major City</FieldLabel>
-                          <div style={{ position: "relative" }}>
-                            <div style={{
-                              position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)",
-                              color: "var(--muted-foreground)", pointerEvents: "none",
-                            }}>
-                              <MapPin size={13} />
-                            </div>
-                            <input
-                              list="major-city-list"
-                              style={{
-                                ...sans, display: "block", width: "100%", height: 44,
-                                paddingLeft: "2.25rem", paddingRight: "0.875rem",
-                                borderRadius: 10,
-                                border: `1px solid ${errors.nearest_major_city ? "#c0392b" : "var(--border)"}`,
-                                backgroundColor: "color-mix(in srgb, var(--background) 55%, transparent)",
-                                color: "var(--foreground)", fontSize: "0.875rem",
-                                outline: "none", boxSizing: "border-box",
-                              } as React.CSSProperties}
-                              placeholder="Nearest major city"
-                              {...register("nearest_major_city")}
+                        <Controller
+                          name="city"
+                          control={control}
+                          defaultValue=""
+                          render={({ field }) => (
+                            <StyledInput
+                              label="City"
+                              icon={MapPin}
+                              error={errors.city?.message}
+                              placeholder="Your city"
+                              value={field.value ?? ""}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              onBlur={field.onBlur}
+                              ref={field.ref}
                             />
-                            <datalist id="major-city-list">
-                              {majorCitySuggestions.map(c => <option key={c} value={c} />)}
-                            </datalist>
-                          </div>
-                          {errors.nearest_major_city && (
-                            <p style={{ ...sans, fontSize: "0.6875rem", color: "#c0392b", marginTop: "0.3rem" }}>{errors.nearest_major_city.message}</p>
                           )}
-                        </div>
+                        />
+                        <Controller
+                          name="nearest_major_city"
+                          control={control}
+                          defaultValue=""
+                          render={({ field }) => (
+                            <div>
+                              <FieldLabel>Nearest Major City</FieldLabel>
+                              <div style={{ position: "relative" }}>
+                                <div style={{
+                                  position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)",
+                                  color: "var(--muted-foreground)", pointerEvents: "none",
+                                }}>
+                                  <MapPin size={13} />
+                                </div>
+                                <input
+                                  list="major-city-list"
+                                  style={{
+                                    ...sans, display: "block", width: "100%", height: 44,
+                                    paddingLeft: "2.25rem", paddingRight: "0.875rem",
+                                    borderRadius: 10,
+                                    border: `1px solid ${errors.nearest_major_city ? "#c0392b" : "var(--border)"}`,
+                                    backgroundColor: "color-mix(in srgb, var(--background) 55%, transparent)",
+                                    color: "var(--foreground)", fontSize: "0.875rem",
+                                    outline: "none", boxSizing: "border-box",
+                                  } as React.CSSProperties}
+                                  placeholder="Nearest major city"
+                                  value={field.value ?? ""}
+                                  onChange={(e) => field.onChange(e.target.value)}
+                                  onBlur={field.onBlur}
+                                  ref={field.ref}
+                                />
+                                <datalist id="major-city-list">
+                                  {majorCitySuggestions.map(c => <option key={c} value={c} />)}
+                                </datalist>
+                              </div>
+                              {errors.nearest_major_city && (
+                                <p style={{ ...sans, fontSize: "0.6875rem", color: "#c0392b", marginTop: "0.3rem" }}>{errors.nearest_major_city.message}</p>
+                              )}
+                            </div>
+                          )}
+                        />
                       </div>
                     </SectionCard>
                   </div>
@@ -612,14 +724,24 @@ export default function ProfilePage() {
                   <div ref={sectionRefs.preferences}>
                     <SectionCard id="preferences" icon={SlidersHorizontal} eyebrow="Preferences" title="App Preferences">
                       <div style={{ maxWidth: 320 }}>
-                        <StyledSelect
-                          label="Preferred Language"
-                          error={errors.lang_pref?.message}
-                          options={[
-                            { value: "en", label: "English" },
-                            { value: "ur", label: "اردو (Urdu)" },
-                          ]}
-                          {...register("lang_pref")}
+                        <Controller
+                          name="lang_pref"
+                          control={control}
+                          defaultValue="en"
+                          render={({ field }) => (
+                            <StyledSelect
+                              label="Preferred Language"
+                              error={errors.lang_pref?.message}
+                              options={[
+                                { value: "en", label: "English" },
+                                { value: "ur", label: "اردو (Urdu)" },
+                              ]}
+                              value={field.value}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              onBlur={field.onBlur}
+                              ref={field.ref}
+                            />
+                          )}
                         />
                       </div>
                       <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.75rem", lineHeight: 1.6, opacity: 0.8 }}>

@@ -19,20 +19,32 @@ from chatbot.llm_client import LLMClient
 from chatbot.conversation_memory import ConversationMemory
 from chatbot.config import DB_CONFIG
 
+# Urdu pipeline is Qwen-only (no cache needed)
+
+
+def _is_urdu_lang(lang_pref: str) -> bool:
+    """True if user prefers Urdu."""
+    if not lang_pref:
+        return False
+    s = str(lang_pref).lower().strip()
+    return s in ("urdu", "ur")
+
 
 class MindEaseChat:
     """Clean chat interface for MindEase therapy chatbot"""
     
-    def __init__(self, user_first_name: str = None, test_context: str = None):
+    def __init__(self, user_first_name: str = None, test_context: str = None, lang_pref: str = None):
         """
         Initialize chatbot with all components (silent initialization)
         
         Args:
             user_first_name: User's first name for personalized responses
             test_context: Optional test context to be used throughout the conversation
+            lang_pref: User language preference - "english"/"en" or "urdu"/"ur". Default English.
         """
         self.user_first_name = user_first_name
         self.test_context = test_context  # Store test context for the entire conversation
+        self.lang_pref = lang_pref or "english"
         self._initialize_components()
         self.memory = ConversationMemory(max_history_length=20)
         
@@ -59,7 +71,12 @@ class MindEaseChat:
                 self.llm_client = None
         if self.llm_client is None:
             raise RuntimeError("LLM client is required but failed to initialize.")
-    
+
+    def _ensure_urdu_system_prompt(self):
+        """Load Roman Urdu system prompt from file (or translate once and save). No Qalb/translator."""
+        from chatbot.urdu_qwen_chat import get_system_prompt_roman_urdu
+        get_system_prompt_roman_urdu()
+
     def _print_separator(self, char="─", length=75):
         """Print a separator line"""
         print(char * length)
@@ -84,9 +101,23 @@ class MindEaseChat:
         """Process user message through pipeline (silent).
         emotions_override: optional list of (emotion, score) from e.g. audio SER; when set, skip text-based emotion detection."""
         try:
-            # Use instance test_context if provided, otherwise use parameter (for backward compatibility)
             effective_test_context = self.test_context if self.test_context else test_context
-            
+
+            # Urdu text chat: Qwen-only Roman Urdu (no Qalb, no transliteration)
+            if _is_urdu_lang(self.lang_pref):
+                self._ensure_urdu_system_prompt()
+                from chatbot.urdu_chat_pipeline import run_urdu_pipeline
+                history = self.memory.get_history_with_context()
+                response = run_urdu_pipeline(
+                    roman_user_input=user_input,
+                    conversation_history_roman=history,
+                    test_context=effective_test_context,
+                    user_first_name=self.user_first_name,
+                )
+                self.memory.add_exchange(user_input, response)
+                return response
+
+            # English pipeline
             # Step 1: Emotion Detection (from text via DeBERTa, or from audio via SER when emotions_override is provided)
             if emotions_override is not None and len(emotions_override) > 0:
                 emotions = emotions_override
@@ -144,6 +175,22 @@ class MindEaseChat:
         """
         try:
             effective_test_context = self.test_context if self.test_context else test_context
+
+            # Urdu: Qwen-only Roman Urdu (yields full response as single chunk)
+            if _is_urdu_lang(self.lang_pref):
+                self._ensure_urdu_system_prompt()
+                from chatbot.urdu_chat_pipeline import run_urdu_pipeline_stream
+                history = self.memory.get_history_with_context()
+                for chunk in run_urdu_pipeline_stream(
+                    roman_user_input=user_input,
+                    conversation_history_roman=history,
+                    test_context=effective_test_context,
+                    user_first_name=self.user_first_name,
+                ):
+                    yield chunk
+                return
+
+            # English pipeline
             if emotions_override is not None and len(emotions_override) > 0:
                 emotions = emotions_override
                 emotions_str = (self.emotion_detector.format_emotions_for_llm(emotions) if self.emotion_detector

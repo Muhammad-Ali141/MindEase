@@ -15,6 +15,7 @@ import { BeamsBackground } from "@/components/ui/beams-background"
 import { useAuth } from "@/context/AuthContext"
 import { DashboardTour, type TourCompletionAction } from "@/components/dashboard-tour"
 import { apiUpdateDashboardTour, apiLoginOauth } from "@/lib/api"
+import { useProfileDict } from "@/lib/i18n"
 
 const sans = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
@@ -23,6 +24,7 @@ export default function Dashboard() {
   const { token, user, setAuth, isLoading: authLoading } = useAuth()
   const { isLoaded: clerkLoaded, isSignedIn, user: clerkUser } = useUser()
   const { theme } = useTheme()
+  const t = useProfileDict()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const isDark = mounted ? theme === "dark" : false
@@ -114,7 +116,7 @@ export default function Dashboard() {
           </svg>
         </div>
         <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>
-          {authLoading ? "Loading…" : isOauthSyncing ? "Signing you in…" : "Loading…"}
+          {authLoading ? t.loading : isOauthSyncing ? t.signingIn : t.loading}
         </p>
       </div>
     )

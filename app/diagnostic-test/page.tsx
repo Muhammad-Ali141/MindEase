@@ -10,66 +10,28 @@ import { useEffect, useState } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "next-themes"
 import { apiGetDiagnosticTestStatus } from "@/lib/api"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
-const testOptions = [
-  {
-    id: "depression",
-    name: "Depression",
-    testName: "PHQ-9",
-    description: "Track how you've been feeling lately — this helps identify patterns of low mood.",
-    duration: "5-7 min",
-    questions: 9,
-    icon: Heart,
-    bg: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)",
-    ring: "rgba(166,124,82,0.2)",
-  },
-  {
-    id: "anxiety",
-    name: "Anxiety",
-    testName: "GAD-7",
-    description: "Understand if worry or nervousness is affecting your day-to-day life.",
-    duration: "3-5 min",
-    questions: 7,
-    icon: AlertCircle,
-    bg: "linear-gradient(135deg, #6b3f1f 0%, #a0622f 100%)",
-    ring: "rgba(160,98,47,0.2)",
-  },
-  {
-    id: "stress",
-    name: "Stress",
-    testName: "PSS-10",
-    description: "Find out how much pressure you're under and if things feel overwhelming.",
-    duration: "5-7 min",
-    questions: 10,
-    icon: Brain,
-    bg: "linear-gradient(135deg, #5a2020 0%, #8c3a3a 100%)",
-    ring: "rgba(140,58,58,0.2)",
-  },
-  {
-    id: "general-mood",
-    name: "General Mood",
-    testName: "Mood Check",
-    description: "A quick emotional temperature check — see how you're really feeling right now.",
-    duration: "3-5 min",
-    questions: 8,
-    icon: Smile,
-    bg: "linear-gradient(135deg, #325944 0%, #5D8A6B 100%)",
-    ring: "rgba(93,138,107,0.2)",
-  },
-]
-
 export default function DiagnosticTestPage() {
   const router  = useRouter()
   const { user }= useAuth()
+  const t = useProfileDict()
   const { resolvedTheme } = useTheme()
   const isDark  = resolvedTheme === "dark"
 
   const [sidebarOpen,      setSidebarOpen]      = useState(true)
   const [primaryCondition, setPrimaryCondition] = useState<string | null>(null)
   const [loading,          setLoading]          = useState(true)
+
+  const testOptions = [
+    { id: "depression", name: t.depression, testName: t.phq9, description: t.depressionDesc, duration: "5-7", questions: 9, icon: Heart, bg: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)", ring: "rgba(166,124,82,0.2)" },
+    { id: "anxiety", name: t.anxiety, testName: t.gad7, description: t.anxietyDesc, duration: "3-5", questions: 7, icon: AlertCircle, bg: "linear-gradient(135deg, #6b3f1f 0%, #a0622f 100%)", ring: "rgba(160,98,47,0.2)" },
+    { id: "stress", name: t.stress, testName: t.pss10, description: t.stressDesc, duration: "5-7", questions: 10, icon: Brain, bg: "linear-gradient(135deg, #5a2020 0%, #8c3a3a 100%)", ring: "rgba(140,58,58,0.2)" },
+    { id: "general-mood", name: t.generalMood, testName: t.moodCheck, description: t.generalMoodDesc, duration: "3-5", questions: 8, icon: Smile, bg: "linear-gradient(135deg, #325944 0%, #5D8A6B 100%)", ring: "rgba(93,138,107,0.2)" },
+  ]
 
   useEffect(() => {
     const load = async () => {
@@ -119,19 +81,19 @@ export default function DiagnosticTestPage() {
               onClick={() => router.push("/dashboard")}
               style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", marginBottom: "2rem", padding: 0 }}
             >
-              <ArrowLeft size={14} /> Dashboard
+              <ArrowLeft size={14} /> {t.dashboard}
             </button>
 
             {/* Page heading */}
             <div style={{ marginBottom: "2rem" }}>
               <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.25rem" }}>
-                Clinical
+                {t.clinical}
               </p>
               <h1 style={{ ...serif, fontSize: "2.25rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1, marginBottom: "0.75rem" }}>
-                Mental Health Check-ups
+                {t.mentalHealthCheckups}
               </h1>
               <p style={{ ...sans, fontSize: "0.9375rem", color: "var(--muted-foreground)", lineHeight: 1.7, maxWidth: 520 }}>
-                Brief, clinically-validated assessments to track how you're feeling over time.
+                {t.checkupsDesc}
               </p>
             </div>
 
@@ -163,20 +125,20 @@ export default function DiagnosticTestPage() {
                       border: "1px solid rgba(255,255,255,0.18)",
                       marginBottom: "0.875rem",
                     }}>
-                      <Zap size={10} /> Start here
+                      <Zap size={10} /> {t.startHere}
                     </div>
                     <h2 style={{ ...serif, fontSize: "1.875rem", fontWeight: 400, color: "white", letterSpacing: "-0.02em", marginBottom: "0.625rem" }}>
-                      Initial Screening
+                      {t.initialScreening}
                     </h2>
                     <p style={{ ...sans, fontSize: "0.875rem", color: "rgba(255,255,255,0.72)", lineHeight: 1.7, marginBottom: "1.25rem" }}>
-                      8 quick questions to identify your primary concern. We'll then guide you to the most relevant daily assessment.
+                      {t.screeningDesc}
                     </p>
                     <div style={{ display: "flex", alignItems: "center", gap: "1.25rem", marginBottom: "1.5rem" }}>
                       <span style={{ ...sans, fontSize: "0.75rem", color: "rgba(255,255,255,0.55)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        <Clock size={12} /> 3-5 minutes
+                        <Clock size={12} /> 3-5 {t.minutes}
                       </span>
                       <span style={{ ...sans, fontSize: "0.75rem", color: "rgba(255,255,255,0.55)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        <CheckCircle2 size={12} /> 8 questions
+                        <CheckCircle2 size={12} /> 8 {t.questions}
                       </span>
                     </div>
                     <button
@@ -193,7 +155,7 @@ export default function DiagnosticTestPage() {
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.26)"}
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.18)"}
                     >
-                      Begin Screening →
+                      {t.beginScreening}
                     </button>
                   </div>
 
@@ -215,7 +177,7 @@ export default function DiagnosticTestPage() {
             <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
               <div style={{ flex: 1, height: 1, backgroundColor: "var(--border)" }} />
               <p style={{ ...sans, fontSize: "0.6875rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)", flexShrink: 0 }}>
-                {primaryCondition ? "Available Assessments" : "Or explore a specific area"}
+                {primaryCondition ? t.availableAssessments : t.orExplore}
               </p>
               <div style={{ flex: 1, height: 1, backgroundColor: "var(--border)" }} />
             </div>
@@ -261,7 +223,7 @@ export default function DiagnosticTestPage() {
                         padding: "0.2rem 0.5rem", borderRadius: 100,
                         border: "1px solid color-mix(in srgb, var(--primary) 25%, transparent)",
                       }}>
-                        Your focus
+                        {t.yourFocus}
                       </div>
                     )}
 
@@ -284,7 +246,7 @@ export default function DiagnosticTestPage() {
                             {test.name}
                           </h3>
                           <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)" }}>
-                            {test.testName} · {test.questions} questions
+                            {test.testName} · {test.questions} {t.questions}
                           </p>
                         </div>
                       </div>
@@ -296,7 +258,7 @@ export default function DiagnosticTestPage() {
                       {/* Duration chip + CTA */}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                          <Clock size={11} /> {test.duration}
+                          <Clock size={11} /> {test.duration} {t.minutesShort}
                         </span>
                         <button
                           onClick={() => router.push(`/diagnostic-test/${test.id}`)}
@@ -312,7 +274,7 @@ export default function DiagnosticTestPage() {
                           onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
                           onMouseLeave={e => e.currentTarget.style.opacity = "1"}
                         >
-                          Start <ArrowLeft size={12} style={{ transform: "rotate(180deg)" }} />
+                          {t.start} <ArrowLeft size={12} style={{ transform: "rotate(180deg)" }} />
                         </button>
                       </div>
                     </div>

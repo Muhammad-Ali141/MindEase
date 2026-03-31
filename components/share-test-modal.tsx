@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { X, Brain, AlertCircle, CheckCircle2, ArrowRight, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetDiagnosticTestStatus, apiGetDiagnosticTestHistory, type TestHistoryItem } from "@/lib/api"
 import { useRouter } from "next/navigation"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -21,6 +22,47 @@ const severityColor = (level?: string) => {
   return { bg: "rgba(22,163,74,0.1)", color: "#22c55e", border: "rgba(22,163,74,0.25)" }
 }
 
+function severityLabelForContext(level: string | undefined, romanUrdu: boolean): string {
+  if (!level) return ""
+  if (!romanUrdu) return level.replace(/\b\w/g, c => c.toUpperCase())
+  const m: Record<string, string> = {
+    minimal: "bohot kam",
+    mild: "halka",
+    moderate: "darmiyani",
+    "moderately severe": "darmiyani se shadeed",
+    severe: "shadeed",
+    "extremely severe": "bohot shadeed",
+    none: "koi nahi",
+    normal: "normal",
+  }
+  return m[level.toLowerCase()] || level
+}
+
+function buildAssessmentTestContext(test: TestHistoryItem, lang: "en" | "ur"): string {
+  const dateStr = new Date(test.taken_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+  const sev = severityLabelForContext(test.severity_level, lang === "ur")
+  if (lang === "ur") {
+    return (
+      `User ne ${test.test_name} assessment mukammal ki hai.\n\n` +
+      `Natayij:\n` +
+      `- Assessment: ${test.test_name}\n` +
+      `- Kul score: ${test.score} (zyada score ka matlab zyada alamat; Daily Mood Check-In mein zyada score behtar mood ka ishara hai)\n` +
+      `- Shadeediyat: ${sev}\n` +
+      `- Mukammal hone ki tareekh: ${dateStr}\n\n` +
+      `Is maloomat se user ki zehni sehat ki halat samjhein aur munasib, shakhsi madad den. Assessment dobara poochne ki zaroorat nahi.`
+    )
+  }
+  return (
+    `The user has completed a ${test.test_name} assessment.\n\n` +
+    `Assessment results:\n` +
+    `- Assessment: ${test.test_name}\n` +
+    `- Total score: ${test.score} (higher scores indicate greater symptom burden, except for Daily Mood Check-In where higher means better mood)\n` +
+    `- Severity: ${sev}\n` +
+    `- Date completed: ${dateStr}\n\n` +
+    `Use this information to understand the user's current mental health context and provide appropriate, personalized support. You do not need to ask them to repeat their assessment results.`
+  )
+}
+
 type ShareTestModalProps = {
   open: boolean
   onClose: () => void
@@ -31,6 +73,12 @@ type ShareTestModalProps = {
 export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModalProps) {
   const { user } = useAuth()
   const router = useRouter()
+  const t = useProfileDict()
+  const profileLang: "en" | "ur" = useMemo(() => {
+    const s = ((user as { lang_pref?: string })?.lang_pref || "en").toLowerCase()
+    return s === "ur" || s === "urdu" ? "ur" : "en"
+  }, [user])
+
   const [loading, setLoading] = useState(true)
   const [latestTest, setLatestTest] = useState<TestHistoryItem | null>(null)
   const [hasTests, setHasTests] = useState(false)
@@ -56,15 +104,17 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
 
   const handleShare = () => {
     if (!latestTest) return
-    const dateStr = new Date(latestTest.taken_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
-    const severityCapitalized = latestTest.severity_level?.replace(/\b\w/g, c => c.toUpperCase()) || latestTest.severity_level
-    const testContext = `The user has completed a ${latestTest.test_name} assessment.\n\nAssessment results:\n- Assessment: ${latestTest.test_name}\n- Total score: ${latestTest.score} (higher scores indicate greater symptom burden, except for Daily Mood Check-In where higher means better mood)\n- Severity: ${severityCapitalized}\n- Date completed: ${dateStr}\n\nUse this information to understand the user's current mental health context and provide appropriate, personalized support. You do not need to ask them to repeat their assessment results.`
-    onShare(testContext, latestTest.result_id)
+    onShare(buildAssessmentTestContext(latestTest, profileLang), latestTest.result_id)
   }
 
   if (!open) return null
 
   const sev = severityColor(latestTest?.severity_level)
+  const severityDisplay =
+    latestTest?.severity_level &&
+    (profileLang === "ur"
+      ? severityLabelForContext(latestTest.severity_level, true)
+      : latestTest.severity_level)
 
   return (
     <AnimatePresence>
@@ -94,11 +144,9 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
             overflow: "hidden",
           }}
         >
-          {/* Top gradient strip */}
           <div style={{ height: 4, background: "linear-gradient(90deg, #7a5535 0%, #a67c52 50%, #5D8A6B 100%)" }} />
 
           <div style={{ padding: "1.5rem 1.625rem 1.625rem" }}>
-            {/* Close button */}
             <button
               type="button"
               onClick={e => { e.preventDefault(); e.stopPropagation(); onClose() }}
@@ -119,11 +167,10 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
             {loading ? (
               <div style={{ textAlign: "center", padding: "2rem 0" }}>
                 <Loader2 size={24} style={{ color: "var(--primary)", margin: "0 auto 0.875rem", display: "block" }} className="animate-spin" />
-                <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>Loading…</p>
+                <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>{t.shareModalLoading}</p>
               </div>
             ) : hasTests && latestTest ? (
               <>
-                {/* Header */}
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "0.875rem", marginBottom: "1.125rem", paddingRight: "1.5rem" }}>
                   <div style={{
                     width: 40, height: 40, borderRadius: 11, flexShrink: 0,
@@ -135,19 +182,18 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                   </div>
                   <div>
                     <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.15rem" }}>
-                      Assessment Context
+                      {t.shareModalAssessCtx}
                     </p>
                     <h2 style={{ ...serif, fontSize: "1.4rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)", lineHeight: 1.2 }}>
-                      Share your results?
+                      {t.shareModalShareResults}
                     </h2>
                   </div>
                 </div>
 
                 <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7, marginBottom: "1.25rem" }}>
-                  Sharing your latest assessment helps personalize the conversation without you having to explain your situation from scratch.
+                  {t.shareModalShareBody}
                 </p>
 
-                {/* Test result card */}
                 <div style={{
                   backgroundColor: "color-mix(in srgb, var(--muted) 35%, transparent)",
                   border: "1px solid var(--border)",
@@ -174,17 +220,16 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                         padding: "0.2rem 0.55rem", borderRadius: 100,
                         flexShrink: 0,
                       }}>
-                        {latestTest.severity_level}
+                        {severityDisplay}
                       </span>
                     )}
                   </div>
                   <div style={{ height: 1, backgroundColor: "var(--border)", margin: "0.625rem 0" }} />
                   <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>
-                    Score: <span style={{ color: "var(--foreground)", fontWeight: 600 }}>{latestTest.score}</span>
+                    {t.shareModalScore}: <span style={{ color: "var(--foreground)", fontWeight: 600 }}>{latestTest.score}</span>
                   </p>
                 </div>
 
-                {/* Buttons */}
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <button
                     type="button"
@@ -200,7 +245,7 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                     onMouseEnter={e => e.currentTarget.style.opacity = "0.87"}
                     onMouseLeave={e => e.currentTarget.style.opacity = "1"}
                   >
-                    <CheckCircle2 size={15} /> Share Results
+                    <CheckCircle2 size={15} /> {t.shareModalShareBtn}
                   </button>
                   <button
                     type="button"
@@ -214,13 +259,12 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--foreground)"; e.currentTarget.style.color = "var(--foreground)" }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-foreground)" }}
                   >
-                    Skip
+                    {t.shareModalSkip}
                   </button>
                 </div>
               </>
             ) : (
               <>
-                {/* No tests header */}
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "0.875rem", marginBottom: "1.125rem", paddingRight: "1.5rem" }}>
                   <div style={{
                     width: 40, height: 40, borderRadius: 11, flexShrink: 0,
@@ -232,19 +276,18 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                   </div>
                   <div>
                     <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.15rem" }}>
-                      No Results Yet
+                      {t.shareModalNoResults}
                     </p>
                     <h2 style={{ ...serif, fontSize: "1.4rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)", lineHeight: 1.2 }}>
-                      Take an assessment first?
+                      {t.shareModalTakeFirst}
                     </h2>
                   </div>
                 </div>
 
                 <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7, marginBottom: "1.25rem" }}>
-                  A quick mental health check-in helps personalize your session with context your AI therapist can act on immediately.
+                  {t.shareModalNoResultsBody}
                 </p>
 
-                {/* Benefits */}
                 <div style={{
                   backgroundColor: "color-mix(in srgb, var(--muted) 35%, transparent)",
                   border: "1px solid var(--border)",
@@ -252,7 +295,7 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                   marginBottom: "1.375rem",
                   display: "flex", flexDirection: "column", gap: "0.5rem",
                 }}>
-                  {["Personalized support from your first message", "Track mood and progress over time", "No need to explain your situation from scratch"].map((benefit, i) => (
+                  {[t.shareModalBenefit1, t.shareModalBenefit2, t.shareModalBenefit3].map((benefit, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
                       <div style={{
                         width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
@@ -263,7 +306,6 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                   ))}
                 </div>
 
-                {/* Buttons */}
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <button
                     type="button"
@@ -279,7 +321,7 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                     onMouseEnter={e => e.currentTarget.style.opacity = "0.87"}
                     onMouseLeave={e => e.currentTarget.style.opacity = "1"}
                   >
-                    Take Assessment <ArrowRight size={14} />
+                    {t.shareModalTakeAssessment} <ArrowRight size={14} />
                   </button>
                   <button
                     type="button"
@@ -293,7 +335,7 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--foreground)"; e.currentTarget.style.color = "var(--foreground)" }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-foreground)" }}
                   >
-                    Continue Without
+                    {t.shareModalContinueWithout}
                   </button>
                 </div>
               </>

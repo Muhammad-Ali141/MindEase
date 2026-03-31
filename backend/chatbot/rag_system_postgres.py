@@ -5,7 +5,12 @@ Implements hierarchical retrieval: find input chunks -> get corresponding output
 Only uses 'input' and 'output' columns from CSV, ignores 'instruction' column.
 """
 import os
-# Compatibility: sentence_transformers 2.2.2 expects cached_download (removed in newer huggingface_hub)
+
+# Ensure torch is loaded before sentence_transformers/transformers so
+# transformers.trainer_pt_utils can import LRScheduler (avoids NameError when
+# is_torch_available() runs before torch is imported).
+import torch  # noqa: F401
+
 try:
     from huggingface_hub import cached_download
 except ImportError:

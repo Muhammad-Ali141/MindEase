@@ -17,6 +17,7 @@ import { ChatInterface } from "@/components/chat-interface"
 import { ShareTestModal } from "@/components/share-test-modal"
 import { ArrowLeft, Star, Loader2, CheckCircle2, MessageCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -25,6 +26,7 @@ export default function ChatPage() {
   const router = useRouter()
   const { user, token } = useAuth()
   const { toast } = useToast()
+  const t = useProfileDict()
   const { resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -44,7 +46,14 @@ export default function ChatPage() {
   const [testContext, setTestContext]           = useState<string | null>(null)
   const shareModalShownRef = useRef(false)
 
-  const sessionTitle = savedSession?.title || (currentSessionId ? "Conversation" : "New Conversation")
+  /** Language for text chat: from profile only (English pipeline if en, Urdu if ur) */
+  const profileLangPref: "en" | "ur" = (() => {
+    const lp = (user as { lang_pref?: string })?.lang_pref
+    const s = (lp || "en").toLowerCase()
+    return s === "ur" || s === "urdu" ? "ur" : "en"
+  })()
+
+  const sessionTitle = savedSession?.title || (currentSessionId ? t.chatConversation : t.chatNewConversation)
 
   useEffect(() => {
     if (user && token) {
@@ -69,7 +78,7 @@ export default function ChatPage() {
       setSavedSession(null)
       setShowSummary(false)
       setSummary("")
-      const response = await apiChatWelcome(user!.id, user!.first_name || null, sharedTestContext || null)
+      const response = await apiChatWelcome(user!.id, user!.first_name || null, sharedTestContext || null, profileLangPref)
       setMessages([{ role: "assistant", content: response.welcome_message, content_type: "text" }])
       setCurrentSessionId(null)
       setBaselineUserMessageCount(0)
@@ -88,9 +97,9 @@ export default function ChatPage() {
     const msgSnapshot     = [...messages]
     const sessionSnapshot = currentSessionId
 
-    apiChatSummary(user.id, user.first_name || null, user.gender || null, msgSnapshot)
+    apiChatSummary(user.id, user.first_name || null, user.gender || null, msgSnapshot, profileLangPref)
       .then(res => {
-        if (!res.summary || res.summary.includes("No conversation to summarize")) return
+        if (res.no_user_messages || !res.summary?.trim()) return
         return apiSaveSession(
           user.id, msgSnapshot, res.summary,
           sessionSnapshot || undefined, user.first_name || null, user.gender || null
@@ -117,11 +126,9 @@ export default function ChatPage() {
           metadata: msg.metadata, content_type: msg.content_type,
         }))
       } else {
-        const reminder = session.resume_message
-          ? session.resume_message
-          : session.summary
-            ? `${session.summary}\n\nLet's pick up from where we left off. How are you feeling now?`
-            : "Let's continue from our previous conversation. How are you feeling now?"
+        const reminder = session.summary
+          ? `${session.summary}\n\n${t.chatResumePickUp}`
+          : session.resume_message || t.chatResumeContinue
         initialMessages = [{ role: "assistant", content: reminder, content_type: "text" }]
       }
       setMessages(initialMessages)
@@ -190,7 +197,9 @@ export default function ChatPage() {
     try {
       const response = await apiChatMessage(
         message, user.id, user.first_name || null,
-        user.gender || null, historyForRequest, testContext || null
+        user.gender || null, historyForRequest, testContext || null,
+        undefined,
+        profileLangPref
       )
       const primaryEmotion = response.emotions?.[0]
       const assistantMessage: ChatMessage = { role: "assistant", content: response.response, content_type: "text" }
@@ -222,8 +231,8 @@ export default function ChatPage() {
     setIsEnding(true)
     setLoading(true)
     try {
-      const response = await apiChatSummary(user.id, user.first_name || null, user.gender || null, messages)
-      if (response.summary?.includes("No conversation to summarize")) { router.push("/dashboard"); return }
+      const response = await apiChatSummary(user.id, user.first_name || null, user.gender || null, messages, profileLangPref)
+      if (response.no_user_messages || !response.summary?.trim()) { router.push("/dashboard"); return }
       try {
         const saveResponse = await apiSaveSession(
           user.id, messages, response.summary,
@@ -247,7 +256,7 @@ export default function ChatPage() {
   const handleToggleStar = async () => {
     if (!user || !savedSession) return
     if (savedSession.state !== "full" && !savedSession.is_starred) {
-      toast({ title: "Cannot star this session", description: "Archived sessions cannot be starred.", variant: "destructive" })
+      toast({ title: t.chatCannotStarTitle, description: t.archivedCannotStar, variant: "destructive" })
       return
     }
     try {
@@ -257,7 +266,7 @@ export default function ChatPage() {
         has_full_transcript: response.session.has_full_transcript,
         resume_message: response.session.resume_message ?? prev.resume_message,
       } : prev)
-      toast({ title: response.session.is_starred ? "Session starred" : "Session unstarred" })
+      toast({ title: response.session.is_starred ? t.chatSessionStarredToast : t.chatSessionUnstarredToast })
     } catch (error: any) {
       toast({ title: "Unable to update star", description: error.message, variant: "destructive" })
     }
@@ -302,12 +311,12 @@ export default function ChatPage() {
                 onClick={() => router.push("/dashboard")}
                 style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", marginBottom: "2rem", padding: 0 }}
               >
-                <ArrowLeft size={13} /> Dashboard
+                <ArrowLeft size={13} /> {t.chatDashboardNav}
               </button>
 
               <div style={{ marginBottom: "1.625rem" }}>
-                <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.25rem" }}>Session Complete</p>
-                <h1 style={{ ...serif, fontSize: "2rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1 }}>Your Session Summary</h1>
+                <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.25rem" }}>{t.chatSessionComplete}</p>
+                <h1 style={{ ...serif, fontSize: "2rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1 }}>{t.chatYourSummary}</h1>
               </div>
 
               <div style={{ backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)", backdropFilter: "blur(14px)", borderRadius: 18, border: "1px solid var(--border)", boxShadow: "0 4px 24px rgba(0,0,0,0.07)", overflow: "hidden" }}>
@@ -316,7 +325,7 @@ export default function ChatPage() {
                   {savedSession && (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", paddingBottom: "1rem", borderBottom: "1px solid var(--border)" }}>
                       <div>
-                        <h2 style={{ ...sans, fontSize: "0.9375rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.15rem" }}>{savedSession.title || "Therapy Session"}</h2>
+                        <h2 style={{ ...sans, fontSize: "0.9375rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.15rem" }}>{savedSession.title || t.chatTherapySession}</h2>
                         <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{new Date(savedSession.updated_at).toLocaleString()}</p>
                       </div>
                       <button
@@ -324,7 +333,7 @@ export default function ChatPage() {
                         style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem", height: 32, padding: "0 0.875rem", borderRadius: 9, fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", border: savedSession.is_starred ? "1px solid rgba(245,158,11,0.4)" : "1px solid var(--border)", backgroundColor: savedSession.is_starred ? "color-mix(in srgb, #f59e0b 10%, transparent)" : "transparent", color: savedSession.is_starred ? "#f59e0b" : "var(--muted-foreground)", transition: "all 0.15s ease" }}
                       >
                         <Star size={12} strokeWidth={1.75} fill={savedSession.is_starred ? "currentColor" : "none"} />
-                        {savedSession.is_starred ? "Starred" : "Star"}
+                        {savedSession.is_starred ? t.chatStarredBtn : t.chatStarBtn}
                       </button>
                     </div>
                   )}
@@ -333,7 +342,7 @@ export default function ChatPage() {
                     <div style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <CheckCircle2 size={13} color="white" strokeWidth={2} />
                     </div>
-                    <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)" }}>Session saved to your history</span>
+                    <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)" }}>{t.chatSessionSaved}</span>
                   </div>
 
                   <div style={{ ...sans, fontSize: "0.9375rem", color: "var(--foreground)", lineHeight: 1.82 }}>
@@ -344,10 +353,10 @@ export default function ChatPage() {
 
                   <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem", paddingTop: "1.25rem", borderTop: "1px solid var(--border)", justifyContent: "flex-end" }}>
                     <button onClick={handleNewChat} style={{ ...sans, height: 36, padding: "0 1rem", borderRadius: 10, background: "none", border: "1px solid var(--border)", color: "var(--foreground)", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem", transition: "border-color 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.borderColor = "var(--primary)"} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}>
-                      <MessageCircle size={13} /> New Chat
+                      <MessageCircle size={13} /> {t.chatNewChat}
                     </button>
                     <button onClick={() => router.push("/dashboard")} style={{ ...sans, height: 36, padding: "0 1.125rem", borderRadius: 10, background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)", border: "none", color: "white", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 10px rgba(166,124,82,0.28)", transition: "opacity 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.opacity = "0.87"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
-                      Return to Dashboard
+                      {t.chatReturnDashboard}
                     </button>
                   </div>
                 </div>
@@ -377,11 +386,11 @@ export default function ChatPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <div style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: welcomeLoading ? "var(--muted-foreground)" : "#5D8A6B", boxShadow: welcomeLoading ? "none" : "0 0 0 2px rgba(93,138,107,0.22)", transition: "background-color 0.3s ease" }} />
             <span style={{ ...sans, fontSize: "0.875rem", fontWeight: 600, color: "var(--foreground)" }}>
-              {welcomeLoading ? "Starting…" : sessionTitle}
+              {welcomeLoading ? t.chatStarting : sessionTitle}
             </span>
             {testContext && (
               <span style={{ ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--primary)", backgroundColor: "color-mix(in srgb, var(--primary) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 22%, transparent)", padding: "0.15rem 0.45rem", borderRadius: 100 }}>
-                With results
+                {t.chatWithResults}
               </span>
             )}
           </div>
@@ -393,11 +402,16 @@ export default function ChatPage() {
             onMouseEnter={e => { if (!isEnding && !loading && !welcomeLoading) { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)" } }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-foreground)" }}
           >
-            {isEnding ? <><Loader2 size={11} className="animate-spin" /> Saving…</> : <><ArrowLeft size={11} /> End Chat</>}
+            {isEnding ? <><Loader2 size={11} className="animate-spin" /> {t.chatSaving}</> : <><ArrowLeft size={11} /> {t.chatEndChat}</>}
           </button>
         </div>
 
-        <ShareTestModal open={showShareModal} onClose={() => setShowShareModal(false)} onShare={handleShareTest} onSkip={handleSkipShare} />
+        <ShareTestModal
+          open={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          onShare={handleShareTest}
+          onSkip={handleSkipShare}
+        />
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <ChatInterface

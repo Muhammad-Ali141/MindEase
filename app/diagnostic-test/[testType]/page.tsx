@@ -10,6 +10,7 @@ import { useState, useEffect } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "next-themes"
 import { apiSubmitDiagnosticTest, apiGetDiagnosticTestStatus } from "@/lib/api"
+import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -25,6 +26,10 @@ export default function TestPage() {
   const router    = useRouter()
   const params    = useParams()
   const { user }  = useAuth()
+  const t = useProfileDict()
+  const profileLang = useProfileLanguage()
+  const isUrduTest = profileLang === "ur"
+  const urduFont = "var(--font-noto-urdu), 'Segoe UI', Tahoma, sans-serif"
   const { resolvedTheme } = useTheme()
   const isDark    = resolvedTheme === "dark"
   const testType  = params?.testType as string
@@ -41,19 +46,22 @@ export default function TestPage() {
   const [direction,       setDirection]       = useState(1) // 1=forward, -1=back
   const [justAnswered,    setJustAnswered]    = useState(false)
 
-  const getTestFile = (type: string) => {
-    const map: Record<string, string> = {
-      "generic-screening": "/diagnosticTests/generic_screening.json",
-      depression:          "/diagnosticTests/phq9.json",
-      anxiety:             "/diagnosticTests/gad7.json",
-      stress:              "/diagnosticTests/pss10.json",
-      "general-mood":      "/diagnosticTests/mood_test.json",
-      mood_test:           "/diagnosticTests/mood_test.json",
-      phq9:                "/diagnosticTests/phq9.json",
-      gad7:                "/diagnosticTests/gad7.json",
-      pss10:               "/diagnosticTests/pss10.json",
+  const getTestFile = (type: string, lang: "en" | "ur") => {
+    const fileMap: Record<string, string> = {
+      "generic-screening": "generic_screening.json",
+      depression:          "phq9.json",
+      anxiety:             "gad7.json",
+      stress:              "pss10.json",
+      "general-mood":      "mood_test.json",
+      mood_test:           "mood_test.json",
+      phq9:                "phq9.json",
+      gad7:                "gad7.json",
+      pss10:               "pss10.json",
     }
-    return map[type] || null
+    const file = fileMap[type]
+    if (!file) return null
+    const base = lang === "ur" ? "/diagnosticTests/ur" : "/diagnosticTests"
+    return `${base}/${file}`
   }
 
   useEffect(() => {
@@ -72,17 +80,19 @@ export default function TestPage() {
           }
         }
       } catch {}
-      const path = getTestFile(testType)
+      const path = getTestFile(testType, profileLang)
       if (!path) { setLoading(false); return }
       try {
-        const res  = await fetch(path)
-        const data = await res.json()
-        setTestData(data)
+        let res = await fetch(path)
+        if (!res.ok && profileLang === "ur") {
+          res = await fetch(getTestFile(testType, "en")!)
+        }
+        if (res.ok) setTestData(await res.json())
       } catch {}
       setLoading(false)
     }
     load()
-  }, [testType, user?.id])
+  }, [testType, user?.id, profileLang])
 
   const questions = testData?.questions || []
   const total = questions.length
@@ -117,7 +127,7 @@ export default function TestPage() {
       setSubmitted(true)
       setTimeout(() => router.push("/dashboard"), 3500)
     } catch {
-      alert("Failed to submit. Please try again.")
+      alert(t.failedToSubmit)
     } finally {
       setSubmitting(false)
     }
@@ -147,7 +157,7 @@ export default function TestPage() {
         <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ textAlign: "center" }}>
             <Loader2 size={32} style={{ color: "var(--primary)", margin: "0 auto 1rem" }} className="animate-spin" />
-            <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>Preparing your check-in…</p>
+            <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>{t.preparingCheckin}</p>
           </div>
         </div>
       </Shell>
@@ -160,7 +170,7 @@ export default function TestPage() {
       <Shell>
         <div style={{ maxWidth: 540, margin: "3rem auto", padding: "0 1.5rem" }}>
           <button onClick={() => router.push("/dashboard")} style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", marginBottom: "2rem" }}>
-            <ArrowLeft size={15} /> Back to Dashboard
+            <ArrowLeft size={15} /> {t.backToDashboard}
           </button>
           <div style={{
             backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
@@ -172,10 +182,10 @@ export default function TestPage() {
               <CheckCircle2 size={36} color="white" />
             </div>
             <h2 style={{ ...serif, fontSize: "1.875rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", marginBottom: "0.75rem" }}>
-              Today's check-in complete
+              {t.todayCheckinComplete}
             </h2>
             <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7, marginBottom: "2rem" }}>
-              You've already completed your daily assessment. Consistent check-ins help us track your wellbeing more accurately — come back tomorrow!
+              {t.alreadyCompletedDesc}
             </p>
             {testStatus?.primary_condition && (
               <div style={{
@@ -187,7 +197,7 @@ export default function TestPage() {
                 marginBottom: "2rem",
               }}>
                 <Brain size={14} />
-                Tracking: {testStatus.primary_condition.charAt(0).toUpperCase() + testStatus.primary_condition.slice(1)}
+                {t.trackingLabel}: {testStatus.primary_condition.charAt(0).toUpperCase() + testStatus.primary_condition.slice(1)}
               </div>
             )}
             <button
@@ -199,7 +209,7 @@ export default function TestPage() {
                 boxShadow: "0 4px 14px rgba(166,124,82,0.3)",
               }}
             >
-              Back to Dashboard
+              {t.backToDashboard}
             </button>
           </div>
         </div>
@@ -212,9 +222,9 @@ export default function TestPage() {
     return (
       <Shell>
         <div style={{ padding: "3rem", textAlign: "center" }}>
-          <p style={{ ...sans, color: "var(--muted-foreground)" }}>Test not found.</p>
+          <p style={{ ...sans, color: "var(--muted-foreground)" }}>{t.testNotFound}</p>
           <button onClick={() => router.push("/dashboard")} style={{ ...sans, marginTop: "1rem", color: "var(--primary)", background: "none", border: "none", cursor: "pointer" }}>
-            ← Back to Dashboard
+            ← {t.backToDashboard}
           </button>
         </div>
       </Shell>
@@ -254,12 +264,10 @@ export default function TestPage() {
             </motion.div>
 
             <h2 style={{ ...serif, fontSize: "2.25rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", marginBottom: "0.875rem" }}>
-              {testType === "generic-screening" ? "Screening complete" : "Check-in recorded"}
+              {testType === "generic-screening" ? t.screeningComplete : t.checkinRecorded}
             </h2>
             <p style={{ ...sans, fontSize: "0.9375rem", color: "var(--muted-foreground)", lineHeight: 1.7, marginBottom: "2rem" }}>
-              {testType === "generic-screening"
-                ? "Your primary concern has been identified. Personalised daily assessments will now appear on your dashboard."
-                : "Your daily check-in has been saved. Consistent tracking helps us give you better insights over time."}
+              {testType === "generic-screening" ? t.screeningCompleteDesc : t.checkinRecordedDesc}
             </p>
 
             {/* Animated redirect bar */}
@@ -272,7 +280,7 @@ export default function TestPage() {
               />
             </div>
             <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.75rem", opacity: 0.7 }}>
-              Returning to dashboard…
+              {t.returningToDashboard}
             </p>
           </motion.div>
         </div>
@@ -284,9 +292,16 @@ export default function TestPage() {
   const scaleLabels = testData.scale.map(s => s.split("=")[1]?.trim() || s)
   const currentAnswer = answers[currentQ]
 
+  const contentStyle: React.CSSProperties = {
+    maxWidth: 720,
+    margin: "0 auto",
+    padding: "1.75rem 1.5rem 3rem",
+    ...(isUrduTest ? { direction: "rtl", fontFamily: urduFont } : {}),
+  }
+
   return (
     <Shell>
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "1.75rem 1.5rem 3rem" }}>
+      <div style={contentStyle}>
 
         {/* Back + test name */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2rem" }}>
@@ -294,11 +309,11 @@ export default function TestPage() {
             onClick={() => router.push("/dashboard")}
             style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
           >
-            <ArrowLeft size={14} /> Dashboard
+            <ArrowLeft size={14} /> {t.dashboard}
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <Clock size={12} style={{ color: "var(--muted-foreground)" }} />
-            <span style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)" }}>5-10 min</span>
+            <span style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)" }}>5-10 {t.minutesShort}</span>
           </div>
         </div>
 
@@ -311,7 +326,7 @@ export default function TestPage() {
         }}>
           <div>
             <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.2rem" }}>
-              Daily Wellness
+              {t.dailyWellness}
             </p>
             <h1 style={{ ...serif, fontSize: "1.5rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
               {testData.name}
@@ -403,7 +418,7 @@ export default function TestPage() {
                   }
                 </div>
                 <p style={{ ...sans, fontSize: "0.6875rem", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>
-                  Question {currentQ + 1} of {total}
+                  {t.questionOf.replace("%1", String(currentQ + 1)).replace("%2", String(total))}
                 </p>
               </div>
 
@@ -470,7 +485,7 @@ export default function TestPage() {
               opacity: currentQ === 0 ? 0.35 : 1,
             }}
           >
-            <ChevronLeft size={15} /> Previous
+            <ChevronLeft size={15} /> {t.previous}
           </button>
 
           {currentQ < total - 1 ? (
@@ -483,7 +498,7 @@ export default function TestPage() {
                 color: "var(--foreground)", fontSize: "0.875rem", cursor: "pointer",
               }}
             >
-              Next <ChevronRight size={15} />
+              {t.next} <ChevronRight size={15} />
             </button>
           ) : (
             <motion.button
@@ -505,8 +520,8 @@ export default function TestPage() {
               }}
             >
               {submitting
-                ? <><Loader2 size={16} className="animate-spin" /> Submitting…</>
-                : <><CheckCircle2 size={16} /> Submit Check-in</>
+                ? <><Loader2 size={16} className="animate-spin" /> {t.submitting}</>
+                : <><CheckCircle2 size={16} /> {t.submitCheckin}</>
               }
             </motion.button>
           )}
@@ -525,7 +540,7 @@ export default function TestPage() {
             }}
           >
             <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--sage)", fontWeight: 500 }}>
-              All questions answered — ready to submit!
+              {t.allAnsweredReady}
             </p>
             <button
               onClick={handleSubmit}
@@ -537,7 +552,7 @@ export default function TestPage() {
                 border: "none", cursor: "pointer",
               }}
             >
-              {submitting ? "Submitting…" : "Submit now"}
+              {submitting ? t.submitting : t.submitNow}
             </button>
           </motion.div>
         )}

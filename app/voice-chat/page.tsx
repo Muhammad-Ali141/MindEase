@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
 import { BeamsBackground } from "@/components/ui/beams-background"
-import { AIVoiceInput } from "@/components/ui/ai-voice-input"
+import { AIVoiceInput, type AIVoiceState } from "@/components/ui/ai-voice-input"
 import { useTheme } from "next-themes"
 import { Header } from "@/components/header"
 import { ChatSidebar } from "@/components/chat-sidebar"
 import { ShareTestModal } from "@/components/share-test-modal"
+import { useProfileDict } from "@/lib/i18n"
 import {
   apiChatWelcome, apiChatMessage, apiVoiceProcess, apiSTTTranscribe,
   apiGetWelcomeAudio, apiGenerateAndSaveWelcomeAudio,
@@ -24,7 +25,7 @@ import { motion, AnimatePresence } from "framer-motion"
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
-type VoiceState = "idle" | "recording" | "transcribing" | "thinking" | "synthesizing" | "playing"
+type VoiceState = AIVoiceState
 
 export default function VoiceChatPage() {
   const router           = useRouter()
@@ -61,7 +62,27 @@ export default function VoiceChatPage() {
   } = useMicrophone()
 
   const hasUserMessages = messages.some(m => m.role === "user")
-  const sessionTitle    = savedSession?.title || (currentSessionId ? "Voice Session" : "New Voice Session")
+
+  const t = useProfileDict()
+  const sessionTitle =
+    savedSession?.title || (currentSessionId ? t.voiceSessionShort : t.voiceNewVoiceSession)
+  const profileLangPref: "en" | "ur" = (() => {
+    const lp = (user as { lang_pref?: string } | undefined)?.lang_pref
+    const s = (lp || "en").toLowerCase()
+    return s === "ur" || s === "urdu" ? "ur" : "en"
+  })()
+  const apiLangPref = profileLangPref === "ur" ? ("ur" as const) : undefined
+  /** Urdu profile only: voice welcome uses Arabic-script Urdu (text chat unchanged). */
+  const voiceWelcomeUrduScript = profileLangPref === "ur"
+
+  const voiceStatusLabels = {
+    idle: t.voiceTapToSpeak,
+    recording: t.voiceListening,
+    transcribing: t.voiceTranscribing,
+    thinking: t.voiceThinking,
+    synthesizing: t.voiceGeneratingVoice,
+    playing: t.voiceSpeaking,
+  }
 
   // Sync voiceState with recording hook
   useEffect(() => {
@@ -106,9 +127,9 @@ export default function VoiceChatPage() {
     const userMsgCount = messages.filter(m => m.role === "user").length
     if (userMsgCount <= baselineUserMessageCount) return
     const snap = [...messages]; const sessSnap = currentSessionId
-    apiChatSummary(user.id, user.first_name || null, user.gender || null, snap)
+    apiChatSummary(user.id, user.first_name || null, user.gender || null, snap, apiLangPref)
       .then(res => {
-        if (!res.summary || res.summary.includes("No conversation to summarize")) return
+        if (res.no_user_messages || !res.summary?.trim()) return
         return apiSaveSession(user.id, snap, res.summary, sessSnap || undefined, user.first_name || null, user.gender || null)
       })
       .catch(err => console.error("[voice] background save failed:", err))
@@ -129,21 +150,29 @@ export default function VoiceChatPage() {
 
       try {
         setVoiceState("synthesizing")
-        const result = await apiGetWelcomeAudio(user.id, includeContext, key)
+        const result = await apiGetWelcomeAudio(
+          user.id, includeContext, key, apiLangPref, voiceWelcomeUrduScript
+        )
         audioBlob = result.blob
         if (result.welcomeMessage) {
           welcomeText = result.welcomeMessage
         } else {
-          const r = await apiChatWelcome(user.id, user.first_name || null, sharedTestContext || null)
+          const r = await apiChatWelcome(
+            user.id, user.first_name || null, sharedTestContext || null, apiLangPref, voiceWelcomeUrduScript
+          )
           welcomeText = r.welcome_message
         }
       } catch {
         audioBlob = null
-        const r = await apiChatWelcome(user.id, user.first_name || null, sharedTestContext || null)
+        const r = await apiChatWelcome(
+          user.id, user.first_name || null, sharedTestContext || null, apiLangPref, voiceWelcomeUrduScript
+        )
         if (!isMountedRef.current) return
         welcomeText = r.welcome_message
         try {
-          audioBlob = await apiGenerateAndSaveWelcomeAudio(user.id, welcomeText, user.lang_pref || null, includeContext, key)
+          audioBlob = await apiGenerateAndSaveWelcomeAudio(
+            user.id, welcomeText, user.lang_pref || null, includeContext, key, voiceWelcomeUrduScript
+          )
         } catch (e) { console.warn("Generate/save welcome audio failed:", e) }
       }
       if (!isMountedRef.current) return
@@ -190,8 +219,8 @@ export default function VoiceChatPage() {
         }))
       } else {
         const reminder = session.resume_message || (session.summary
-          ? `${session.summary}\n\nLet's pick up from where we left off. How are you feeling now?`
-          : "Let's continue from our previous conversation. How are you feeling now?")
+          ? `${session.summary}\n\n${t.chatResumePickUp}`
+          : t.chatResumeContinue)
         initialMessages = [{ role: "assistant", content: reminder, content_type: "text" }]
       }
       setMessages(initialMessages)
@@ -249,8 +278,8 @@ export default function VoiceChatPage() {
     currentAudioRef.current?.pause(); currentAudioRef.current = null; setVoiceState("idle")
     setIsEnding(true)
     try {
-      const response = await apiChatSummary(user.id, user.first_name || null, user.gender || null, messages)
-      if (response.summary?.includes("No conversation to summarize")) { router.push("/dashboard"); return }
+      const response = await apiChatSummary(user.id, user.first_name || null, user.gender || null, messages, apiLangPref)
+      if (response.no_user_messages || !response.summary?.trim()) { router.push("/dashboard"); return }
       try {
         const saveRes = await apiSaveSession(user.id, messages, response.summary, currentSessionId || undefined, user.first_name || null, user.gender || null)
         setSavedSession(saveRes.session); setCurrentSessionId(saveRes.session.session_id)
@@ -322,13 +351,13 @@ export default function VoiceChatPage() {
     let emotionsFromVoice: Array<{ emotion: string; score: number }> = []
 
     try {
-      const voiceResult = await apiVoiceProcess(audioBlob, "en")
+      const voiceResult = await apiVoiceProcess(audioBlob, profileLangPref)
       if (!isMountedRef.current) return
       transcript = voiceResult.transcript?.trim() || ""
       emotionsFromVoice = voiceResult.emotions || []
     } catch {
       try {
-        const sttRes = await apiSTTTranscribe(audioBlob, "en")
+        const sttRes = await apiSTTTranscribe(audioBlob, profileLangPref)
         transcript = sttRes.transcript?.trim() || ""
       } catch { transcript = "" }
     }
@@ -350,7 +379,8 @@ export default function VoiceChatPage() {
       const chatResponse = await apiChatMessage(
         transcript, user.id, user.first_name || null, user.gender || null,
         historyForRequest, testContext || null,
-        emotionsFromVoice.length > 0 ? emotionsFromVoice : undefined
+        emotionsFromVoice.length > 0 ? emotionsFromVoice : undefined,
+        apiLangPref
       )
       if (!isMountedRef.current) return
 
@@ -380,7 +410,9 @@ export default function VoiceChatPage() {
       }
 
       let ttsBlob: Blob | null = null
-      try { ttsBlob = await apiTTSSynthesize(chatResponse.response, userLanguage) } catch { /* silent */ }
+      try {
+        ttsBlob = await apiTTSSynthesize(chatResponse.response, userLanguage)
+      } catch { /* silent */ }
       if (!isMountedRef.current) return
 
       setMessages(prev => [...prev, { role: "assistant", content: chatResponse.response, content_type: "text" }])
@@ -445,15 +477,15 @@ export default function VoiceChatPage() {
                 onClick={() => router.push("/dashboard")}
                 style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", marginBottom: "2rem", padding: 0 }}
               >
-                <ArrowLeft size={13} /> Dashboard
+                <ArrowLeft size={13} /> {t.dashboard}
               </button>
 
               <div style={{ marginBottom: "1.625rem" }}>
                 <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.25rem" }}>
-                  Session Complete
+                  {t.chatSessionComplete}
                 </p>
                 <h1 style={{ ...serif, fontSize: "2rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1 }}>
-                  Your Session Summary
+                  {t.chatYourSummary}
                 </h1>
               </div>
 
@@ -469,7 +501,7 @@ export default function VoiceChatPage() {
                             <Mic2 size={11} color="white" strokeWidth={2} />
                           </div>
                           <h2 style={{ ...sans, fontSize: "0.9375rem", fontWeight: 700, color: "var(--foreground)" }}>
-                            {savedSession.title || "Voice Session"}
+                            {savedSession.title || t.voiceSessionShort}
                           </h2>
                         </div>
                         <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>
@@ -481,7 +513,7 @@ export default function VoiceChatPage() {
                         style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.375rem", height: 32, padding: "0 0.875rem", borderRadius: 9, fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", border: savedSession.is_starred ? "1px solid rgba(245,158,11,0.4)" : "1px solid var(--border)", backgroundColor: savedSession.is_starred ? "color-mix(in srgb, #f59e0b 10%, transparent)" : "transparent", color: savedSession.is_starred ? "#f59e0b" : "var(--muted-foreground)", transition: "all 0.15s ease" }}
                       >
                         <Star size={12} strokeWidth={1.75} fill={savedSession.is_starred ? "currentColor" : "none"} />
-                        {savedSession.is_starred ? "Starred" : "Star"}
+                        {savedSession.is_starred ? t.chatStarredBtn : t.chatStarBtn}
                       </button>
                     </div>
                   )}
@@ -491,7 +523,7 @@ export default function VoiceChatPage() {
                       <CheckCircle2 size={13} color="white" strokeWidth={2} />
                     </div>
                     <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)" }}>
-                      Session saved to your history
+                      {t.chatSessionSaved}
                     </span>
                   </div>
 
@@ -503,10 +535,10 @@ export default function VoiceChatPage() {
 
                   <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem", paddingTop: "1.25rem", borderTop: "1px solid var(--border)", justifyContent: "flex-end" }}>
                     <button onClick={handleNewChat} style={{ ...sans, height: 36, padding: "0 1rem", borderRadius: 10, background: "none", border: "1px solid var(--border)", color: "var(--foreground)", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem", transition: "border-color 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.borderColor = "var(--sage)"} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}>
-                      <Mic2 size={13} /> New Voice Chat
+                      <Mic2 size={13} /> {t.voiceNewVoiceChat}
                     </button>
                     <button onClick={() => router.push("/dashboard")} style={{ ...sans, height: 36, padding: "0 1.125rem", borderRadius: 10, background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)", border: "none", color: "white", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 10px rgba(166,124,82,0.28)", transition: "opacity 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.opacity = "0.87"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
-                      Return to Dashboard
+                      {t.chatReturnDashboard}
                     </button>
                   </div>
                 </div>
@@ -547,14 +579,14 @@ export default function VoiceChatPage() {
               transition: "background-color 0.3s ease",
             }} />
             <span style={{ ...sans, fontSize: "0.875rem", fontWeight: 600, color: "var(--foreground)" }}>
-              {welcomeLoading ? "Starting…" : sessionTitle}
+              {welcomeLoading ? t.chatStarting : sessionTitle}
             </span>
             <span style={{ ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--sage)", backgroundColor: "color-mix(in srgb, var(--sage) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--sage) 22%, transparent)", padding: "0.15rem 0.45rem", borderRadius: 100 }}>
-              Voice
+              {t.voiceCaps}
             </span>
             {testContext && (
               <span style={{ ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--primary)", backgroundColor: "color-mix(in srgb, var(--primary) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 22%, transparent)", padding: "0.15rem 0.45rem", borderRadius: 100 }}>
-                With results
+                {t.chatWithResults}
               </span>
             )}
           </div>
@@ -566,7 +598,7 @@ export default function VoiceChatPage() {
             onMouseEnter={e => { if (!isEnding && !welcomeLoading) { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)" } }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-foreground)" }}
           >
-            {isEnding ? <><Loader2 size={11} className="animate-spin" /> Saving…</> : <><ArrowLeft size={11} /> End Chat</>}
+            {isEnding ? <><Loader2 size={11} className="animate-spin" /> {t.chatSaving}</> : <><ArrowLeft size={11} /> {t.chatEndChat}</>}
           </button>
         </div>
 
@@ -584,16 +616,17 @@ export default function VoiceChatPage() {
                   style={{ textAlign: "center", marginBottom: "1.75rem" }}
                 >
                   <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--sage)", marginBottom: "0.5rem" }}>
-                    Voice companion
+                    {t.voiceCompanionLabel}
                   </p>
                   <h1 style={{ ...serif, fontSize: "clamp(1.875rem, 3.5vw, 2.625rem)", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1, marginBottom: "0.6rem" }}>
-                    Speak freely,{" "}
+                    {t.voiceSpeakFreely}{" "}
                     <span style={{ fontStyle: "italic", color: "var(--primary)" }}>
-                      {user?.first_name || "friend"}
-                    </span>.
+                      {user?.first_name || t.voiceFriendFallback}
+                    </span>
+                    .
                   </h1>
                   <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7 }}>
-                    Your voice is heard. I'm here to listen, reflect, and support you.
+                    {t.voiceHeardSub}
                   </p>
                 </motion.div>
 
@@ -618,7 +651,18 @@ export default function VoiceChatPage() {
                     <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(93,138,107,0.25)" }}>
                       <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
                     </div>
-                    <p style={{ ...sans, fontSize: "0.9375rem", lineHeight: 1.78, color: "var(--foreground)", margin: 0 }}>
+                    <p
+                      dir={profileLangPref === "ur" ? "rtl" : "ltr"}
+                      style={{
+                        ...sans,
+                        fontSize: "0.9375rem",
+                        lineHeight: 1.78,
+                        color: "var(--foreground)",
+                        margin: 0,
+                        flex: 1,
+                        textAlign: profileLangPref === "ur" ? "right" : "left",
+                      }}
+                    >
                       {messages[0].content}
                     </p>
                     {voiceState === "playing" && (
@@ -640,7 +684,7 @@ export default function VoiceChatPage() {
                   >
                     <Loader2 size={16} color="var(--sage)" className="animate-spin" />
                     <span style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>
-                      Preparing your voice companion…
+                      {t.voicePreparingCompanion}
                     </span>
                   </motion.div>
                 )}
@@ -657,6 +701,7 @@ export default function VoiceChatPage() {
                     recordingTime={recordingTime}
                     disabled={welcomeLoading || voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing"}
                     onMicClick={handleMicClick}
+                    statusLabels={voiceStatusLabels}
                   />
                 </motion.div>
               </div>
@@ -803,6 +848,7 @@ export default function VoiceChatPage() {
                   recordingTime={recordingTime}
                   disabled={welcomeLoading}
                   onMicClick={handleMicClick}
+                  statusLabels={voiceStatusLabels}
                 />
               </div>
             </>

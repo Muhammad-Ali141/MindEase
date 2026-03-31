@@ -7,8 +7,10 @@ import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from "@/lib/api"
-import { MessageCircle, Star, Mic2, BookOpen } from "lucide-react"
+import { MessageCircle, Star, Mic2, BookOpen, Download, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useProfileDict } from "@/lib/i18n"
+import { exportPreviewsToTextFile, exportSinglePreviewToTextFile } from "@/lib/export-sessions"
 import { BeamsBackground } from "@/components/ui/beams-background"
 import { motion } from "framer-motion"
 
@@ -25,6 +27,9 @@ export default function SessionsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeFilter, setActiveFilter] = useState<"all" | "starred" | "voice" | "text">("all")
   const { toast } = useToast()
+  const t = useProfileDict()
+  const [exporting, setExporting] = useState(false)
+  const [exportingSessionId, setExportingSessionId] = useState<string | null>(null)
 
   useEffect(() => {
     if (user?.id) loadAllSessions()
@@ -104,6 +109,48 @@ export default function SessionsPage() {
     voice:   sessions.filter(s => s.has_voice).length,
     text:    sessions.filter(s => !s.has_voice).length,
   }), [sessions])
+
+  const displayNameForExport = () =>
+    user ? [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.email || null : null
+
+  const handleExportFiltered = async () => {
+    if (!user?.id || filteredSessions.length === 0) {
+      toast({ title: t.exportSessionsEmpty, variant: "destructive" })
+      return
+    }
+    try {
+      setExporting(true)
+      await exportPreviewsToTextFile(user.id, filteredSessions, displayNameForExport())
+      toast({ title: t.exportSessionsSuccess })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      toast({
+        title: t.exportSessionsError,
+        description: msg === "NO_SESSIONS" ? t.exportSessionsEmpty : msg,
+        variant: "destructive",
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportSession = async (session: SessionPreview) => {
+    if (!user?.id) return
+    try {
+      setExportingSessionId(session.session_id)
+      await exportSinglePreviewToTextFile(user.id, session, displayNameForExport())
+      toast({ title: t.exportSessionsSuccess })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      toast({
+        title: t.exportSessionsError,
+        description: msg === "NO_SESSIONS" ? t.exportSessionsEmpty : msg,
+        variant: "destructive",
+      })
+    } finally {
+      setExportingSessionId(null)
+    }
+  }
 
   const toggleStar = async (session: SessionPreview) => {
     if (!user) return
@@ -196,6 +243,44 @@ export default function SessionsPage() {
                       })}
                     </div>
                   )}
+
+                  {!loading && filteredSessions.length > 0 && (
+                    <button
+                      type="button"
+                      title={t.exportSessionsTitle}
+                      disabled={exporting || exportingSessionId !== null}
+                      onClick={() => void handleExportFiltered()}
+                      style={{
+                        ...sans,
+                        marginTop: "1rem",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.4rem",
+                        fontSize: "0.8125rem",
+                        fontWeight: 600,
+                        color: "var(--foreground)",
+                        background: "color-mix(in srgb, var(--muted) 40%, transparent)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 10,
+                        padding: "0.45rem 0.9rem",
+                        cursor: exporting ? "default" : "pointer",
+                        transition: "border-color 0.15s ease, color 0.15s ease",
+                      }}
+                      onMouseEnter={e => {
+                        if (!exporting) {
+                          e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)"
+                          e.currentTarget.style.color = "var(--primary)"
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = "var(--border)"
+                        e.currentTarget.style.color = "var(--foreground)"
+                      }}
+                    >
+                      {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                      {exporting ? t.exportSessionsLoading : t.exportSessions}
+                    </button>
+                  )}
                 </motion.div>
 
                 {/* ── Content ─────────────────────────────────────── */}
@@ -253,6 +338,9 @@ export default function SessionsPage() {
                               index={si}
                               onOpen={() => handleSessionClick(session)}
                               onStar={() => toggleStar(session)}
+                              onDownload={() => void handleExportSession(session)}
+                              downloadLocked={exporting || exportingSessionId !== null}
+                              downloadActive={exportingSessionId === session.session_id}
                               formatDate={formatDate}
                             />
                           ))}
@@ -275,14 +363,18 @@ export default function SessionsPage() {
 const sans2 = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 function SessionCard({
-  session, index, onOpen, onStar, formatDate,
+  session, index, onOpen, onStar, onDownload, downloadLocked, downloadActive, formatDate,
 }: {
   session: SessionPreview
   index: number
   onOpen: () => void
   onStar: () => void
+  onDownload: () => void
+  downloadLocked: boolean
+  downloadActive: boolean
   formatDate: (d: string) => string
 }) {
+  const t = useProfileDict()
   const starred     = session.is_starred
   const isVoice     = session.has_voice
   const summary     = session.short_summary || session.summary
@@ -369,6 +461,40 @@ function SessionCard({
         <span style={{ ...sans2, fontSize: "0.6875rem", color: "var(--muted-foreground)", opacity: 0.6 }}>
           {formatDate(session.updated_at)}
         </span>
+      </button>
+
+      {/* Download this session */}
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); onDownload() }}
+        title={t.exportOneSessionTitle}
+        disabled={downloadLocked}
+        style={{
+          flexShrink: 0, width: 34, height: 34, borderRadius: 9,
+          border: "1px solid var(--border)",
+          backgroundColor: "transparent",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: downloadLocked && !downloadActive ? "default" : "pointer",
+          transition: "border-color 0.15s ease, color 0.15s ease",
+          color: "var(--muted-foreground)",
+          opacity: downloadLocked && !downloadActive ? 0.45 : 1,
+        } as React.CSSProperties}
+        onMouseEnter={e => {
+          if (!downloadLocked || downloadActive) {
+            e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)"
+            e.currentTarget.style.color = "var(--primary)"
+          }
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = "var(--border)"
+          e.currentTarget.style.color = "var(--muted-foreground)"
+        }}
+      >
+        {downloadActive ? (
+          <Loader2 size={15} className="animate-spin" />
+        ) : (
+          <Download size={15} strokeWidth={1.75} />
+        )}
       </button>
 
       {/* Star button */}

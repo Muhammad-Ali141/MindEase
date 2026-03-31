@@ -10,6 +10,7 @@ import {
   type TestHistoryItem
 } from "@/lib/api"
 import { CheckCircle2, Brain, AlertCircle, Heart, Smile, ArrowRight, Loader2 } from "lucide-react"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -17,6 +18,7 @@ const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 export function DiagnosticTests() {
   const router = useRouter()
   const { user } = useAuth()
+  const t = useProfileDict()
   const [testStatus, setTestStatus]   = useState<DiagnosticTestStatus | null>(null)
   const [testHistory, setTestHistory] = useState<TestHistoryItem[]>([])
   const [loading, setLoading]         = useState(true)
@@ -42,12 +44,12 @@ export function DiagnosticTests() {
 
   const getTestInfo = (testType: string | null) => {
     if (!testType) return null
-    const map: Record<string, { name: string; icon: any; bg: string; color: string; desc: string }> = {
-      "generic-screening": { name: "Generic Screening", icon: Brain, bg: "linear-gradient(135deg,#3d2d55,#6d4fa8)", color: "#c4a8ff", desc: "Brief 8-question screening" },
-      "phq9":  { name: "PHQ-9 Depression",  icon: Heart,        bg: "linear-gradient(135deg,#7a5535,#a67c52)", color: "#d4a87c", desc: "Track how you've been feeling" },
-      "gad7":  { name: "GAD-7 Anxiety",     icon: AlertCircle,  bg: "linear-gradient(135deg,#7a4a25,#b06030)", color: "#f0aa80", desc: "Check worry and anxiety levels" },
-      "pss10": { name: "PSS-10 Stress",     icon: Brain,        bg: "linear-gradient(135deg,#6b2020,#a63030)", color: "#f09090", desc: "Measure your stress levels" },
-      "mood_test": { name: "Mood Assessment", icon: Smile,       bg: "linear-gradient(135deg,#325944,#5D8A6B)", color: "#90d0a0", desc: "Quick look at your overall mood" },
+    const map: Record<string, { name: string; icon: typeof Brain; bg: string; color: string; desc: string }> = {
+      "generic-screening": { name: t.genericScreening, icon: Brain, bg: "linear-gradient(135deg,#3d2d55,#6d4fa8)", color: "#c4a8ff", desc: t.briefScreening },
+      "phq9":  { name: t.phq9Depression,  icon: Heart,        bg: "linear-gradient(135deg,#7a5535,#a67c52)", color: "#d4a87c", desc: t.trackFeeling },
+      "gad7":  { name: t.gad7Anxiety,     icon: AlertCircle,  bg: "linear-gradient(135deg,#7a4a25,#b06030)", color: "#f0aa80", desc: t.checkWorry },
+      "pss10": { name: t.pss10Stress,     icon: Brain,        bg: "linear-gradient(135deg,#6b2020,#a63030)", color: "#f09090", desc: t.measureStress },
+      "mood_test": { name: t.moodAssessment, icon: Smile,       bg: "linear-gradient(135deg,#325944,#5D8A6B)", color: "#90d0a0", desc: t.quickMood },
     }
     return map[testType] || null
   }
@@ -83,10 +85,10 @@ export function DiagnosticTests() {
       {/* Header */}
       <div style={{ padding: "1.125rem 1.375rem 0.875rem", borderBottom: "1px solid var(--border)" }}>
         <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.2rem" }}>
-          Clinical
+          {t.clinical}
         </p>
         <h2 style={{ ...serif, fontSize: "1.25rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
-          Assessments
+          {t.assessments}
         </h2>
       </div>
 
@@ -130,7 +132,7 @@ export function DiagnosticTests() {
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.22)"}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.14)"}
                   >
-                    {testStatus?.generic_screening_completed ? "Take Daily Test" : "Start Screening"}
+                    {testStatus?.generic_screening_completed ? t.takeDailyTest : t.startScreening}
                     <ArrowRight size={13} />
                   </button>
                 </div>
@@ -147,9 +149,9 @@ export function DiagnosticTests() {
               }}>
                 <CheckCircle2 size={18} style={{ color: "var(--sage)", flexShrink: 0, marginTop: "0.1rem" }} />
                 <div>
-                  <p style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)" }}>Today's assessment complete</p>
+                  <p style={{ ...sans, fontSize: "0.8125rem", fontWeight: 600, color: "var(--foreground)" }}>{t.todayAssessmentComplete}</p>
                   <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.2rem", lineHeight: 1.5 }}>
-                    Check back tomorrow for your next daily assessment.
+                    {t.checkBackTomorrow}
                   </p>
                 </div>
               </div>
@@ -159,8 +161,8 @@ export function DiagnosticTests() {
             {!availableTest && !testStatus?.generic_screening_completed && (
               <div style={{ padding: "1.5rem 0", textAlign: "center" }}>
                 <Brain size={26} style={{ color: "var(--muted-foreground)", margin: "0 auto 0.625rem" }} />
-                <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>Complete initial screening</p>
-                <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", opacity: 0.7, marginTop: "0.25rem" }}>Assessments will appear here</p>
+                <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>{t.completeScreening}</p>
+                <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", opacity: 0.7, marginTop: "0.25rem" }}>{t.assessmentsAppearHere}</p>
               </div>
             )}
 
@@ -171,7 +173,7 @@ export function DiagnosticTests() {
                 borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden",
               }}>
                 <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted-foreground)", padding: "0.625rem 1rem 0.5rem" }}>
-                  Recent Assessments
+                  {t.recentAssessments}
                 </p>
                 {testHistory.slice(0, 5).map((r, idx) => {
                   const rInfo = getTestInfo(r.test_type)

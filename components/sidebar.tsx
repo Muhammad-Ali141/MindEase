@@ -7,16 +7,17 @@ import { useClerk } from "@clerk/nextjs"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
-const navItems = [
-  { icon: Home,          label: "Dashboard",  href: "/dashboard" },
-  { icon: MessageCircle, label: "Text Chat",   href: "/chat" },
-  { icon: Mic2,          label: "Voice Chat",  href: "/voice-chat" },
-  { icon: FileText,      label: "Sessions",    href: "/sessions" },
-  { icon: Users,         label: "Therapists",  href: "/dashboard/therapists" },
+const navConfig = [
+  { icon: Home,          key: "dashboard" as const,  href: "/dashboard" },
+  { icon: MessageCircle, key: "textChat" as const,   href: "/chat" },
+  { icon: Mic2,          key: "voiceChat" as const,  href: "/voice-chat" },
+  { icon: FileText,      key: "sessions" as const,    href: "/sessions" },
+  { icon: Users,         key: "therapists" as const, href: "/dashboard/therapists" },
 ]
 
 type SidebarProps = {
@@ -30,9 +31,11 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
   const { logout, user } = useAuth()
   const { signOut } = useClerk()
   const { theme } = useTheme()
+  const t = useProfileDict()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const isDark = !mounted || theme !== "light"
+  const navItems = navConfig.map(({ icon, key, href }) => ({ icon, label: t[key], href }))
 
   // Theme-aware colour tokens
   const C = {
@@ -114,7 +117,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
                 MindEase
               </p>
               <p style={{ ...sans, fontSize: "0.4875rem", color: C.tagText, letterSpacing: "0.08em", textTransform: "uppercase", marginTop: "0.15rem" }}>
-                Wellness Platform
+                {t.wellnessPlatform}
               </p>
             </div>
 
@@ -169,7 +172,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
       }}>
         {open && (
           <p style={{ ...sans, fontSize: "0.4875rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.sectionLbl, padding: "0 0.5rem", marginBottom: "0.4rem" }}>
-            Navigation
+            {t.navigation}
           </p>
         )}
         {navItems.map(({ icon: Icon, label, href }) => {
@@ -263,8 +266,8 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
         display: "flex", flexDirection: "column", gap: "0.125rem",
       }}>
         {[
-          { icon: Settings, label: "Settings", action: () => router.push("/profile"), danger: false },
-          { icon: LogOut,   label: "Logout",   action: handleLogout, danger: true },
+          { icon: Settings, label: t.settings, action: () => router.push("/profile"), danger: false },
+          { icon: LogOut,   label: t.logOut,   action: handleLogout, danger: true },
         ].map(({ icon: Icon, label, action, danger }) => (
           <button
             key={label}

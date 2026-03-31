@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetDiagnosticTestStatus } from "@/lib/api"
 import { useState } from "react"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -12,6 +13,7 @@ const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 export function TherapyOptions() {
   const router = useRouter()
   const { user } = useAuth()
+  const t = useProfileDict()
   const [loading, setLoading] = useState(false)
 
   const handleStartCheckin = async () => {
@@ -32,11 +34,11 @@ export function TherapyOptions() {
       tourTarget: "quick-check-in",
       primary: true,
       icon: <Zap size={20} strokeWidth={2} />,
-      eyebrow: "DAILY WELLNESS",
-      title: "Quick\nCheck-in",
-      desc: "Track your mood with a brief daily assessment",
+      eyebrow: t.dailyWellness,
+      title: t.quickCheckin.replace(/ /g, "\n"),
+      desc: t.quickCheckinDesc,
       action: handleStartCheckin,
-      label: loading ? "Loading…" : "Start Check-in",
+      label: loading ? t.loading : t.startCheckin,
       disabled: loading,
       bg: "linear-gradient(140deg, #7a5535 0%, #a67c52 60%, #8b6745 100%)",
       ring: "rgba(166,124,82,0.22)",
@@ -46,11 +48,11 @@ export function TherapyOptions() {
       tourTarget: "text-chat",
       primary: false,
       icon: <MessageCircle size={18} strokeWidth={2} />,
-      eyebrow: "AI COMPANION",
-      title: "Text\nChat",
-      desc: "Thoughtful conversation with your AI therapist",
+      eyebrow: t.aiCompanion,
+      title: t.textChatTitle.replace(/ /g, "\n"),
+      desc: t.textChatDesc,
       action: () => router.push("/chat"),
-      label: "Start Chat",
+      label: t.startChat,
       disabled: false,
       bg: "linear-gradient(140deg, #2d5040 0%, #4f7d60 60%, #375e49 100%)",
       ring: "rgba(79,125,96,0.2)",
@@ -60,11 +62,11 @@ export function TherapyOptions() {
       tourTarget: "voice-chat",
       primary: false,
       icon: <Mic2 size={18} strokeWidth={2} />,
-      eyebrow: "VOICE SESSION",
-      title: "Voice\nCall",
-      desc: "Natural spoken conversation, hands-free",
+      eyebrow: t.voiceSession,
+      title: t.voiceCall.replace(/ /g, "\n"),
+      desc: t.voiceCallDesc,
       action: () => router.push("/voice-chat"),
-      label: "Start Call",
+      label: t.startCall,
       disabled: false,
       bg: "linear-gradient(140deg, #1a130d 0%, #2e2016 60%, #231812 100%)",
       ring: "rgba(166,124,82,0.12)",

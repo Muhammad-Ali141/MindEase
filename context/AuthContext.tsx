@@ -10,6 +10,7 @@ type User = {
   gender?: string;
   city?: string;
   nearest_major_city?: string;
+  lang_pref?: string;
   dashboard_tour_seen: boolean;
 }
 type AuthState = {

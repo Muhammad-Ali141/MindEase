@@ -4,12 +4,14 @@ import { TrendingUp, Calendar, Award, TrendingDown, Minus, Info, Flame } from "l
 import { useEffect, useState } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetSessionCount, apiGetMoodTrend, apiGetStreak, type MoodTrendData } from "@/lib/api"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 export function QuickStats() {
   const { user } = useAuth()
+  const t = useProfileDict()
   const [sessionCount, setSessionCount] = useState<number | null>(null)
   const [moodTrend, setMoodTrend]       = useState<MoodTrendData[]>([])
   const [streak, setStreak]             = useState<{ current: number; longest: number } | null>(null)
@@ -41,7 +43,7 @@ export function QuickStats() {
     if (data.length === 0) {
       return (
         <div style={{ height: 64, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>No data yet</p>
+          <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{t.noDataYet}</p>
         </div>
       )
     }
@@ -112,9 +114,9 @@ export function QuickStats() {
           })}
         </svg>
         <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginTop: "0.5rem" }}>
-          {trend === "improved"  && <><TrendingUp  size={11} color="#5D8A6B" /><span style={{ ...sans, fontSize: "0.6875rem", color: "#5D8A6B", fontWeight: 600 }}>Improving</span></>}
-          {trend === "worsened"  && <><TrendingDown size={11} color="#b54a35" /><span style={{ ...sans, fontSize: "0.6875rem", color: "#b54a35", fontWeight: 600 }}>Declining</span></>}
-          {trend === "stable"    && <><Minus        size={11} color="var(--muted-foreground)" /><span style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", fontWeight: 600 }}>Stable</span></>}
+          {trend === "improved"  && <><TrendingUp  size={11} color="#5D8A6B" /><span style={{ ...sans, fontSize: "0.6875rem", color: "#5D8A6B", fontWeight: 600 }}>{t.improving}</span></>}
+          {trend === "worsened"  && <><TrendingDown size={11} color="#b54a35" /><span style={{ ...sans, fontSize: "0.6875rem", color: "#b54a35", fontWeight: 600 }}>{t.declining}</span></>}
+          {trend === "stable"    && <><Minus        size={11} color="var(--muted-foreground)" /><span style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", fontWeight: 600 }}>{t.stable}</span></>}
           {trend === "insufficient_data" && singleSeverity && (
             <><Info size={11} color="var(--primary)" /><span style={{ ...sans, fontSize: "0.6875rem", color: "var(--primary)", fontWeight: 600 }}>{singleSeverity.charAt(0).toUpperCase() + singleSeverity.slice(1)}</span></>
           )}
@@ -157,7 +159,7 @@ export function QuickStats() {
       {/* Sessions */}
       <Card tourTarget="sessions-completed">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-          <Label>Sessions</Label>
+          <Label>{t.sessionsCount}</Label>
           <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "color-mix(in srgb, var(--primary) 12%, transparent)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Calendar size={14} color="var(--primary)" />
           </div>
@@ -165,28 +167,28 @@ export function QuickStats() {
         <BigNum n={sessionCount} />
         <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.375rem" }}>
           {loading ? "" : sessionCount && sessionCount > 0
-            ? `session${sessionCount !== 1 ? "s" : ""} completed`
-            : "Start your first session"}
+            ? sessionCount === 1 ? t.sessionCompleted : `${sessionCount} ${t.sessionsCompleted}`
+            : t.startFirstSession}
         </p>
       </Card>
 
       {/* Mood trend */}
       <Card tourTarget="mood-trend">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-          <Label>Mood Trend</Label>
+          <Label>{t.moodTrend}</Label>
           <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "color-mix(in srgb, var(--sage) 12%, transparent)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <TrendingUp size={14} color="var(--sage)" />
           </div>
         </div>
         {loading
-          ? <div style={{ height: 64, display: "flex", alignItems: "center" }}><p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>Loading…</p></div>
+          ? <div style={{ height: 64, display: "flex", alignItems: "center" }}><p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{t.loading}</p></div>
           : <MoodChart data={moodTrend} />
         }
         {!loading && (
           <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem" }}>
             {moodTrend.length > 0
-              ? moodTrend.length === 1 ? "1 assessment tracked" : `${moodTrend.length} assessments tracked`
-              : "Complete a screening to start"}
+              ? moodTrend.length === 1 ? t.assessmentTrackedOne : `${moodTrend.length} ${t.assessmentsTracked}`
+              : t.completeScreeningToStart}
           </p>
         )}
       </Card>
@@ -194,7 +196,7 @@ export function QuickStats() {
       {/* Streak */}
       <Card tourTarget="current-streak">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-          <Label>Streak</Label>
+          <Label>{t.streak}</Label>
           <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "color-mix(in srgb, #f59e0b 12%, transparent)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Flame size={14} color="#f59e0b" />
           </div>
@@ -203,15 +205,15 @@ export function QuickStats() {
           <BigNum n={streak?.current ?? null} />
           {!loading && streak && streak.current > 0 && (
             <span style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)", fontWeight: 500 }}>
-              {streak.current === 1 ? "day" : "days"}
+              {streak.current === 1 ? t.day : t.days}
             </span>
           )}
         </div>
         <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.375rem" }}>
           {loading ? ""
-            : streak && streak.current > 0 ? `${streak.current} day${streak.current !== 1 ? "s" : ""} in a row`
-            : streak && streak.longest > 0 ? `Best streak: ${streak.longest} day${streak.longest !== 1 ? "s" : ""}`
-            : "Start your daily check-in"}
+            : streak && streak.current > 0 ? `${streak.current} ${streak.current === 1 ? t.day : t.days} ${t.inARow}`
+            : streak && streak.longest > 0 ? `${t.bestStreak}: ${streak.longest} ${streak.longest === 1 ? t.day : t.days}`
+            : t.startDailyCheckin}
         </p>
       </Card>
 

@@ -194,7 +194,13 @@ class ConversationMemory:
             'has_summary': self.session_summary is not None
         }
     
-    def get_conversation_summary(self, llm_client=None, user_first_name: str = None, user_gender: str = None) -> str:
+    def get_conversation_summary(
+        self,
+        llm_client=None,
+        user_first_name: str = None,
+        user_gender: str = None,
+        lang_pref: str = None,
+    ) -> str:
         """
         Generate an LLM-powered summary of the entire conversation in paragraph form
         
@@ -205,9 +211,46 @@ class ConversationMemory:
             Formatted string with LLM-generated summary paragraph
         """
         if not self.conversation_history:
-            return "No conversation history available."
-        
-        # If LLM client is available, generate AI summary
+            is_ur = lang_pref and str(lang_pref).lower().strip() in ("ur", "urdu")
+            return (
+                "Koi guftagu mojood nahi."
+                if is_ur
+                else "No conversation history available."
+            )
+
+        is_urdu = lang_pref and str(lang_pref).lower().strip() in ("ur", "urdu")
+
+        # Roman Urdu summary via Qwen (Urdu profile)
+        if is_urdu:
+            try:
+                from chatbot.urdu_qwen_chat import summarize_session_roman_urdu
+
+                history = [
+                    msg for msg in self.conversation_history
+                    if msg.get("role") in ("user", "assistant")
+                ]
+                if not history:
+                    return "Koi guftagu khulasi ke liye nahi."
+                user_label = user_first_name if user_first_name else "User"
+                conversation_text = ""
+                for msg in history:
+                    role = msg.get("role", "")
+                    content = msg.get("content", "")
+                    if role == "user":
+                        conversation_text += f"{user_label}: {content}\n\n"
+                    elif role == "assistant":
+                        conversation_text += f"Therapist: {content}\n\n"
+                summary = summarize_session_roman_urdu(conversation_text, user_first_name)
+                out = self._normalise_summary_text(summary)
+                if out.strip():
+                    return out
+                return self._get_basic_summary_roman_urdu()
+            except Exception as e:
+                print(f"[WARN] Roman Urdu summary failed: {e}")
+                if not (llm_client and hasattr(llm_client, "generate_response")):
+                    return self._get_basic_summary_roman_urdu()
+
+        # If LLM client is available, generate AI summary (English)
         if llm_client and hasattr(llm_client, 'generate_response'):
             try:
                 # Get conversation history (excluding system messages for summary)
@@ -283,6 +326,11 @@ Session recap:"""
         return (
             "We had a very brief check-in, and there were no detailed messages to summarise. "
             "Feel free to continue whenever you’re ready."
+        )
+
+    def _get_basic_summary_roman_urdu(self) -> str:
+        return (
+            "Guftagu bohot mukhtasar thi. Jab chahen dobara baat kar sakte hain."
         )
     
     def _format_summary(self, summary: str) -> str:

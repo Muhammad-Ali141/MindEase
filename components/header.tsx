@@ -6,6 +6,7 @@ import { useClerk } from "@clerk/nextjs"
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -19,6 +20,7 @@ export function Header({ onStartTutorial }: HeaderProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const { theme, setTheme } = useTheme()
+  const t = useProfileDict()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const isDark = mounted ? theme === "dark" : false
@@ -45,9 +47,9 @@ export function Header({ onStartTutorial }: HeaderProps) {
 
   const getGreeting = () => {
     const h = new Date().getHours()
-    if (h < 12) return "Good morning"
-    if (h < 17) return "Good afternoon"
-    return "Good evening"
+    if (h < 12) return t.goodMorning
+    if (h < 17) return t.goodAfternoon
+    return t.goodEvening
   }
 
   const getDate = () =>
@@ -206,8 +208,8 @@ export function Header({ onStartTutorial }: HeaderProps) {
                 </p>
               </div>
               {[
-                { label: "Manage Profile", action: () => { router.push("/profile"); setIsProfileOpen(false) }, danger: false },
-                { label: "Log out",        action: handleLogout,                                                danger: true  },
+                { label: t.manageProfile, action: () => { router.push("/profile"); setIsProfileOpen(false) }, danger: false },
+                { label: t.logOut,        action: handleLogout,                                                danger: true  },
               ].map(({ label, action, danger }) => (
                 <button
                   key={label}

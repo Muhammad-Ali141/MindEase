@@ -222,7 +222,8 @@ export async function apiChatMessage(
   user_gender: string | null,
   conversation_history: ChatMessage[],
   test_context: string | null = null,
-  emotions?: Array<{ emotion: string; score: number }>
+  emotions?: Array<{ emotion: string; score: number }>,
+  lang_pref?: string | null
 ): Promise<ChatResponse> {
   const res = await fetch("http://localhost:8000/api/chat/", {
     method: "POST",
@@ -237,6 +238,7 @@ export async function apiChatMessage(
       conversation_history,
       test_context,
       ...(emotions && emotions.length > 0 ? { emotions } : {}),
+      ...(lang_pref ? { lang_pref } : {}),
     }),
   })
 
@@ -264,7 +266,8 @@ export async function apiChatMessageStream(
     onDone: (payload: ChatStreamDonePayload) => void
   },
   test_context: string | null = null,
-  emotions?: Array<{ emotion: string; score: number }>
+  emotions?: Array<{ emotion: string; score: number }>,
+  lang_pref?: string | null
 ): Promise<void> {
   const res = await fetch("http://localhost:8000/api/chat/stream/", {
     method: "POST",
@@ -277,6 +280,7 @@ export async function apiChatMessageStream(
       conversation_history,
       test_context,
       ...(emotions && emotions.length > 0 ? { emotions } : {}),
+      ...(lang_pref ? { lang_pref } : {}),
     }),
   })
   if (!res.ok) {
@@ -324,7 +328,10 @@ export type WelcomeResponse = {
 export async function apiChatWelcome(
   user_id: string,
   user_first_name: string | null,
-  test_context: string | null = null
+  test_context: string | null = null,
+  lang_pref?: string | null,
+  /** Urdu voice chat only: Arabic-script welcome (text chat stays Roman Urdu). */
+  voiceWelcomeUrduScript?: boolean
 ): Promise<WelcomeResponse> {
   const res = await fetch("http://localhost:8000/api/chat/welcome/", {
     method: "POST",
@@ -335,6 +342,8 @@ export async function apiChatWelcome(
       user_id,
       user_first_name,
       test_context,
+      ...(lang_pref ? { lang_pref } : {}),
+      ...(voiceWelcomeUrduScript ? { voice_welcome_urdu_script: true } : {}),
     }),
   })
 
@@ -349,13 +358,15 @@ export async function apiChatWelcome(
 export type SummaryResponse = {
   summary: string
   user_id: string
+  no_user_messages?: boolean
 }
 
 export async function apiChatSummary(
   user_id: string,
   user_first_name: string | null,
   user_gender: string | null,
-  conversation_history: ChatMessage[]
+  conversation_history: ChatMessage[],
+  lang_pref?: "en" | "ur" | null
 ): Promise<SummaryResponse> {
   const res = await fetch("http://localhost:8000/api/chat/summary/", {
     method: "POST",
@@ -367,6 +378,7 @@ export async function apiChatSummary(
       user_first_name,
       user_gender,
       conversation_history,
+      ...(lang_pref ? { lang_pref } : {}),
     }),
   })
 
@@ -799,7 +811,7 @@ export async function apiVoiceProcess(
  * 
  * @param text - Text to synthesize to speech
  * @param language - Language code (default: "en")
- * @param ttsBackend - "xtts" (default) or "qwen3" to test Qwen3-TTS in the pipeline
+ * @param ttsBackend - "qwen3" (default) or "xtts" (Coqui XTTS if enabled on server)
  * @returns Promise with audio Blob
  */
 export type GetWelcomeAudioResult = {
@@ -817,13 +829,19 @@ export type GetWelcomeAudioResult = {
 export async function apiGetWelcomeAudio(
   userId: string,
   includeContext = false,
-  testContextKey?: string | number
+  testContextKey?: string | number,
+  /** When `"ur"`, server returns Urdu-cached welcome audio (separate file from English). */
+  langPref?: "ur",
+  /** Urdu voice chat: separate cache + Arabic-script welcome text header. */
+  voiceWelcomeUrduScript?: boolean
 ): Promise<GetWelcomeAudioResult> {
   const params = new URLSearchParams({ user_id: userId })
   if (includeContext) {
     params.set("include_context", "true")
     if (testContextKey != null) params.set("test_context_key", String(testContextKey))
   }
+  if (langPref === "ur") params.set("lang_pref", "ur")
+  if (voiceWelcomeUrduScript) params.set("voice_welcome_urdu_script", "true")
   const res = await fetch(`http://localhost:8000/api/voice/welcome-audio/?${params}`)
   if (!res.ok) throw new Error(res.status === 404 ? "No welcome audio" : "Failed to get welcome audio")
   const blob = await res.blob()
@@ -851,7 +869,8 @@ export async function apiGenerateAndSaveWelcomeAudio(
   welcomeMessage: string,
   langPref: string | null,
   includeTestContext: boolean,
-  testContextKey?: string | number
+  testContextKey?: string | number,
+  voiceWelcomeUrduScript?: boolean
 ): Promise<Blob> {
   const body: Record<string, unknown> = {
     user_id: userId,
@@ -860,6 +879,7 @@ export async function apiGenerateAndSaveWelcomeAudio(
     include_test_context: includeTestContext,
   }
   if (includeTestContext && testContextKey != null) body.test_context_key = testContextKey
+  if (voiceWelcomeUrduScript) body.voice_welcome_urdu_script = true
   const res = await fetch("http://localhost:8000/api/voice/welcome-audio/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -875,7 +895,7 @@ export async function apiGenerateAndSaveWelcomeAudio(
 export async function apiTTSSynthesize(
   text: string,
   language: string = "en",
-  ttsBackend: "xtts" | "qwen3" = "xtts"
+  ttsBackend: "xtts" | "qwen3" = "qwen3"
 ): Promise<Blob> {
   if (!text || !text.trim()) {
     throw new Error("Text cannot be empty")

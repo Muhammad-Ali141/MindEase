@@ -4,8 +4,10 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from "@/lib/api"
-import { MessageCircle, Star, Mic2, ArrowRight, Clock } from "lucide-react"
+import { exportPreviewsToTextFile, exportSinglePreviewToTextFile } from "@/lib/export-sessions"
+import { MessageCircle, Star, Mic2, ArrowRight, Clock, Download, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -13,8 +15,11 @@ const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 export function SessionHistory() {
   const router = useRouter()
   const { user } = useAuth()
+  const t = useProfileDict()
   const [sessions, setSessions] = useState<SessionPreview[]>([])
   const [loading, setLoading]   = useState(true)
+  const [exporting, setExporting] = useState(false)
+  const [exportingSessionId, setExportingSessionId] = useState<string | null>(null)
   const { toast } = useToast()
 
   useEffect(() => { if (user?.id) loadRecentSessions() }, [user?.id])
@@ -40,25 +45,67 @@ export function SessionHistory() {
     try {
       const date = new Date(d), now = new Date()
       const diff = Math.floor(Math.abs(now.getTime() - date.getTime()) / 86400000)
-      if (diff === 0) return "Today"
-      if (diff === 1) return "Yesterday"
-      if (diff < 7) return `${diff}d ago`
+      if (diff === 0) return t.today
+      if (diff === 1) return t.yesterday
+      if (diff < 7) return `${diff}${t.daysAgo}`
       return date.toLocaleDateString()
-    } catch { return "Recent" }
+    } catch { return t.recent }
+  }
+
+  const displayNameForExport = () =>
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() || user?.email || null
+
+  const handleExportOne = async (s: SessionPreview) => {
+    if (!user?.id) return
+    try {
+      setExportingSessionId(s.session_id)
+      await exportSinglePreviewToTextFile(user.id, s, displayNameForExport())
+      toast({ title: t.exportSessionsSuccess })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      toast({
+        title: t.exportSessionsError,
+        description: msg === "NO_SESSIONS" ? t.exportSessionsEmpty : msg,
+        variant: "destructive",
+      })
+    } finally {
+      setExportingSessionId(null)
+    }
+  }
+
+  const handleExportRecent = async () => {
+    if (!user?.id || sessions.length === 0) {
+      toast({ title: t.exportSessionsEmpty, variant: "destructive" })
+      return
+    }
+    try {
+      setExporting(true)
+      await exportPreviewsToTextFile(user.id, sessions, displayNameForExport())
+      toast({ title: t.exportSessionsSuccess })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      toast({
+        title: t.exportSessionsError,
+        description: msg === "NO_SESSIONS" ? t.exportSessionsEmpty : msg,
+        variant: "destructive",
+      })
+    } finally {
+      setExporting(false)
+    }
   }
 
   const toggleStar = async (s: SessionPreview) => {
     if (!user) return
     if (s.state !== "full" && !s.is_starred) {
-      toast({ title: "Cannot star session", description: "Archived sessions cannot be starred.", variant: "destructive" })
+      toast({ title: t.cannotStarSession, description: t.archivedCannotStar, variant: "destructive" })
       return
     }
     try {
       const res = await apiToggleSessionStar(user.id, s.session_id, !s.is_starred)
       setSessions(prev => prev.map(item => item.session_id === s.session_id ? { ...item, ...res.session } : item))
-      toast({ title: res.session.is_starred ? "Session starred" : "Session unstarred" })
+      toast({ title: res.session.is_starred ? t.sessionStarred : t.sessionUnstarred })
     } catch (e: any) {
-      toast({ title: "Unable to update session", description: e.message, variant: "destructive" })
+      toast({ title: t.unableToUpdateSession, description: (e as Error).message, variant: "destructive" })
     }
   }
 
@@ -79,22 +126,52 @@ export function SessionHistory() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.2rem" }}>
-              History
+              {t.history}
             </p>
             <h2 style={{ ...serif, fontSize: "1.25rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
-              Recent Sessions
+              {t.recentSessions}
             </h2>
           </div>
-          <button
-            onClick={() => router.push("/sessions")}
-            style={{
-              ...sans, display: "flex", alignItems: "center", gap: "0.25rem",
-              fontSize: "0.75rem", fontWeight: 600, color: "var(--primary)",
-              background: "none", border: "none", cursor: "pointer",
-            }}
-          >
-            View all <ArrowRight size={13} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+            <button
+              type="button"
+              title={t.exportSessionsTitle}
+              disabled={loading || sessions.length === 0 || exporting || exportingSessionId !== null}
+              onClick={e => { e.preventDefault(); void handleExportRecent() }}
+              style={{
+                ...sans, display: "flex", alignItems: "center", gap: "0.25rem",
+                fontSize: "0.75rem", fontWeight: 600, color: "var(--foreground)",
+                background: "color-mix(in srgb, var(--muted) 45%, transparent)",
+                border: "1px solid var(--border)", borderRadius: 8, padding: "0.35rem 0.65rem",
+                cursor: loading || sessions.length === 0 || exporting || exportingSessionId !== null ? "default" : "pointer",
+                opacity: loading || sessions.length === 0 || exportingSessionId !== null ? 0.5 : 1,
+                transition: "border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease",
+              }}
+              onMouseEnter={e => {
+                if (!loading && sessions.length > 0 && !exporting && !exportingSessionId) {
+                  e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)"
+                  e.currentTarget.style.color = "var(--primary)"
+                }
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = "var(--border)"
+                e.currentTarget.style.color = "var(--foreground)"
+              }}
+            >
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              {exporting ? t.exportSessionsLoading : t.exportSessions}
+            </button>
+            <button
+              onClick={() => router.push("/sessions")}
+              style={{
+                ...sans, display: "flex", alignItems: "center", gap: "0.25rem",
+                fontSize: "0.75rem", fontWeight: 600, color: "var(--primary)",
+                background: "none", border: "none", cursor: "pointer",
+              }}
+            >
+              {t.viewAll} <ArrowRight size={13} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -102,13 +179,13 @@ export function SessionHistory() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
         {loading ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>Loading…</p>
+            <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>{t.loading}</p>
           </div>
         ) : sessions.length === 0 ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem 1.375rem" }}>
             <Clock size={28} style={{ color: "var(--muted-foreground)", marginBottom: "0.75rem" }} />
-            <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>No sessions yet</p>
-            <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem", opacity: 0.7 }}>Your history will appear here</p>
+            <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>{t.noSessionsYet}</p>
+            <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem", opacity: 0.7 }}>{t.startConversation}</p>
           </div>
         ) : (
           sessions.map((s, idx) => (
@@ -128,7 +205,7 @@ export function SessionHistory() {
                 style={{
                   height: "100%",
                   display: "grid",
-                  gridTemplateColumns: "30px 1.7fr 1fr auto",
+                  gridTemplateColumns: "30px 1.6fr 1fr auto",
                   alignItems: "center",
                   gap: "0.75rem",
                   padding: "0 1.125rem",
@@ -164,12 +241,12 @@ export function SessionHistory() {
                       backgroundColor: s.has_voice ? "color-mix(in srgb, var(--sage) 15%, transparent)" : "color-mix(in srgb, var(--primary) 12%, transparent)",
                       color: s.has_voice ? "var(--sage)" : "var(--primary)",
                     }}>
-                      {s.has_voice ? "Voice" : "Text"}
+                      {s.has_voice ? t.voice : t.text}
                     </span>
                   </div>
                   <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.1rem" }}>
                     {formatDate(s.updated_at)}
-                    {!s.has_full_transcript && <span style={{ color: "#d97706", marginLeft: "0.3rem" }}>· Summary only</span>}
+                    {!s.has_full_transcript && <span style={{ color: "#d97706", marginLeft: "0.3rem" }}>· {t.summaryOnly}</span>}
                   </p>
                 </div>
 
@@ -183,7 +260,39 @@ export function SessionHistory() {
                 </p>
 
                 {/* Actions */}
-                <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", flexShrink: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.2rem", flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    title={t.exportOneSessionTitle}
+                    disabled={Boolean(exportingSessionId) || exporting}
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); void handleExportOne(s) }}
+                    style={{
+                      width: 24, height: 24, borderRadius: 5,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      backgroundColor: "transparent",
+                      border: "1px solid var(--border)",
+                      cursor: exportingSessionId || exporting ? "default" : "pointer",
+                      color: "var(--muted-foreground)",
+                      transition: "border-color 0.15s ease, color 0.15s ease",
+                      opacity: exportingSessionId === s.session_id ? 1 : (exportingSessionId || exporting) ? 0.45 : 1,
+                    }}
+                    onMouseEnter={e => {
+                      if (!exportingSessionId && !exporting) {
+                        e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)"
+                        e.currentTarget.style.color = "var(--primary)"
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = "var(--border)"
+                      e.currentTarget.style.color = "var(--muted-foreground)"
+                    }}
+                  >
+                    {exportingSessionId === s.session_id ? (
+                      <Loader2 size={10} className="animate-spin" />
+                    ) : (
+                      <Download size={10} strokeWidth={2} />
+                    )}
+                  </button>
                   <button
                     type="button"
                     onClick={e => { e.preventDefault(); e.stopPropagation(); toggleStar(s) }}

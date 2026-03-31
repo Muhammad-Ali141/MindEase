@@ -8,23 +8,35 @@ const BAR_HEIGHTS = Array.from({ length: 48 }, (_, i) =>
   Math.round(20 + Math.sin(i * 0.41) * 28 + Math.cos(i * 0.73) * 22 + 30)
 )
 
-type VoiceState = "idle" | "recording" | "transcribing" | "thinking" | "synthesizing" | "playing"
+export type AIVoiceState = "idle" | "recording" | "transcribing" | "thinking" | "synthesizing" | "playing"
 
 interface AIVoiceInputProps {
-  voiceState: VoiceState
+  voiceState: AIVoiceState
   recordingTime?: number
   disabled?: boolean
   onMicClick: () => void
   className?: string
+  /** Overrides default English status strings (e.g. profile Urdu). */
+  statusLabels?: Partial<Record<AIVoiceState, string>>
 }
 
 const sans = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+
+const defaultStatusLabels: Record<AIVoiceState, string> = {
+  idle: "Tap to speak",
+  recording: "Listening…",
+  transcribing: "Transcribing speech…",
+  thinking: "Thinking…",
+  synthesizing: "Generating voice…",
+  playing: "Speaking…",
+}
 
 export function AIVoiceInput({
   voiceState,
   recordingTime = 0,
   disabled = false,
   onMicClick,
+  statusLabels,
 }: AIVoiceInputProps) {
   const [mounted, setMounted] = useState(false)
   const [animHeights, setAnimHeights] = useState(BAR_HEIGHTS)
@@ -74,14 +86,7 @@ export function AIVoiceInput({
     ? "rgba(166,124,82,0.6)"   // clay when AI speaking
     : "color-mix(in srgb, var(--border) 80%, transparent)"
 
-  const statusLabel = {
-    idle:          "Tap to speak",
-    recording:     "Listening…",
-    transcribing:  "Transcribing speech…",
-    thinking:      "Thinking…",
-    synthesizing:  "Generating voice…",
-    playing:       "Speaking…",
-  }[voiceState]
+  const statusLabel = { ...defaultStatusLabels, ...statusLabels }[voiceState]
 
   // Mic button style
   const micBg = isRecording

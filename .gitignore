@@ -16,8 +16,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (tracked in private repo - remove these lines to ignore)
-# .env*
+# Secrets — never commit (use .env.example for templates)
+.env
+.env.local
+backend/.env
+backend/chatbot/.env
 
 # vercel
 .vercel
@@ -70,9 +73,15 @@ deberta_best/*.pth
 # Dataset (may be large - partner should download separately)
 dataset/MentalChat16K.csv
 
-# Environment variables (commented for private repo - uncomment for public)
-# .env
-# backend/chatbot/.env
+# Urdu Whisper weights (exceed GitHub 100MB limit; keep on disk or use HF / S3)
+finetuned_urdu_whisper/ct2_model/model.bin
+finetuned_urdu_whisper/merged/model.safetensors
+finetuned_urdu_whisper/adapter_model.safetensors
+finetuned_urdu_whisper/checkpoint-*/adapter_model.safetensors
+finetuned_urdu_whisper/checkpoint-*/optimizer.pt
+finetuned_urdu_whisper/checkpoint-*/rng_state.pth
+finetuned_urdu_whisper/checkpoint-*/scaler.pt
+finetuned_urdu_whisper/checkpoint-*/scheduler.pt
 
 # Python cache
 __pycache__/

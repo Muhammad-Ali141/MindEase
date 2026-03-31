@@ -18,18 +18,21 @@ psycopg2-binary==2.9.9
 python-dotenv==1.0.1
 
 # ============================
-# ML / NLP — conflict-free
+# ML / NLP — conflict-free (tested: Qalb, RAG, TTS, STT)
 # ============================
+# Install PyTorch first: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+# Then: pip install -r backend/requirements.txt
 
-# Transformers 4.35.2 required for Coqui TTS (XTTS): BeamSearchScorer + GPT2InferenceModel.generate
-# (4.33.0 lacks generate fix; >4.35.2 breaks XTTS)
-transformers==4.35.2
+# Transformers 4.46.1: Qalb (Llama 3.1), sentence-transformers, Coqui TTS compatible
+transformers==4.46.1
 
-# Sentence Transformers 2.2.2 compatible with transformers 4.35.2
-sentence-transformers==2.2.2
+# Sentence Transformers 2.7+ compatible with transformers 4.46 and modern huggingface_hub
+sentence-transformers>=2.7.0,<3
 
-torch==2.3.1
-torchvision==0.18.1
+# PyTorch 2.6+ with CUDA 12.4 (install via index-url above)
+torch>=2.4.0
+torchvision>=0.18.0
+torchaudio>=2.4.0
 
 # cuDNN 9 for CUDA 12 (fixes cudnn_ops64_9.dll on Windows; RTX 4070)
 nvidia-cudnn-cu12>=9.9.0
@@ -55,6 +58,14 @@ faster-whisper==1.2.1
 resampy==0.4.2
 
 # ============================
+# Urdu Chat Pipeline
+# ============================
+openai>=1.0.0  # Alibaba API (OpenAI-compatible)
+openpyxl>=3.0.0  # roman_urdu.xlsx
+accelerate>=0.20.0  # Qalb
+bitsandbytes>=0.41.0  # Qalb 4-bit
+
+# ============================
 # Utilities
 # ============================
 tqdm==4.66.1
@@ -64,12 +75,11 @@ pillow==10.4.0
 nltk==3.9.1
 
 # ============================
-# Supporting Libraries — pinned for stability (transformers 4.35.2 + TTS + STT)
+# Supporting Libraries — transformers 4.46 + TTS + STT
 # ============================
-# transformers 4.35.2 requires huggingface-hub>=0.16.4,<1.0 and tokenizers>=0.14,<0.19
-huggingface-hub>=0.16.4,<1.0
-safetensors==0.4.5
-tokenizers>=0.14.0,<0.19
+huggingface-hub>=0.23.0,<1.0
+safetensors>=0.4.1
+tokenizers>=0.20.0,<0.21
 sentencepiece==0.2.0
 regex==2023.10.3
 packaging==23.2
