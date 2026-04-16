@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef, useState } from "react"
 import { type ChatMessage as ChatMessageType } from "@/lib/api"
 import { Brain } from "lucide-react"
 
@@ -9,10 +10,56 @@ interface ChatMessageProps {
   message: ChatMessageType
   userInitial?: string
   grouped?: boolean
+  animateTyping?: boolean
+  streaming?: boolean
 }
 
-export function ChatMessage({ message, userInitial = "U", grouped = false }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  userInitial = "U",
+  grouped = false,
+  animateTyping = false,
+  streaming = false,
+}: ChatMessageProps) {
   const isUser = message.role === "user"
+  const [displayedAssistantText, setDisplayedAssistantText] = useState(message.content)
+  const displayedLengthRef = useRef(message.content.length)
+
+  useEffect(() => {
+    if (isUser || !animateTyping) {
+      setDisplayedAssistantText(message.content)
+      displayedLengthRef.current = message.content.length
+      return
+    }
+
+    if (message.content.length < displayedLengthRef.current) {
+      setDisplayedAssistantText(message.content)
+      displayedLengthRef.current = message.content.length
+      return
+    }
+
+    if (message.content.length === displayedLengthRef.current) {
+      return
+    }
+
+    let frame = 0
+    const target = message.content
+    const reveal = () => {
+      const remaining = target.length - displayedLengthRef.current
+      if (remaining <= 0) return
+
+      const step = Math.max(1, Math.ceil(remaining / (streaming ? 5 : 10)))
+      displayedLengthRef.current = Math.min(target.length, displayedLengthRef.current + step)
+      setDisplayedAssistantText(target.slice(0, displayedLengthRef.current))
+
+      if (displayedLengthRef.current < target.length) {
+        frame = window.setTimeout(reveal, streaming ? 22 : 16)
+      }
+    }
+
+    reveal()
+    return () => window.clearTimeout(frame)
+  }, [animateTyping, isUser, message.content, streaming])
 
   // ── User ──────────────────────────────────────────────────────────────────
   if (isUser) {
@@ -82,20 +129,33 @@ export function ChatMessage({ message, userInitial = "U", grouped = false }: Cha
           color: "var(--foreground)",
           padding: "0.7rem 1rem",
           borderRadius: grouped ? "4px 16px 16px 4px" : "4px 16px 16px 16px",
-          backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)",
-          borderTop: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-          borderRight: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-          borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+          backgroundColor: "var(--card)",
+          borderTop: "1px solid var(--border)",
+          borderRight: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
           borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)",
-          backdropFilter: "blur(12px)",
           boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
           maxWidth: "82%",
         }}
       >
-        {message.content}
+        {displayedAssistantText}
+        {animateTyping && streaming && displayedAssistantText.length > 0 && (
+          <span
+            style={{
+              display: "inline-block",
+              width: 6,
+              marginLeft: 2,
+              opacity: 0.8,
+              animation: "mindease-caret 0.9s ease-in-out infinite",
+            }}
+          >
+            |
+          </span>
+        )}
       </div>
+      <style>{`@keyframes mindease-caret { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.85; } }`}</style>
     </div>
   )
 }

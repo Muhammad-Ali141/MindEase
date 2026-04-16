@@ -7,12 +7,17 @@ import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
 import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from "@/lib/api"
-import { MessageCircle, Star, Mic2, BookOpen, Download, Loader2 } from "lucide-react"
+import { getSessionsCache, setSessionsCache } from "@/lib/cache"
+import { MessageCircle, Star, Mic2, BookOpen, Download, Loader2, CheckSquare, Square, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useProfileDict } from "@/lib/i18n"
-import { exportPreviewsToTextFile, exportSinglePreviewToTextFile } from "@/lib/export-sessions"
+import {
+  exportPreviewsToPdfFile,
+  exportSinglePreviewToPdfFile,
+  anyTranscriptsAvailable,
+} from "@/lib/export-sessions"
 import { BeamsBackground } from "@/components/ui/beams-background"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
@@ -22,14 +27,25 @@ type Group = { label: string; sessions: SessionPreview[] }
 export default function SessionsPage() {
   const router   = useRouter()
   const { user } = useAuth()
-  const [sessions, setSessions]       = useState<SessionPreview[]>([])
-  const [loading, setLoading]         = useState(true)
+  const cached = user?.id ? getSessionsCache(user.id) : null
+  const [sessions, setSessions]       = useState<SessionPreview[]>(cached?.data.sessions ?? [])
+  const [loading, setLoading]         = useState(!cached)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeFilter, setActiveFilter] = useState<"all" | "starred" | "voice" | "text">("all")
   const { toast } = useToast()
   const t = useProfileDict()
   const [exporting, setExporting] = useState(false)
   const [exportingSessionId, setExportingSessionId] = useState<string | null>(null)
+
+  // Multi-select state
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Transcript modal state
+  const [transcriptModal, setTranscriptModal] = useState<{
+    previews: SessionPreview[]
+    hasTranscripts: boolean
+  } | null>(null)
 
   useEffect(() => {
     if (user?.id) loadAllSessions()
@@ -38,17 +54,22 @@ export default function SessionsPage() {
   const loadAllSessions = async () => {
     if (!user?.id) return
     try {
-      setLoading(true)
+      if (!cached) setLoading(true)
       const response = await apiGetRecentSessions(user.id, 0)
       setSessions(response.sessions)
+      setSessionsCache(user.id, response)
     } catch {
-      setSessions([])
+      if (!cached) setSessions([])
     } finally {
       setLoading(false)
     }
   }
 
   const handleSessionClick = (session: SessionPreview) => {
+    if (selectMode) {
+      toggleSelect(session.session_id)
+      return
+    }
     if (session.has_voice) {
       router.push(`/voice-chat?session_id=${session.session_id}`)
     } else {
@@ -113,15 +134,55 @@ export default function SessionsPage() {
   const displayNameForExport = () =>
     user ? [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.email || null : null
 
-  const handleExportFiltered = async () => {
-    if (!user?.id || filteredSessions.length === 0) {
+  // ── Multi-select helpers ──────────────────────────────────────────────────
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredSessions.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredSessions.map(s => s.session_id)))
+    }
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
+
+  // ── Export flow with transcript prompt ────────────────────────────────────
+  const promptAndExport = (previews: SessionPreview[]) => {
+    if (previews.length === 0) {
       toast({ title: t.exportSessionsEmpty, variant: "destructive" })
       return
     }
+    const hasTranscripts = anyTranscriptsAvailable(previews)
+    if (hasTranscripts) {
+      setTranscriptModal({ previews, hasTranscripts })
+    } else {
+      // No transcripts available — export without asking
+      void doExport(previews, false)
+    }
+  }
+
+  const doExport = async (previews: SessionPreview[], includeTranscript: boolean) => {
+    if (!user?.id) return
     try {
       setExporting(true)
-      await exportPreviewsToTextFile(user.id, filteredSessions, displayNameForExport())
+      if (previews.length === 1) {
+        await exportSinglePreviewToPdfFile(user.id, previews[0], displayNameForExport(), includeTranscript)
+      } else {
+        await exportPreviewsToPdfFile(user.id, previews, displayNameForExport(), includeTranscript)
+      }
       toast({ title: t.exportSessionsSuccess })
+      exitSelectMode()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       toast({
@@ -134,22 +195,24 @@ export default function SessionsPage() {
     }
   }
 
-  const handleExportSession = async (session: SessionPreview) => {
-    if (!user?.id) return
-    try {
-      setExportingSessionId(session.session_id)
-      await exportSinglePreviewToTextFile(user.id, session, displayNameForExport())
-      toast({ title: t.exportSessionsSuccess })
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      toast({
-        title: t.exportSessionsError,
-        description: msg === "NO_SESSIONS" ? t.exportSessionsEmpty : msg,
-        variant: "destructive",
-      })
-    } finally {
-      setExportingSessionId(null)
-    }
+  const handleExportFiltered = () => {
+    promptAndExport(filteredSessions)
+  }
+
+  const handleExportSelected = () => {
+    const selected = filteredSessions.filter(s => selectedIds.has(s.session_id))
+    promptAndExport(selected)
+  }
+
+  const handleExportSession = (session: SessionPreview) => {
+    promptAndExport([session])
+  }
+
+  const handleTranscriptChoice = (include: boolean) => {
+    if (!transcriptModal) return
+    const { previews } = transcriptModal
+    setTranscriptModal(null)
+    void doExport(previews, include)
   }
 
   const toggleStar = async (session: SessionPreview) => {
@@ -174,9 +237,11 @@ export default function SessionsPage() {
     }
   }
 
+  const anyBusy = exporting || exportingSessionId !== null
+
   return (
     <AuthGuard>
-      <div style={{ position: "fixed", inset: 0, display: "flex", width: "100vw", height: "100vh", zIndex: 50, overflow: "hidden" }}>
+      <div data-page-root style={{ position: "fixed", inset: 0, display: "flex", width: "100vw", height: "100vh", zIndex: 50, overflow: "hidden" }}>
 
         {/* Background */}
         <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
@@ -226,9 +291,8 @@ export default function SessionsPage() {
                             style={{
                               ...sans, display: "flex", alignItems: "center", gap: "0.45rem",
                               padding: "0.4rem 0.875rem", borderRadius: 100,
-                              backgroundColor: isActive ? "color-mix(in srgb, var(--card) 95%, transparent)" : "color-mix(in srgb, var(--card) 85%, transparent)",
+                              backgroundColor: isActive ? "var(--card)" : "var(--muted)",
                               border: isActive ? `1.5px solid ${s.accent}` : "1px solid var(--border)",
-                              backdropFilter: "blur(12px)",
                               cursor: "pointer",
                               boxShadow: isActive ? `0 0 0 3px color-mix(in srgb, ${s.accent} 14%, transparent)` : "none",
                               transition: "border 0.15s ease, box-shadow 0.15s ease",
@@ -244,42 +308,60 @@ export default function SessionsPage() {
                     </div>
                   )}
 
+                  {/* Action buttons row */}
                   {!loading && filteredSessions.length > 0 && (
-                    <button
-                      type="button"
-                      title={t.exportSessionsTitle}
-                      disabled={exporting || exportingSessionId !== null}
-                      onClick={() => void handleExportFiltered()}
-                      style={{
-                        ...sans,
-                        marginTop: "1rem",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.4rem",
-                        fontSize: "0.8125rem",
-                        fontWeight: 600,
-                        color: "var(--foreground)",
-                        background: "color-mix(in srgb, var(--muted) 40%, transparent)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 10,
-                        padding: "0.45rem 0.9rem",
-                        cursor: exporting ? "default" : "pointer",
-                        transition: "border-color 0.15s ease, color 0.15s ease",
-                      }}
-                      onMouseEnter={e => {
-                        if (!exporting) {
-                          e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)"
-                          e.currentTarget.style.color = "var(--primary)"
-                        }
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.borderColor = "var(--border)"
-                        e.currentTarget.style.color = "var(--foreground)"
-                      }}
-                    >
-                      {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                      {exporting ? t.exportSessionsLoading : t.exportSessions}
-                    </button>
+                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+                      {/* Download All / Download Selected */}
+                      {!selectMode ? (
+                        <>
+                          <ActionButton
+                            onClick={handleExportFiltered}
+                            disabled={anyBusy}
+                            busy={exporting}
+                            icon={<Download size={14} />}
+                            label={exporting ? t.exportSessionsLoading : t.exportSessions}
+                            title={t.exportSessionsTitle}
+                          />
+                          <ActionButton
+                            onClick={() => setSelectMode(true)}
+                            disabled={anyBusy}
+                            icon={<CheckSquare size={14} />}
+                            label={t.selectSessions}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <ActionButton
+                            onClick={handleExportSelected}
+                            disabled={anyBusy || selectedIds.size === 0}
+                            busy={exporting}
+                            icon={<Download size={14} />}
+                            label={exporting ? t.exportSessionsLoading : `${t.exportSelected} (${selectedIds.size})`}
+                            title={t.exportSelectedTitle}
+                            accent
+                          />
+                          <ActionButton
+                            onClick={toggleSelectAll}
+                            disabled={anyBusy}
+                            icon={selectedIds.size === filteredSessions.length
+                              ? <CheckSquare size={14} />
+                              : <Square size={14} />}
+                            label={selectedIds.size === filteredSessions.length ? t.deselectAll : t.selectAll}
+                          />
+                          <ActionButton
+                            onClick={exitSelectMode}
+                            disabled={anyBusy}
+                            icon={<X size={14} />}
+                            label={t.cancelSelect}
+                          />
+                          {selectedIds.size > 0 && (
+                            <span style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>
+                              {selectedIds.size} {t.sessionsSelected}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
                   )}
                 </motion.div>
 
@@ -338,10 +420,13 @@ export default function SessionsPage() {
                               index={si}
                               onOpen={() => handleSessionClick(session)}
                               onStar={() => toggleStar(session)}
-                              onDownload={() => void handleExportSession(session)}
-                              downloadLocked={exporting || exportingSessionId !== null}
+                              onDownload={() => handleExportSession(session)}
+                              downloadLocked={anyBusy}
                               downloadActive={exportingSessionId === session.session_id}
                               formatDate={formatDate}
+                              selectMode={selectMode}
+                              selected={selectedIds.has(session.session_id)}
+                              onToggleSelect={() => toggleSelect(session.session_id)}
                             />
                           ))}
                         </div>
@@ -353,8 +438,168 @@ export default function SessionsPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Transcript prompt modal ────────────────────────────── */}
+        <AnimatePresence>
+          {transcriptModal && (
+            <TranscriptModal
+              t={t}
+              onInclude={() => handleTranscriptChoice(true)}
+              onExclude={() => handleTranscriptChoice(false)}
+              onCancel={() => setTranscriptModal(null)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </AuthGuard>
+  )
+}
+
+// ── Reusable action button ──────────────────────────────────────────────────
+
+function ActionButton({
+  onClick, disabled, busy, icon, label, title, accent,
+}: {
+  onClick: () => void
+  disabled?: boolean
+  busy?: boolean
+  icon: React.ReactNode
+  label: string
+  title?: string
+  accent?: boolean
+}) {
+  const sans2 = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        ...sans2,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "0.4rem",
+        fontSize: "0.8125rem",
+        fontWeight: 600,
+        color: accent ? "var(--primary)" : "var(--foreground)",
+        background: "color-mix(in srgb, var(--muted) 40%, transparent)",
+        border: accent ? "1.5px solid color-mix(in srgb, var(--primary) 45%, transparent)" : "1px solid var(--border)",
+        borderRadius: 10,
+        padding: "0.45rem 0.9rem",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled && !busy ? 0.5 : 1,
+        transition: "border-color 0.15s ease, color 0.15s ease",
+      }}
+      onMouseEnter={e => {
+        if (!disabled) {
+          e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)"
+          e.currentTarget.style.color = "var(--primary)"
+        }
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = accent ? "color-mix(in srgb, var(--primary) 45%, transparent)" : "var(--border)"
+        e.currentTarget.style.color = accent ? "var(--primary)" : "var(--foreground)"
+      }}
+    >
+      {busy ? <Loader2 size={14} className="animate-spin" /> : icon}
+      {label}
+    </button>
+  )
+}
+
+// ── Transcript prompt modal ─────────────────────────────────────────────────
+
+function TranscriptModal({
+  t, onInclude, onExclude, onCancel,
+}: {
+  t: ReturnType<typeof useProfileDict>
+  onInclude: () => void
+  onExclude: () => void
+  onCancel: () => void
+}) {
+  const sans2 = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        backgroundColor: "rgba(0,0,0,0.45)",
+        backdropFilter: "blur(6px)",
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 8 }}
+        transition={{ duration: 0.22 }}
+        style={{
+          ...sans2,
+          width: "min(420px, 92vw)",
+          backgroundColor: "var(--card)",
+          border: "1px solid var(--border)",
+          borderRadius: 18,
+          padding: "1.75rem",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)",
+        }}
+      >
+        <h3 style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.5rem" }}>
+          {t.transcriptModalTitle}
+        </h3>
+        <p style={{ fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.6, marginBottom: "1.5rem" }}>
+          {t.transcriptModalDesc}
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <button
+            onClick={onInclude}
+            style={{
+              ...sans2, width: "100%", padding: "0.65rem 1rem", borderRadius: 10,
+              fontSize: "0.875rem", fontWeight: 600, cursor: "pointer",
+              backgroundColor: "var(--primary)", color: "#fff", border: "none",
+              transition: "opacity 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = "0.88" }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = "1" }}
+          >
+            {t.transcriptModalYes}
+          </button>
+          <button
+            onClick={onExclude}
+            style={{
+              ...sans2, width: "100%", padding: "0.65rem 1rem", borderRadius: 10,
+              fontSize: "0.875rem", fontWeight: 600, cursor: "pointer",
+              backgroundColor: "var(--muted)", color: "var(--foreground)",
+              border: "1px solid var(--border)",
+              transition: "border-color 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)" }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)" }}
+          >
+            {t.transcriptModalNo}
+          </button>
+          <button
+            onClick={onCancel}
+            style={{
+              ...sans2, width: "100%", padding: "0.5rem 1rem", borderRadius: 10,
+              fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer",
+              backgroundColor: "transparent", color: "var(--muted-foreground)",
+              border: "none",
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = "var(--foreground)" }}
+            onMouseLeave={e => { e.currentTarget.style.color = "var(--muted-foreground)" }}
+          >
+            {t.transcriptModalCancel}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -364,6 +609,7 @@ const sans2 = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 function SessionCard({
   session, index, onOpen, onStar, onDownload, downloadLocked, downloadActive, formatDate,
+  selectMode, selected, onToggleSelect,
 }: {
   session: SessionPreview
   index: number
@@ -373,6 +619,9 @@ function SessionCard({
   downloadLocked: boolean
   downloadActive: boolean
   formatDate: (d: string) => string
+  selectMode: boolean
+  selected: boolean
+  onToggleSelect: () => void
 }) {
   const t = useProfileDict()
   const starred     = session.is_starred
@@ -389,23 +638,42 @@ function SessionCard({
         display: "flex", alignItems: "center", gap: "0.875rem",
         padding: "0.875rem 1rem",
         borderRadius: 14,
-        backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)",
-        border: `1px solid ${starred ? "color-mix(in srgb, #e8a030 30%, transparent)" : "var(--border)"}`,
-        backdropFilter: "blur(12px)",
-        boxShadow: starred ? "0 2px 12px rgba(232,160,48,0.07)" : "0 1px 6px rgba(0,0,0,0.04)",
+        backgroundColor: "var(--card)",
+        border: `1px solid ${
+          selected ? "color-mix(in srgb, var(--primary) 50%, transparent)"
+          : starred ? "color-mix(in srgb, #e8a030 30%, transparent)"
+          : "var(--border)"
+        }`,
+        boxShadow: selected
+          ? "0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent)"
+          : starred ? "0 2px 12px rgba(232,160,48,0.07)" : "0 1px 6px rgba(0,0,0,0.04)",
         transition: "border-color 0.18s ease, box-shadow 0.18s ease",
+        cursor: selectMode ? "pointer" : undefined,
       } as React.CSSProperties}
+      onClick={selectMode ? onToggleSelect : undefined}
       onMouseEnter={e => {
+        if (selectMode) return
         const el = e.currentTarget as HTMLElement
         el.style.borderColor = starred ? "color-mix(in srgb, #e8a030 50%, transparent)" : "color-mix(in srgb, var(--primary) 35%, transparent)"
         el.style.boxShadow = "0 4px 18px rgba(166,124,82,0.1)"
       }}
       onMouseLeave={e => {
+        if (selectMode) return
         const el = e.currentTarget as HTMLElement
         el.style.borderColor = starred ? "color-mix(in srgb, #e8a030 30%, transparent)" : "var(--border)"
         el.style.boxShadow = starred ? "0 2px 12px rgba(232,160,48,0.07)" : "0 1px 6px rgba(0,0,0,0.04)"
       }}
     >
+      {/* Checkbox in select mode */}
+      {selectMode && (
+        <div style={{ flexShrink: 0, color: selected ? "var(--primary)" : "var(--muted-foreground)" }}>
+          {selected
+            ? <CheckSquare size={20} strokeWidth={1.75} />
+            : <Square size={20} strokeWidth={1.75} />
+          }
+        </div>
+      )}
+
       {/* Icon */}
       <div style={{
         width: 42, height: 42, borderRadius: 11, flexShrink: 0,
@@ -421,8 +689,8 @@ function SessionCard({
 
       {/* Main content */}
       <button
-        onClick={onOpen}
-        style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+        onClick={selectMode ? undefined : onOpen}
+        style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, cursor: selectMode ? "pointer" : "pointer", textAlign: "left" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem", flexWrap: "wrap" }}>
           <span style={{ ...sans2, fontSize: "0.9375rem", fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -463,70 +731,75 @@ function SessionCard({
         </span>
       </button>
 
-      {/* Download this session */}
-      <button
-        type="button"
-        onClick={e => { e.stopPropagation(); onDownload() }}
-        title={t.exportOneSessionTitle}
-        disabled={downloadLocked}
-        style={{
-          flexShrink: 0, width: 34, height: 34, borderRadius: 9,
-          border: "1px solid var(--border)",
-          backgroundColor: "transparent",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: downloadLocked && !downloadActive ? "default" : "pointer",
-          transition: "border-color 0.15s ease, color 0.15s ease",
-          color: "var(--muted-foreground)",
-          opacity: downloadLocked && !downloadActive ? 0.45 : 1,
-        } as React.CSSProperties}
-        onMouseEnter={e => {
-          if (!downloadLocked || downloadActive) {
-            e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)"
-            e.currentTarget.style.color = "var(--primary)"
-          }
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.borderColor = "var(--border)"
-          e.currentTarget.style.color = "var(--muted-foreground)"
-        }}
-      >
-        {downloadActive ? (
-          <Loader2 size={15} className="animate-spin" />
-        ) : (
-          <Download size={15} strokeWidth={1.75} />
-        )}
-      </button>
+      {/* Action buttons (hidden in select mode) */}
+      {!selectMode && (
+        <>
+          {/* Download this session */}
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onDownload() }}
+            title={t.exportOneSessionTitle}
+            disabled={downloadLocked}
+            style={{
+              flexShrink: 0, width: 34, height: 34, borderRadius: 9,
+              border: "1px solid var(--border)",
+              backgroundColor: "transparent",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: downloadLocked && !downloadActive ? "default" : "pointer",
+              transition: "border-color 0.15s ease, color 0.15s ease",
+              color: "var(--muted-foreground)",
+              opacity: downloadLocked && !downloadActive ? 0.45 : 1,
+            } as React.CSSProperties}
+            onMouseEnter={e => {
+              if (!downloadLocked || downloadActive) {
+                e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 45%, transparent)"
+                e.currentTarget.style.color = "var(--primary)"
+              }
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = "var(--border)"
+              e.currentTarget.style.color = "var(--muted-foreground)"
+            }}
+          >
+            {downloadActive ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <Download size={15} strokeWidth={1.75} />
+            )}
+          </button>
 
-      {/* Star button */}
-      <button
-        onClick={e => { e.stopPropagation(); onStar() }}
-        title={starred ? "Unstar" : "Star this session"}
-        style={{
-          flexShrink: 0, width: 34, height: 34, borderRadius: 9,
-          border: `1px solid ${starred ? "color-mix(in srgb, #e8a030 45%, transparent)" : "var(--border)"}`,
-          backgroundColor: starred ? "color-mix(in srgb, #e8a030 12%, transparent)" : "transparent",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: "pointer", transition: "all 0.15s ease",
-          color: starred ? "#e8a030" : "var(--muted-foreground)",
-        } as React.CSSProperties}
-        onMouseEnter={e => {
-          if (!starred) {
-            e.currentTarget.style.borderColor = "color-mix(in srgb, #e8a030 38%, transparent)"
-            e.currentTarget.style.color = "#e8a030"
-          } else {
-            e.currentTarget.style.opacity = "0.75"
-          }
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.opacity = "1"
-          if (!starred) {
-            e.currentTarget.style.borderColor = "var(--border)"
-            e.currentTarget.style.color = "var(--muted-foreground)"
-          }
-        }}
-      >
-        <Star size={15} strokeWidth={1.75} fill={starred ? "currentColor" : "none"} style={{ color: "inherit" }} />
-      </button>
+          {/* Star button */}
+          <button
+            onClick={e => { e.stopPropagation(); onStar() }}
+            title={starred ? "Unstar" : "Star this session"}
+            style={{
+              flexShrink: 0, width: 34, height: 34, borderRadius: 9,
+              border: `1px solid ${starred ? "color-mix(in srgb, #e8a030 45%, transparent)" : "var(--border)"}`,
+              backgroundColor: starred ? "color-mix(in srgb, #e8a030 12%, transparent)" : "transparent",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", transition: "all 0.15s ease",
+              color: starred ? "#e8a030" : "var(--muted-foreground)",
+            } as React.CSSProperties}
+            onMouseEnter={e => {
+              if (!starred) {
+                e.currentTarget.style.borderColor = "color-mix(in srgb, #e8a030 38%, transparent)"
+                e.currentTarget.style.color = "#e8a030"
+              } else {
+                e.currentTarget.style.opacity = "0.75"
+              }
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.opacity = "1"
+              if (!starred) {
+                e.currentTarget.style.borderColor = "var(--border)"
+                e.currentTarget.style.color = "var(--muted-foreground)"
+              }
+            }}
+          >
+            <Star size={15} strokeWidth={1.75} fill={starred ? "currentColor" : "none"} style={{ color: "inherit" }} />
+          </button>
+        </>
+      )}
     </motion.div>
   )
 }

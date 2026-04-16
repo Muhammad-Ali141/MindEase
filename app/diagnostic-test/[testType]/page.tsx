@@ -10,6 +10,7 @@ import { useState, useEffect } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "next-themes"
 import { apiSubmitDiagnosticTest, apiGetDiagnosticTestStatus } from "@/lib/api"
+import { getTestStatusCache, setTestStatusCache } from "@/lib/cache"
 import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
@@ -44,7 +45,6 @@ export default function TestPage() {
   const [testAlreadyTaken,setTestAlreadyTaken]= useState(false)
   const [currentQ,        setCurrentQ]        = useState(0)
   const [direction,       setDirection]       = useState(1) // 1=forward, -1=back
-  const [justAnswered,    setJustAnswered]    = useState(false)
 
   const getTestFile = (type: string, lang: "en" | "ur") => {
     const fileMap: Record<string, string> = {
@@ -67,8 +67,17 @@ export default function TestPage() {
   useEffect(() => {
     const load = async () => {
       if (!user?.id) { setLoading(false); return }
+
+      // Apply cached status instantly for fast UI, then always fetch fresh for authoritative guard
+      const cached = getTestStatusCache(user.id)
+      if (cached) {
+        setTestStatus(cached.data)
+      }
+
+      // Always fetch fresh status — the "already taken" guard must be authoritative
       try {
         const status = await apiGetDiagnosticTestStatus(user.id)
+        setTestStatusCache(user.id, status)
         setTestStatus(status)
         if (testType !== "generic-screening") {
           if (!status.available_test) { setTestAlreadyTaken(true); setLoading(false); return }
@@ -102,14 +111,6 @@ export default function TestPage() {
 
   const handleAnswer = (value: number) => {
     setAnswers(prev => ({ ...prev, [currentQ]: value }))
-    setJustAnswered(true)
-    setTimeout(() => {
-      setJustAnswered(false)
-      if (currentQ < total - 1) {
-        setDirection(1)
-        setCurrentQ(q => q + 1)
-      }
-    }, 420)
   }
 
   const goTo = (idx: number) => {
@@ -377,20 +378,20 @@ export default function TestPage() {
         </div>
 
         {/* Question card */}
-        <div style={{ position: "relative", overflow: "hidden", marginBottom: "1.25rem" }}>
-          <AnimatePresence mode="wait" custom={direction}>
+        <div style={{ position: "relative", overflow: "hidden", marginBottom: "1.25rem", minHeight: 310 }}>
+          <AnimatePresence mode="wait" initial={false} custom={direction}>
             <motion.div
               key={currentQ}
               custom={direction}
               variants={{
-                enter: (d: number) => ({ x: d * 60, opacity: 0 }),
-                center:                { x: 0, opacity: 1 },
-                exit:  (d: number) => ({ x: d * -60, opacity: 0 }),
+                enter: (d: number) => ({ x: d * 36, opacity: 0, y: 6, scale: 0.995 }),
+                center:                { x: 0, opacity: 1, y: 0, scale: 1 },
+                exit:  (d: number) => ({ x: d * -36, opacity: 0, y: -4, scale: 0.995 }),
               }}
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ duration: 0.28, ease: [0.32, 0, 0.67, 0] }}
+              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
               style={{
                 backgroundColor: "color-mix(in srgb, var(--card) 88%, transparent)",
                 backdropFilter: "blur(10px)", borderRadius: 20,
@@ -400,6 +401,7 @@ export default function TestPage() {
                   ? "0 4px 24px rgba(166,124,82,0.12)"
                   : "0 2px 12px rgba(0,0,0,0.05)",
                 transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                willChange: "transform, opacity",
               }}
             >
               {/* Question number */}
@@ -434,9 +436,9 @@ export default function TestPage() {
                   return (
                     <motion.button
                       key={i}
-                      onClick={() => !justAnswered && handleAnswer(i)}
-                      whileHover={!justAnswered ? { y: -2 } : {}}
-                      whileTap={!justAnswered ? { scale: 0.95 } : {}}
+                      onClick={() => handleAnswer(i)}
+                      whileHover={{ y: -2 }}
+                      whileTap={{ scale: 0.95 }}
                       style={{
                         ...sans,
                         display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem",
@@ -446,7 +448,7 @@ export default function TestPage() {
                         backgroundColor: isSelected
                           ? "color-mix(in srgb, var(--primary) 14%, transparent)"
                           : "color-mix(in srgb, var(--muted) 40%, transparent)",
-                        cursor: justAnswered ? "default" : "pointer",
+                        cursor: "pointer",
                         transition: "all 0.15s ease",
                         boxShadow: isSelected ? "0 4px 12px rgba(166,124,82,0.2)" : "none",
                       }}

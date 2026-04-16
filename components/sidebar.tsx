@@ -1,7 +1,7 @@
 "use client"
 
 import { Home, MessageCircle, Mic2, FileText, Users, Settings, LogOut, ChevronLeft, ChevronRight } from "lucide-react"
-import { useRouter, usePathname } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { useClerk } from "@clerk/nextjs"
 import { useTheme } from "next-themes"
@@ -27,13 +27,20 @@ type SidebarProps = {
 
 export function Sidebar({ open, onToggle }: SidebarProps) {
   const router   = useRouter()
-  const pathname = usePathname()
   const { logout, user } = useAuth()
   const { signOut } = useClerk()
   const { theme } = useTheme()
   const t = useProfileDict()
   const [mounted, setMounted] = useState(false)
+  const [pathname, setPathname] = useState("")
   useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const updatePath = () => setPathname(window.location.pathname)
+    updatePath()
+    window.addEventListener("popstate", updatePath)
+    return () => window.removeEventListener("popstate", updatePath)
+  }, [])
   const isDark = !mounted || theme !== "light"
   const navItems = navConfig.map(({ icon, key, href }) => ({ icon, label: t[key], href }))
 
@@ -98,16 +105,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
         flexShrink: 0,
       }}>
         <Link href="/dashboard" style={{ textDecoration: "none", flexShrink: 0 }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: 9,
-            backgroundColor: "#a67c52",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 14px rgba(166,124,82,0.5)",
-          }}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="white" />
-            </svg>
-          </div>
+          <img src="/logo.svg" alt="MindEase" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "contain" }} />
         </Link>
 
         {open && (
@@ -178,9 +176,11 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
         {navItems.map(({ icon: Icon, label, href }) => {
           const active = isActive(href)
           return (
-            <button
+            <Link
               key={href}
-              onClick={() => router.push(href)}
+              href={href}
+              prefetch={true}
+              onClick={() => setPathname(href)}
               title={!open ? label : undefined}
               style={{
                 ...sans,
@@ -194,7 +194,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
                 backgroundColor: active ? C.navActiveBg : "transparent",
                 color: active ? C.navActive : C.navText,
                 fontSize: "0.8125rem", fontWeight: active ? 600 : 400,
-                textAlign: "left",
+                textAlign: "left", textDecoration: "none",
                 transition: "background-color 0.15s ease, color 0.15s ease",
               }}
               onMouseEnter={e => {
@@ -212,7 +212,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
             >
               <Icon size={16} style={{ flexShrink: 0 }} />
               {open && label}
-            </button>
+            </Link>
           )
         })}
       </nav>
@@ -265,41 +265,68 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
         padding: open ? "0.625rem 0.75rem 1.125rem" : "0.5rem 0 1rem",
         display: "flex", flexDirection: "column", gap: "0.125rem",
       }}>
-        {[
-          { icon: Settings, label: t.settings, action: () => router.push("/profile"), danger: false },
-          { icon: LogOut,   label: t.logOut,   action: handleLogout, danger: true },
-        ].map(({ icon: Icon, label, action, danger }) => (
-          <button
-            key={label}
-            onClick={action}
-            title={!open ? label : undefined}
-            style={{
-              ...sans,
-              display: "flex", alignItems: "center",
-              gap: open ? "0.625rem" : 0,
-              justifyContent: open ? "flex-start" : "center",
-              width: "100%",
-              padding: open ? "0.5rem 0.625rem" : "0.5625rem 0",
-              borderRadius: 9, cursor: "pointer", border: "none",
-              borderLeft: open ? "2px solid transparent" : "none",
-              backgroundColor: "transparent",
-              color: danger ? C.logoutTx : C.settingsTx,
-              fontSize: "0.8125rem",
-              transition: "background-color 0.15s ease, color 0.15s ease",
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.backgroundColor = danger ? C.logoutHBg : C.navHoverBg
-              e.currentTarget.style.color = danger ? C.logoutHTx : C.navHoverTx
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.backgroundColor = "transparent"
-              e.currentTarget.style.color = danger ? C.logoutTx : C.settingsTx
-            }}
-          >
-            <Icon size={15} style={{ flexShrink: 0 }} />
-            {open && label}
-          </button>
-        ))}
+        {/* Settings link */}
+        <Link
+          href="/profile"
+          prefetch={true}
+          title={!open ? t.settings : undefined}
+          style={{
+            ...sans,
+            display: "flex", alignItems: "center",
+            gap: open ? "0.625rem" : 0,
+            justifyContent: open ? "flex-start" : "center",
+            width: "100%",
+            padding: open ? "0.5rem 0.625rem" : "0.5625rem 0",
+            borderRadius: 9, cursor: "pointer", border: "none",
+            borderLeft: open ? "2px solid transparent" : "none",
+            backgroundColor: "transparent",
+            color: C.settingsTx,
+            fontSize: "0.8125rem", textDecoration: "none",
+            transition: "background-color 0.15s ease, color 0.15s ease",
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.backgroundColor = C.navHoverBg
+            e.currentTarget.style.color = C.navHoverTx
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.backgroundColor = "transparent"
+            e.currentTarget.style.color = C.settingsTx
+          }}
+        >
+          <Settings size={15} style={{ flexShrink: 0 }} />
+          {open && t.settings}
+        </Link>
+
+        {/* Logout button */}
+        <button
+          onClick={handleLogout}
+          title={!open ? t.logOut : undefined}
+          style={{
+            ...sans,
+            display: "flex", alignItems: "center",
+            gap: open ? "0.625rem" : 0,
+            justifyContent: open ? "flex-start" : "center",
+            width: "100%",
+            padding: open ? "0.5rem 0.625rem" : "0.5625rem 0",
+            borderRadius: 9, cursor: "pointer", border: "none",
+            borderLeft: open ? "2px solid transparent" : "none",
+            backgroundColor: "transparent",
+            color: C.logoutTx,
+            fontSize: "0.8125rem",
+            transition: "background-color 0.15s ease, color 0.15s ease",
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.backgroundColor = C.logoutHBg
+            e.currentTarget.style.color = C.logoutHTx
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.backgroundColor = "transparent"
+            e.currentTarget.style.color = C.logoutTx
+          }}
+        >
+          <LogOut size={15} style={{ flexShrink: 0 }} />
+          {open && t.logOut}
+        </button>
       </div>
     </div>
   )

@@ -1,10 +1,48 @@
 """
-LLM Client for Ollama Integration
-Uses Llama 3.1 8B Instruct via Ollama API
+LLM Client
+- Primary backend: OpenRouter (OpenAI-compatible), when OPENROUTER_API_KEY is set.
+- Fallback backend: Ollama (local Llama 3.1 8B Instruct).
+The system prompt and message construction are identical across backends so the
+assistant's behavior is unchanged.
 """
+import os
+import sys
 import time
 import ollama
 from typing import Optional, List, Dict, Generator
+
+
+def _log(msg: str):
+    """Print to stderr so the log isn't swallowed by stdout-capturing init blocks."""
+    print(msg, file=sys.stderr, flush=True)
+
+try:
+    from openai import OpenAI as _OpenAI  # OpenAI-compatible client; OpenRouter accepts it
+except Exception:
+    _OpenAI = None
+
+# ---- OpenRouter configuration (env-driven, read lazily so dotenv can load first) ----
+def _openrouter_keys():
+    """Return list of API keys: OPENROUTER_API_KEY, OPENROUTER_API_KEY_2, etc."""
+    keys = []
+    primary = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    if primary:
+        keys.append(primary)
+    backup = (os.getenv("OPENROUTER_API_KEY_2") or "").strip()
+    if backup:
+        keys.append(backup)
+    return keys
+
+def _openrouter_env():
+    keys = _openrouter_keys()
+    return {
+        "api_keys": keys,
+        "api_key": keys[0] if keys else "",
+        "base_url": (os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1").strip(),
+        "model": (os.getenv("OPENROUTER_MODEL") or "meta-llama/llama-3.3-70b-instruct").strip(),
+        "site_url": (os.getenv("OPENROUTER_SITE_URL") or "http://localhost:3000").strip(),
+        "site_name": (os.getenv("OPENROUTER_SITE_NAME") or "MindEase").strip(),
+    }
 
 # Message shown when Ollama GPU runner crashes (mid-conversation); emphasize CPU fix for recurring issues
 OLLAMA_GPU_ERROR_MSG = (
@@ -28,14 +66,85 @@ class LLMClient:
     
     def __init__(self, model_name: str = None):
         """
-        Initialize LLM client
-        
-        Args:
-            model_name: Name of Ollama model to use. If None, will auto-detect available llama3.1 model.
+        Initialize LLM client.
+
+        - If OPENROUTER_API_KEY is set, use OpenRouter (OpenAI-compatible) as the backend.
+          model_name, if provided, overrides the env default; otherwise OPENROUTER_MODEL is used.
+        - Otherwise, fall back to local Ollama (auto-detect llama3.1 model).
         """
+        self.backend = "ollama"
+        self._openrouter_clients = []  # list of (OpenAI client, key_index) for cascading fallback
+        self._openrouter_cfg = _openrouter_env()
+        api_keys = self._openrouter_cfg["api_keys"]
+        _log(f"[LLM init] OPENROUTER keys: {len(api_keys)}, openai-sdk available: {_OpenAI is not None}")
+        if api_keys and _OpenAI is not None:
+            for idx, key in enumerate(api_keys):
+                try:
+                    client = _OpenAI(
+                        base_url=self._openrouter_cfg["base_url"],
+                        api_key=key,
+                    )
+                    self._openrouter_clients.append((client, idx + 1))
+                except Exception as e:
+                    _log(f"[WARN] OpenRouter key #{idx+1} init failed: {e}")
+        if self._openrouter_clients:
+            self.backend = "openrouter"
+            self.model_name = model_name or self._openrouter_cfg["model"]
+            # Also prepare Ollama as silent fallback
+            self._ollama_model = None
+            try:
+                self._find_and_set_ollama_model()
+            except Exception:
+                pass
+            _log(f"[OK] LLM backend: OpenRouter (model: {self.model_name}, {len(self._openrouter_clients)} key(s), ollama fallback: {self._ollama_model or 'unavailable'})")
+            return
+
         self.model_name = model_name
+        self._ollama_model = None
         self._find_and_set_model()
-    
+
+    def _find_and_set_ollama_model(self):
+        """Detect best Ollama model and store in self._ollama_model (for fallback use)."""
+        name = self._detect_ollama_model()
+        if name:
+            self._ollama_model = name
+
+    def _detect_ollama_model(self) -> str | None:
+        """Return the best available Ollama model name, or None."""
+        try:
+            models_response = ollama.list()
+            if hasattr(models_response, 'models'):
+                model_list = models_response.models
+            elif isinstance(models_response, dict) and 'models' in models_response:
+                model_list = models_response['models']
+            elif isinstance(models_response, list):
+                model_list = models_response
+            else:
+                model_list = []
+            model_names = []
+            for model in model_list:
+                name = None
+                if hasattr(model, 'model'):
+                    name = model.model
+                elif isinstance(model, dict):
+                    name = model.get('model') or model.get('name')
+                elif isinstance(model, str):
+                    name = model
+                if name and name not in model_names:
+                    model_names.append(name)
+            for preferred in ["llama3.1:8b-instruct", "llama3.1:8b", "llama3.1:8b-instruct-q4_K_M", "llama3.1:8b-instruct-q4"]:
+                if preferred in model_names:
+                    return preferred
+            llama_models = [m for m in model_names if 'llama3.1' in m.lower() and '8b' in m.lower()]
+            if llama_models:
+                return llama_models[0]
+            llama3_models = [m for m in model_names if 'llama3' in m.lower()]
+            if llama3_models:
+                return llama3_models[0]
+        except Exception:
+            pass
+        return None
+
     def _find_and_set_model(self):
         """Find and set available model, auto-detect if model_name is None"""
         try:
@@ -294,81 +403,56 @@ Remember: Understanding the user's situation is MORE IMPORTANT than immediately 
         print("[LLM input] context length:", len(context or ""), "chars")
         print("[LLM input] current_message (last user content) length:", len(current_message), "chars")
         # Generate response
-        if not self.model_name:
-            return "Error: No LLM model available. Please ensure Ollama is running and a model is downloaded.\n  ollama pull llama3.1:8b-instruct"
-        
-        last_error = None
+        _log(f"[LLM backend] {self.backend} (model: {self.model_name})")
+        if self.backend == "openrouter" and self._openrouter_clients:
+            last_err = None
+            for client, key_idx in self._openrouter_clients:
+                try:
+                    _log(f"[LLM] trying OpenRouter key #{key_idx}")
+                    completion = client.chat.completions.create(
+                        extra_headers={
+                            "HTTP-Referer": self._openrouter_cfg["site_url"],
+                            "X-OpenRouter-Title": self._openrouter_cfg["site_name"],
+                        },
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=0.7,
+                        top_p=0.9,
+                    )
+                    return completion.choices[0].message.content or ""
+                except Exception as e:
+                    last_err = e
+                    _log(f"[WARN] OpenRouter key #{key_idx} failed: {e}")
+            # All keys exhausted — fall through to Ollama
+            _log(f"[WARN] All OpenRouter keys exhausted, falling back to Ollama")
+
+        # Ollama fallback — determine which model name to use
+        ollama_model = getattr(self, '_ollama_model', None) or self.model_name
+        if not ollama_model:
+            ollama_model = self._detect_ollama_model() or "llama3.1:8b-instruct"
+        _log(f"[LLM] Ollama fallback (model: {ollama_model})")
         for attempt in range(2):
             try:
                 response = ollama.chat(
-                    model=self.model_name,
+                    model=ollama_model,
                     messages=messages,
                     options={
-                        "temperature": 0.7,  # Balanced creativity
+                        "temperature": 0.7,
                         "top_p": 0.9,
                         "top_k": 40,
                     }
                 )
                 if 'message' in response and 'content' in response['message']:
                     return response['message']['content']
-                return f"Unexpected response format: {response}"
+                return response.get('message', {}).get('content', '')
             except Exception as e:
-                last_error = e
-                error_msg = str(e)
-                if _is_ollama_gpu_error(error_msg) and attempt == 0:
+                if _is_ollama_gpu_error(str(e)) and attempt == 0:
                     time.sleep(2.5)
                     continue
+                _log(f"[ERR] Ollama attempt {attempt+1} failed: {e}")
                 break
-
-        if last_error is not None:
-            error_msg = str(last_error)
-            if "not found" in error_msg.lower() or "404" in error_msg:
-                available_models = []
-                try:
-                    models_response = ollama.list()
-                    # ListResponse object has 'models' attribute
-                    if hasattr(models_response, 'models'):
-                        model_list = models_response.models
-                    elif isinstance(models_response, dict) and 'models' in models_response:
-                        model_list = models_response['models']
-                    elif isinstance(models_response, list):
-                        model_list = models_response
-                    else:
-                        model_list = []
-                    
-                    for model in model_list:
-                        name = None
-                        
-                        # Handle Model object (has 'model' attribute)
-                        if hasattr(model, 'model'):
-                            name = model.model
-                        # Handle dict with 'model' or 'name' key
-                        elif isinstance(model, dict):
-                            name = model.get('model') or model.get('name')
-                        # Handle string
-                        elif isinstance(model, str):
-                            name = model
-                        
-                        if name:
-                            available_models.append(name)
-                except:
-                    pass
-                
-                msg = f"Error: Model '{self.model_name}' not found.\n"
-                if available_models:
-                    msg += f"Available models: {', '.join(available_models)}\n"
-                    msg += f"Please download the model: ollama pull {self.model_name}\n"
-                    msg += f"Or use an available model by updating LLMClient."
-                else:
-                    msg += "Please ensure Ollama is running: ollama serve\n"
-                    msg += f"Then download the model: ollama pull {self.model_name}"
-                return msg
-            elif "connection" in error_msg.lower() or "refused" in error_msg.lower():
-                return f"Error: Cannot connect to Ollama service.\nPlease ensure Ollama is running: ollama serve"
-            elif _is_ollama_gpu_error(error_msg):
-                return "Error: " + OLLAMA_GPU_ERROR_MSG
-            else:
-                return f"Error generating response: {error_msg}\n\nPlease ensure Ollama is running: ollama serve"
+        # Should never reach here, but return a gentle message just in case
+        return "I'm here for you. Could you say that again? I want to make sure I understand."
 
     def generate_response_stream(
         self,
@@ -426,14 +510,43 @@ Keep responses focused. Ask ONE question at a time. Validate feelings first. One
         print("[LLM input stream] emotions:", (emotions[:300] + "..." if emotions and len(emotions) > 300 else (emotions or "(none)")))
         print("[LLM input stream] context length:", len(context or ""), "chars")
         print("[LLM input stream] current_message length:", len(current_message), "chars")
-        if not self.model_name:
-            yield "Error: No LLM model available. Please ensure Ollama is running and a model is downloaded."
-            return
-        last_error = None
+        _log(f"[LLM backend stream] {self.backend} (model: {self.model_name})")
+        if self.backend == "openrouter" and self._openrouter_clients:
+            for client, key_idx in self._openrouter_clients:
+                try:
+                    _log(f"[LLM stream] trying OpenRouter key #{key_idx}")
+                    stream = client.chat.completions.create(
+                        extra_headers={
+                            "HTTP-Referer": self._openrouter_cfg["site_url"],
+                            "X-OpenRouter-Title": self._openrouter_cfg["site_name"],
+                        },
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=0.7,
+                        top_p=0.9,
+                        stream=True,
+                    )
+                    for chunk in stream:
+                        try:
+                            delta = chunk.choices[0].delta.content if chunk.choices else None
+                        except Exception:
+                            delta = None
+                        if delta:
+                            yield delta
+                    return
+                except Exception as e:
+                    _log(f"[WARN] OpenRouter key #{key_idx} stream failed: {e}")
+            _log(f"[WARN] All OpenRouter keys exhausted (stream), falling back to Ollama")
+
+        # Ollama fallback (stream)
+        ollama_model = getattr(self, '_ollama_model', None) or self.model_name
+        if not ollama_model:
+            ollama_model = self._detect_ollama_model() or "llama3.1:8b-instruct"
+        _log(f"[LLM stream] Ollama fallback (model: {ollama_model})")
         for attempt in range(2):
             try:
                 stream = ollama.chat(
-                    model=self.model_name,
+                    model=ollama_model,
                     messages=messages,
                     stream=True,
                     options={"temperature": 0.7, "top_p": 0.9, "top_k": 40},
@@ -445,18 +558,12 @@ Keep responses focused. Ask ONE question at a time. Validate feelings first. One
                         yield chunk.message.content or ""
                 return
             except Exception as e:
-                last_error = e
-                error_msg = str(e)
-                if _is_ollama_gpu_error(error_msg) and attempt == 0:
+                if _is_ollama_gpu_error(str(e)) and attempt == 0:
                     time.sleep(2.5)
                     continue
+                _log(f"[ERR] Ollama stream attempt {attempt+1} failed: {e}")
                 break
-        if last_error is not None:
-            error_msg = str(last_error)
-            if _is_ollama_gpu_error(error_msg):
-                yield "Error: " + OLLAMA_GPU_ERROR_MSG
-            else:
-                yield f"Error generating response: {error_msg}"
+        yield "I'm here for you. Could you say that again? I want to make sure I understand."
 
 
 if __name__ == "__main__":

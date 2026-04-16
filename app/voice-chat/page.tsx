@@ -10,7 +10,7 @@ import { useTheme } from "next-themes"
 import { Header } from "@/components/header"
 import { ChatSidebar } from "@/components/chat-sidebar"
 import { ShareTestModal } from "@/components/share-test-modal"
-import { useProfileDict } from "@/lib/i18n"
+import { dict } from "@/lib/i18n"
 import {
   apiChatWelcome, apiChatMessage, apiVoiceProcess, apiSTTTranscribe,
   apiGetWelcomeAudio, apiGenerateAndSaveWelcomeAudio,
@@ -27,6 +27,48 @@ const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 type VoiceState = AIVoiceState
 
+function VoiceChatShell({
+  children,
+  isDark,
+  sidebarOpen,
+  sidebarRefreshKey,
+  currentSessionId,
+  onNewChat,
+  onSessionSelect,
+  onToggleSidebar,
+}: {
+  children: React.ReactNode
+  isDark: boolean
+  sidebarOpen: boolean
+  sidebarRefreshKey?: number
+  currentSessionId: string | null
+  onNewChat: () => void
+  onSessionSelect: (session: SessionPreview) => void
+  onToggleSidebar: () => void
+}) {
+  return (
+    <div data-page-root style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
+      <div style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none" }}>
+        <BeamsBackground isDark={isDark} intensity="subtle" />
+        <div style={{ position: "absolute", inset: 0, backgroundColor: isDark ? "rgba(0,0,0,0.36)" : "rgba(255,255,255,0.18)" }} />
+      </div>
+      <div style={{ position: "relative", zIndex: 10, flexShrink: 0, height: "100%" }}>
+        <ChatSidebar
+          currentSessionId={currentSessionId}
+          onNewChat={onNewChat}
+          onSessionSelect={onSessionSelect}
+          open={sidebarOpen}
+          onToggle={onToggleSidebar}
+          refreshKey={sidebarRefreshKey}
+        />
+      </div>
+      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 export default function VoiceChatPage() {
   const router           = useRouter()
   const { user, token }  = useAuth()
@@ -38,6 +80,7 @@ export default function VoiceChatPage() {
 
   // ── State ───────────────────────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen]               = useState(true)
+  const [sidebarRefreshKey, setSidebarRefreshKey]   = useState(0)
   const [messages, setMessages]                     = useState<ChatMessage[]>([])
   const [voiceState, setVoiceState]                 = useState<VoiceState>("idle")
   const [welcomeLoading, setWelcomeLoading]         = useState(true)
@@ -63,17 +106,19 @@ export default function VoiceChatPage() {
 
   const hasUserMessages = messages.some(m => m.role === "user")
 
-  const t = useProfileDict()
-  const sessionTitle =
-    savedSession?.title || (currentSessionId ? t.voiceSessionShort : t.voiceNewVoiceSession)
   const profileLangPref: "en" | "ur" = (() => {
     const lp = (user as { lang_pref?: string } | undefined)?.lang_pref
     const s = (lp || "en").toLowerCase()
     return s === "ur" || s === "urdu" ? "ur" : "en"
   })()
-  const apiLangPref = profileLangPref === "ur" ? ("ur" as const) : undefined
-  /** Urdu profile only: voice welcome uses Arabic-script Urdu (text chat unchanged). */
-  const voiceWelcomeUrduScript = profileLangPref === "ur"
+  /** Language for THIS voice session. Seeded from profile, overridable in ShareTestModal. */
+  const [chatLang, setChatLang] = useState<"en" | "ur">(profileLangPref)
+  const t = dict[chatLang]
+  const sessionTitle =
+    savedSession?.title || (currentSessionId ? t.voiceSessionShort : t.voiceNewVoiceSession)
+  const apiLangPref = chatLang === "ur" ? ("ur" as const) : undefined
+  /** Urdu only: voice welcome uses Arabic-script Urdu (text chat unchanged). */
+  const voiceWelcomeUrduScript = chatLang === "ur"
 
   const voiceStatusLabels = {
     idle: t.voiceTapToSpeak,
@@ -89,10 +134,11 @@ export default function VoiceChatPage() {
     if (isRecording) setVoiceState("recording")
   }, [isRecording])
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom only when new messages arrive.
+  // Scrolling on every voiceState tick causes visible jitter.
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, voiceState])
+  }, [messages.length])
 
   // URL → load session or show share modal
   useEffect(() => {
@@ -126,6 +172,9 @@ export default function VoiceChatPage() {
     if (!user || !token) return
     const userMsgCount = messages.filter(m => m.role === "user").length
     if (userMsgCount <= baselineUserMessageCount) return
+    // Skip background save for very short interactions (< 2 new user messages since last save).
+    // The explicit end-chat save (handleEndChat) has its own threshold and still saves at >= 1.
+    if (userMsgCount - baselineUserMessageCount < 2) return
     const snap = [...messages]; const sessSnap = currentSessionId
     apiChatSummary(user.id, user.first_name || null, user.gender || null, snap, apiLangPref)
       .then(res => {
@@ -136,8 +185,11 @@ export default function VoiceChatPage() {
   }
 
   // ── Welcome / load ──────────────────────────────────────────────────────────
-  const loadWelcomeMessage = async (sharedTestContext?: string, testContextKey?: string | number) => {
+  const loadWelcomeMessage = async (sharedTestContext?: string, testContextKey?: string | number, langOverride?: "en" | "ur") => {
     if (!user) return
+    const lp = langOverride ?? chatLang
+    const effApiLang = lp === "ur" ? ("ur" as const) : undefined
+    const effUrduScript = lp === "ur"
     const includeContext = !!sharedTestContext
     const key = includeContext ? testContextKey : undefined
     try {
@@ -151,27 +203,27 @@ export default function VoiceChatPage() {
       try {
         setVoiceState("synthesizing")
         const result = await apiGetWelcomeAudio(
-          user.id, includeContext, key, apiLangPref, voiceWelcomeUrduScript
+          user.id, includeContext, key, effApiLang, effUrduScript
         )
         audioBlob = result.blob
         if (result.welcomeMessage) {
           welcomeText = result.welcomeMessage
         } else {
           const r = await apiChatWelcome(
-            user.id, user.first_name || null, sharedTestContext || null, apiLangPref, voiceWelcomeUrduScript
+            user.id, user.first_name || null, sharedTestContext || null, effApiLang, effUrduScript
           )
           welcomeText = r.welcome_message
         }
       } catch {
         audioBlob = null
         const r = await apiChatWelcome(
-          user.id, user.first_name || null, sharedTestContext || null, apiLangPref, voiceWelcomeUrduScript
+          user.id, user.first_name || null, sharedTestContext || null, effApiLang, effUrduScript
         )
         if (!isMountedRef.current) return
         welcomeText = r.welcome_message
         try {
           audioBlob = await apiGenerateAndSaveWelcomeAudio(
-            user.id, welcomeText, user.lang_pref || null, includeContext, key, voiceWelcomeUrduScript
+            user.id, welcomeText, lp, includeContext, key, effUrduScript
           )
         } catch (e) { console.warn("Generate/save welcome audio failed:", e) }
       }
@@ -235,16 +287,18 @@ export default function VoiceChatPage() {
   }
 
   // ── Session actions ─────────────────────────────────────────────────────────
-  const handleShareTest = (context: string, resultId?: number) => {
+  const handleShareTest = (context: string, resultId: number | undefined, lang: "en" | "ur") => {
+    setChatLang(lang)
     setTestContext(context); setShowShareModal(false)
     welcomeLoadedRef.current = true
-    loadWelcomeMessage(context, resultId)
+    loadWelcomeMessage(context, resultId, lang)
   }
 
-  const handleSkipShare = () => {
+  const handleSkipShare = (lang: "en" | "ur") => {
+    setChatLang(lang)
     setTestContext(null); setShowShareModal(false)
     welcomeLoadedRef.current = true
-    loadWelcomeMessage()
+    loadWelcomeMessage(undefined, undefined, lang)
   }
 
   const handleNewChat = () => {
@@ -253,6 +307,7 @@ export default function VoiceChatPage() {
     setMessages([]); setCurrentSessionId(null); setSavedSession(null)
     setShowSummary(false); setSummary(""); setTestContext(null)
     setBaselineUserMessageCount(0); setVoiceState("idle")
+    setChatLang(profileLangPref)
     welcomeLoadedRef.current = false; shareModalShownRef.current = false
     window.history.pushState({}, "", "/voice-chat")
     setShowShareModal(true)
@@ -284,6 +339,7 @@ export default function VoiceChatPage() {
         const saveRes = await apiSaveSession(user.id, messages, response.summary, currentSessionId || undefined, user.first_name || null, user.gender || null)
         setSavedSession(saveRes.session); setCurrentSessionId(saveRes.session.session_id)
         setBaselineUserMessageCount(saveRes.session.messages.filter(m => m.role === "user").length)
+        setSidebarRefreshKey(k => k + 1)
       } catch (err) { console.error("Failed to save session:", err) }
       setSummary(response.summary); setShowSummary(true)
     } catch (error: any) {
@@ -351,13 +407,13 @@ export default function VoiceChatPage() {
     let emotionsFromVoice: Array<{ emotion: string; score: number }> = []
 
     try {
-      const voiceResult = await apiVoiceProcess(audioBlob, profileLangPref)
+      const voiceResult = await apiVoiceProcess(audioBlob, chatLang)
       if (!isMountedRef.current) return
       transcript = voiceResult.transcript?.trim() || ""
       emotionsFromVoice = voiceResult.emotions || []
     } catch {
       try {
-        const sttRes = await apiSTTTranscribe(audioBlob, profileLangPref)
+        const sttRes = await apiSTTTranscribe(audioBlob, chatLang)
         transcript = sttRes.transcript?.trim() || ""
       } catch { transcript = "" }
     }
@@ -403,11 +459,7 @@ export default function VoiceChatPage() {
       setVoiceState("synthesizing")
       currentAudioRef.current?.pause(); currentAudioRef.current = null
 
-      let userLanguage = "en"
-      if (user?.lang_pref) {
-        const lp = user.lang_pref.toLowerCase()
-        if (lp === "urdu" || lp === "ur") userLanguage = "ur"
-      }
+      const userLanguage = chatLang === "ur" ? "ur" : "en"
 
       let ttsBlob: Blob | null = null
       try {
@@ -443,33 +495,19 @@ export default function VoiceChatPage() {
     }
   }
 
-  // ── Shell ───────────────────────────────────────────────────────────────────
-  const Shell = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
-      <div style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none" }}>
-        <BeamsBackground isDark={isDark} intensity="subtle" />
-        <div style={{ position: "absolute", inset: 0, backgroundColor: isDark ? "rgba(0,0,0,0.36)" : "rgba(255,255,255,0.18)" }} />
-      </div>
-      <div style={{ position: "relative", zIndex: 10, flexShrink: 0, height: "100%" }}>
-        <ChatSidebar
-          currentSessionId={currentSessionId}
-          onNewChat={handleNewChat}
-          onSessionSelect={handleSessionSelect}
-          open={sidebarOpen}
-          onToggle={() => setSidebarOpen(v => !v)}
-        />
-      </div>
-      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {children}
-      </div>
-    </div>
-  )
-
   // ── Summary screen ──────────────────────────────────────────────────────────
   if (showSummary) {
     return (
       <AuthGuard>
-        <Shell>
+        <VoiceChatShell
+          isDark={isDark}
+          sidebarOpen={sidebarOpen}
+          sidebarRefreshKey={sidebarRefreshKey}
+          currentSessionId={currentSessionId}
+          onNewChat={handleNewChat}
+          onSessionSelect={handleSessionSelect}
+          onToggleSidebar={() => setSidebarOpen(v => !v)}
+        >
           <Header />
           <main style={{ flex: 1, overflowY: "auto" }}>
             <div style={{ maxWidth: 680, margin: "0 auto", padding: "1.75rem 1.5rem 3rem" }}>
@@ -545,7 +583,7 @@ export default function VoiceChatPage() {
               </div>
             </div>
           </main>
-        </Shell>
+        </VoiceChatShell>
       </AuthGuard>
     )
   }
@@ -553,10 +591,18 @@ export default function VoiceChatPage() {
   // ── Main chat screen ────────────────────────────────────────────────────────
   return (
     <AuthGuard>
-      <Shell>
+      <VoiceChatShell
+        isDark={isDark}
+        sidebarOpen={sidebarOpen}
+        sidebarRefreshKey={sidebarRefreshKey}
+        currentSessionId={currentSessionId}
+        onNewChat={handleNewChat}
+        onSessionSelect={handleSessionSelect}
+        onToggleSidebar={() => setSidebarOpen(v => !v)}
+      >
         <ShareTestModal
           open={showShareModal}
-          onClose={handleSkipShare}
+          onClose={() => handleSkipShare(chatLang)}
           onShare={handleShareTest}
           onSkip={handleSkipShare}
         />
@@ -652,7 +698,7 @@ export default function VoiceChatPage() {
                       <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
                     </div>
                     <p
-                      dir={profileLangPref === "ur" ? "rtl" : "ltr"}
+                      dir={chatLang === "ur" ? "rtl" : "ltr"}
                       style={{
                         ...sans,
                         fontSize: "0.9375rem",
@@ -660,7 +706,7 @@ export default function VoiceChatPage() {
                         color: "var(--foreground)",
                         margin: 0,
                         flex: 1,
-                        textAlign: profileLangPref === "ur" ? "right" : "left",
+                        textAlign: chatLang === "ur" ? "right" : "left",
                       }}
                     >
                       {messages[0].content}
@@ -767,11 +813,10 @@ export default function VoiceChatPage() {
                               <div style={{
                                 maxWidth: "82%", padding: "0.625rem 0.875rem",
                                 borderRadius: "4px 16px 16px 16px",
-                                backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)",
-                                backdropFilter: "blur(12px)",
-                                borderTop: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-                                borderRight: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-                                borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                                backgroundColor: "var(--card)",
+                                borderTop: "1px solid var(--border)",
+                                borderRight: "1px solid var(--border)",
+                                borderBottom: "1px solid var(--border)",
                                 borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)",
                                 display: "flex", alignItems: "flex-start", gap: "0.625rem",
                               }}>
@@ -809,7 +854,7 @@ export default function VoiceChatPage() {
                         <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                           <Mic2 size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
                         </div>
-                        <div style={{ padding: "0.625rem 0.875rem", borderRadius: "4px 14px 14px 14px", backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)", backdropFilter: "blur(12px)", border: "1px solid color-mix(in srgb, var(--border) 50%, transparent)", borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <div style={{ padding: "0.625rem 0.875rem", borderRadius: "4px 14px 14px 14px", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                           {[0,1,2].map(j => <div key={j} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--sage)", opacity: 0.8, animation: `mindease-bounce 1.2s ease-in-out ${j * 0.18}s infinite` }} />)}
                           <span style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)", marginLeft: "0.25rem" }}>Transcribing…</span>
                         </div>
@@ -824,7 +869,7 @@ export default function VoiceChatPage() {
                         <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                           <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
                         </div>
-                        <div style={{ padding: "0.625rem 0.875rem", borderRadius: "4px 14px 14px 14px", backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)", backdropFilter: "blur(12px)", border: "1px solid color-mix(in srgb, var(--border) 50%, transparent)", borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <div style={{ padding: "0.625rem 0.875rem", borderRadius: "4px 14px 14px 14px", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                           {[0,1,2].map(j => <div key={j} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--primary)", opacity: 0.65, animation: `mindease-bounce 1.2s ease-in-out ${j * 0.18}s infinite` }} />)}
                         </div>
                       </motion.div>
@@ -859,7 +904,7 @@ export default function VoiceChatPage() {
           @keyframes mindease-bounce { 0%,60%,100%{transform:translateY(0);opacity:.65} 30%{transform:translateY(-5px);opacity:1} }
           @keyframes voice-bar { from { height: 4px } to { height: 14px } }
         `}</style>
-      </Shell>
+      </VoiceChatShell>
     </AuthGuard>
   )
 }

@@ -23,9 +23,8 @@ export function TherapistCard({ therapist: t, match, compact = false }: Therapis
         style={{
           ...sans,
           borderRadius: 12, padding: "0.875rem 1rem",
-          backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
+          backgroundColor: "var(--card)",
           border: "1px solid var(--border)",
-          backdropFilter: "blur(8px)",
           transition: "border-color 0.18s ease, box-shadow 0.18s ease",
           cursor: profileUrl ? "pointer" : "default",
         }}

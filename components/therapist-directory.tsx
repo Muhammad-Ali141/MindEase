@@ -2,9 +2,10 @@
 
 import { MapPin, ArrowRight } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
-import { useMemo, useEffect, useState } from "react"
+import { useMemo } from "react"
 import Link from "next/link"
-import { apiGetTherapists, type TherapistListItem } from "@/lib/api"
+import { useDashboardData } from "@/context/DashboardDataContext"
+import { type TherapistListItem } from "@/lib/api"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -30,25 +31,7 @@ const PREVIEW_LIMIT = 4
 
 export function TherapistDirectory() {
   const { user } = useAuth()
-  const [therapists, setTherapists] = useState<TherapistListItem[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState<string | null>(null)
-
-  const cityParam = useMemo(() => {
-    const userCity = (user?.city || "").trim()
-    const nearest  = (user?.nearest_major_city || "").trim()
-    return userCity || nearest || undefined
-  }, [user?.city, user?.nearest_major_city])
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true); setError(null)
-    apiGetTherapists({ city: cityParam, limit: PREVIEW_LIMIT })
-      .then(res => { if (!cancelled) setTherapists(res.therapists) })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load") })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [cityParam])
+  const { loading, therapists } = useDashboardData()
 
   const { therapistsWithMatch, locationLabel } = useMemo(() => {
     const userCity    = normalizeLocation(user?.city)
@@ -65,13 +48,14 @@ export function TherapistDirectory() {
     return { therapistsWithMatch: withMatch, locationLabel }
   }, [user?.city, user?.nearest_major_city, therapists])
 
+  const cityParam = (user?.city || "").trim() || (user?.nearest_major_city || "").trim() || undefined
+
   return (
     <div
       data-tour-target="find-therapist"
       style={{
         ...sans,
-        backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
-        backdropFilter: "blur(8px)",
+        backgroundColor: "var(--card)",
         borderRadius: 16, border: "1px solid var(--border)",
         boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
         overflow: "hidden",
@@ -111,9 +95,6 @@ export function TherapistDirectory() {
 
       {/* 2×2 card grid */}
       <div style={{ padding: "1rem 1.25rem" }}>
-        {error && (
-          <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--destructive)", marginBottom: "0.75rem" }}>{error}</p>
-        )}
         {loading ? (
           <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>Loading…</p>
         ) : therapistsWithMatch.length === 0 ? (

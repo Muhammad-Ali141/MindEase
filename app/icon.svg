@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-label="MindEase">
+  <defs>
+    <linearGradient id="meClay" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c49a6e"/>
+      <stop offset="100%" stop-color="#7a5535"/>
+    </linearGradient>
+    <linearGradient id="meSage" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7ba88a"/>
+      <stop offset="100%" stop-color="#4a6e55"/>
+    </linearGradient>
+  </defs>
+  <!-- Soft rounded square backdrop (very subtle, keeps mark grounded) -->
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#meClay)"/>
+  <!-- Leaf-heart: two overlapping organic petals forming a mindful heart/leaf -->
+  <!-- Left petal (cream) -->
+  <path
+    d="M32 46 C 18 40, 14 26, 22 20 C 28 16, 32 22, 32 28 Z"
+    fill="#f7f0e6"
+    opacity="0.95"
+  />
+  <!-- Right petal (sage) -->
+  <path
+    d="M32 46 C 46 40, 50 26, 42 20 C 36 16, 32 22, 32 28 Z"
+    fill="url(#meSage)"
+  />
+  <!-- Central vein / stem suggesting spine or growth -->
+  <path
+    d="M32 28 L32 46"
+    stroke="#ffffff"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    opacity="0.75"
+  />
+  <!-- Small dot at top — mindful focal point / thought -->
+  <circle cx="32" cy="18" r="2.4" fill="#f7f0e6"/>
+</svg>

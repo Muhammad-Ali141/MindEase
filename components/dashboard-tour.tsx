@@ -417,15 +417,7 @@ export function DashboardTour({ open, onComplete }: DashboardTourProps) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             {/* Brand icon */}
-            <div style={{
-              width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-              backgroundColor: "rgba(166,124,82,0.13)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
-                <path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="#a67c52" />
-              </svg>
-            </div>
+            <img src="/logo.svg" alt="MindEase" style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, objectFit: "contain" }} />
             <span style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)" }}>
               Step {currentStep + 1} of {totalSteps}
             </span>

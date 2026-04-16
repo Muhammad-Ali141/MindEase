@@ -1,4 +1,29 @@
-# CLAUDE.md — Frontend Website Rules
+# CLAUDE.md — MindEase
+
+## Project Overview
+MindEase is a bilingual (English + Urdu) mental health platform — FYP. Features: AI therapy chat (text + voice), clinical diagnostic tests (PHQ-9 style), therapist directory, session memory, mood tracking.
+
+## Architecture
+- **Frontend:** Next.js 14 App Router + TypeScript + Tailwind v4. Entry: `app/` (routes: `page.tsx` landing, `(auth)/auth`, `chat`, `voice-chat`, `dashboard`, `sessions`, `profile`, `diagnostic-test/[testType]`). Shared UI in `components/` (Radix primitives under `components/ui/`). API client: `lib/api.ts` → `http://127.0.0.1:8000/api`. i18n: `lib/i18n.ts`. Auth: Clerk (Google OAuth) + custom backend JWT.
+- **Backend:** Django in `backend/` (app `api/` = REST views+models+services; project config in `backend/backend/`). SQLite (`db.sqlite3`). Endpoints cover auth/OTP, chat (+stream), voice, sessions, profile, therapists, STT, TTS, diagnostic tests (see `backend/api/urls.py`).
+- **AI pipeline (`backend/chatbot/`):** RAG over PostgreSQL+pgvector (`rag_system_postgres.py`), LLM client (`llm_client.py`), conversation memory, text + audio emotion detection, Urdu Qwen chat (`urdu_qwen_chat.py`, `urdu_chat_pipeline.py`), Roman Urdu system prompt.
+- **Speech:** English STT/TTS in `backend/stt/`, `backend/tts/` (Qwen3 TTS adapter). Urdu STT in `backend/urdu_stt/` + fine-tuned model at `finetuned_urdu_whisper/`. DeBERTa emotion model at `deberta_best/`.
+- **Other:** `scraper/` (therapist data), `dataset/`, `experiments/`, `n8n/`, `refrences/`, `docs/`, `fyp.sql`, Jupyter `abc1.ipynb`.
+
+## Running
+- Frontend: `pnpm dev` (or `npm run dev`) — Next on :3000, Turbo enabled.
+- Backend: `cd backend && python manage.py runserver` — Django on :8000. Python venv at `backend/venv/` or root `venv/`.
+- Static landing mockup server: `node serve.mjs` (only when iterating on standalone HTML).
+
+## Key Conventions
+- Animations: `framer-motion` (NOT `motion/react`). Animate only `transform`/`opacity`; never `transition-all`.
+- Theming: CSS variables (`--primary` clay `#a67c52`, `--sage` `#5D8A6B`, etc.); dark mode via `.dark` on `<html>` + `next-themes`.
+- Bilingual: `dir="rtl"` for Urdu.
+- Never use default Tailwind blue/indigo as brand color.
+
+---
+
+# Frontend Website Rules
 
 ## Always Do First
 - **Invoke the `frontend-design` skill** before writing any frontend code, every session, no exceptions.

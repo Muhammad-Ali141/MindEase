@@ -1,15 +1,16 @@
 "use client"
 
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs"
+import { PageLoading } from "@/components/page-loading"
 
 export default function AuthCallbackPage() {
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center gap-4">
+    <>
+      <PageLoading message="Signing you in…" />
       <AuthenticateWithRedirectCallback
         signInForceRedirectUrl="/dashboard"
         signUpForceRedirectUrl="/dashboard"
       />
-      <p className="text-slate-600 dark:text-slate-400 text-sm">Completing sign in…</p>
-    </div>
+    </>
   )
 }

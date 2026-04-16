@@ -1,12 +1,13 @@
 "use client"
 
-import { Sparkles, Sun, Moon } from "lucide-react"
+import { Sparkles, Sun, Moon, Languages } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { useClerk } from "@clerk/nextjs"
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
-import { useProfileDict } from "@/lib/i18n"
+import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
+import { apiUpdateUserProfile } from "@/lib/api"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -14,16 +15,34 @@ const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 type HeaderProps = { onStartTutorial?: () => void }
 
 export function Header({ onStartTutorial }: HeaderProps) {
-  const { user, logout } = useAuth()
+  const { user, token, setAuth, logout } = useAuth()
   const { signOut: clerkSignOut } = useClerk()
   const router = useRouter()
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const { theme, setTheme } = useTheme()
   const t = useProfileDict()
+  const lang = useProfileLanguage()
+  const [langSwitching, setLangSwitching] = useState(false)
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const isDark = mounted ? theme === "dark" : false
+
+  const handleToggleLanguage = async () => {
+    if (!user || langSwitching) return
+    const next: "en" | "ur" = lang === "ur" ? "en" : "ur"
+    // Optimistic UI update so fonts/RTL flip immediately
+    setAuth({ token: (token ?? user.id).toString(), user: { ...user, lang_pref: next } })
+    setLangSwitching(true)
+    try {
+      await apiUpdateUserProfile(user.id, { lang_pref: next })
+    } catch {
+      // Revert on failure
+      setAuth({ token: (token ?? user.id).toString(), user: { ...user, lang_pref: lang } })
+    } finally {
+      setLangSwitching(false)
+    }
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -108,6 +127,32 @@ export function Header({ onStartTutorial }: HeaderProps) {
       {/* ── Right: controls ─────────────────────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
 
+        {/* Language toggle — icon pill with EN/UR indicator */}
+        <button
+          type="button"
+          onClick={handleToggleLanguage}
+          disabled={!user || langSwitching}
+          aria-label={lang === "ur" ? "Switch to English" : "Switch to Urdu"}
+          title={lang === "ur" ? "Switch to English" : "اردو میں تبدیل کریں"}
+          style={{
+            height: 32, padding: "0 0.55rem",
+            borderRadius: 100,
+            backgroundColor: "color-mix(in srgb, var(--primary) 10%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--primary) 28%, transparent)",
+            display: "flex", alignItems: "center", gap: "0.3rem",
+            color: "var(--primary)",
+            cursor: user && !langSwitching ? "pointer" : "not-allowed",
+            opacity: langSwitching ? 0.6 : 1,
+            transition: "background-color 0.15s ease",
+            ...sans, fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.04em",
+          }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--primary) 18%, transparent)"}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--primary) 10%, transparent)"}
+        >
+          <Languages size={13} />
+          <span>{lang === "ur" ? "UR" : "EN"}</span>
+        </button>
+
         {/* Tour — icon-only pill */}
         {onStartTutorial && (
           <button
@@ -189,7 +234,7 @@ export function Header({ onStartTutorial }: HeaderProps) {
           </button>
 
           {isProfileOpen && (
-            <div style={{
+            <div data-urdu-rtl={lang === "ur" ? "" : undefined} style={{
               position: "absolute", right: 0, top: "calc(100% + 8px)",
               width: 180,
               backgroundColor: "color-mix(in srgb, var(--card) 96%, transparent)",
@@ -215,7 +260,7 @@ export function Header({ onStartTutorial }: HeaderProps) {
                   key={label}
                   onClick={action}
                   style={{
-                    ...sans, width: "100%", textAlign: "left",
+                    ...sans, width: "100%", textAlign: lang === "ur" ? "right" : "left",
                     padding: "0.5rem 1rem", fontSize: "0.8125rem",
                     color: danger ? "var(--destructive)" : "var(--foreground)",
                     backgroundColor: "transparent", border: "none", cursor: "pointer",

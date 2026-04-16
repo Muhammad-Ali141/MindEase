@@ -1,11 +1,15 @@
 import { clerkMiddleware } from "@clerk/nextjs/server"
 
-// Run Clerk but don't require auth on any route; MindEase uses its own auth + optional Google via Clerk
+// Run Clerk middleware only on routes that need it:
+// - /auth(.*)     : login, signup, Google OAuth initiation, OTP
+// - /auth/callback: Clerk OAuth callback handler
+// - /dashboard(.*): receives the __clerk_handshake token after Google OAuth completes
+// All other routes (/, /chat, /voice-chat, etc.) skip Clerk middleware — they use MindEase's own JWT.
 export default clerkMiddleware()
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    "/(api|trpc)(.*)",
+    "/auth(.*)",
+    "/dashboard(.*)",
   ],
 }

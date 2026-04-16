@@ -1,10 +1,10 @@
 // lib/api.ts — aligned with Django backend
 
-const BASE_URL = "http://127.0.0.1:8000/api";
+const API_BASE = "http://localhost:8000/api";
 
 // Send OTP for email verification
 export const apiSendOtp = async (email: string) => {
-  const res = await fetch("http://localhost:8000/api/send-otp/", {
+  const res = await fetch(`${API_BASE}/send-otp/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -22,7 +22,7 @@ export const apiSendOtp = async (email: string) => {
 
 // Verify OTP
 export const apiVerifyOtp = async (email: string, otp: string) => {
-  const res = await fetch("http://localhost:8000/api/verify-otp/", {
+  const res = await fetch(`${API_BASE}/verify-otp/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -40,7 +40,7 @@ export const apiVerifyOtp = async (email: string, otp: string) => {
 
 // Check if email exists
 export const apiCheckEmail = async (email: string) => {
-  const res = await fetch("http://localhost:8000/api/check-email/", {
+  const res = await fetch(`${API_BASE}/check-email/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -58,7 +58,7 @@ export const apiCheckEmail = async (email: string) => {
 
 // lib/api.ts
 export const apiRegister = async (data: any) => {
-  const res = await fetch("http://localhost:8000/api/register/", { // ✅ Django backend URL
+  const res = await fetch(`${API_BASE}/register/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -85,7 +85,7 @@ export const apiRegister = async (data: any) => {
 }
 
 export async function apiLogin(body: { email: string; password: string }) {
-  const response = await fetch('http://localhost:8000/api/login/', {
+  const response = await fetch(`${API_BASE}/login/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -99,8 +99,6 @@ export async function apiLogin(body: { email: string; password: string }) {
 
   return data;
 }
-
-const API_BASE = "http://localhost:8000/api";
 
 /** Login with OAuth (e.g. after Google sign-in via Clerk). Returns same shape as apiLogin. */
 export async function apiLoginOauth(email: string) {
@@ -148,7 +146,7 @@ export async function apiRegisterOauth(data: {
 }
 
 export async function apiUpdateDashboardTour(user_id: string, seen: boolean) {
-  const response = await fetch("http://localhost:8000/api/users/dashboard-tour/", {
+  const response = await fetch(`${API_BASE}/users/dashboard-tour/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -163,39 +161,6 @@ export async function apiUpdateDashboardTour(user_id: string, seen: boolean) {
   }
 
   return data;
-}
-
-// lib/api.ts
-export type UserProfile = {
-  display_name: string
-  preferred_language: "en" | "ur"
-}
-
-export type User = {
-  email: string
-  profile: UserProfile
-}
-
-let mockUser: User = {
-  email: "test@example.com",
-  profile: {
-    display_name: "John Doe",
-    preferred_language: "en",
-  },
-}
-
-export async function apiGetMe(token: string): Promise<User> {
-  // simulate network delay
-  await new Promise((r) => setTimeout(r, 500))
-  if (!token) throw new Error("Unauthorized")
-  return mockUser
-}
-
-export async function apiUpdateMe(token: string, data: Partial<UserProfile>): Promise<User> {
-  await new Promise((r) => setTimeout(r, 500))
-  if (!token) throw new Error("Unauthorized")
-  mockUser = { ...mockUser, profile: { ...mockUser.profile, ...data } }
-  return mockUser
 }
 
 // Chat API functions
@@ -225,7 +190,8 @@ export async function apiChatMessage(
   emotions?: Array<{ emotion: string; score: number }>,
   lang_pref?: string | null
 ): Promise<ChatResponse> {
-  const res = await fetch("http://localhost:8000/api/chat/", {
+  const trimmedHistory = conversation_history.slice(-10)
+  const res = await fetch(`${API_BASE}/chat/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -235,7 +201,7 @@ export async function apiChatMessage(
       user_id,
       user_first_name,
       user_gender,
-      conversation_history,
+      conversation_history: trimmedHistory,
       test_context,
       ...(emotions && emotions.length > 0 ? { emotions } : {}),
       ...(lang_pref ? { lang_pref } : {}),
@@ -269,7 +235,8 @@ export async function apiChatMessageStream(
   emotions?: Array<{ emotion: string; score: number }>,
   lang_pref?: string | null
 ): Promise<void> {
-  const res = await fetch("http://localhost:8000/api/chat/stream/", {
+  const trimmedHistory = conversation_history.slice(-10)
+  const res = await fetch(`${API_BASE}/chat/stream/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -277,7 +244,7 @@ export async function apiChatMessageStream(
       user_id,
       user_first_name,
       user_gender,
-      conversation_history,
+      conversation_history: trimmedHistory,
       test_context,
       ...(emotions && emotions.length > 0 ? { emotions } : {}),
       ...(lang_pref ? { lang_pref } : {}),
@@ -331,9 +298,11 @@ export async function apiChatWelcome(
   test_context: string | null = null,
   lang_pref?: string | null,
   /** Urdu voice chat only: Arabic-script welcome (text chat stays Roman Urdu). */
-  voiceWelcomeUrduScript?: boolean
+  voiceWelcomeUrduScript?: boolean,
+  /** When set (typically the test result_id), enables backend cache lookup for pre-generated welcome. */
+  test_context_key?: string | number | null,
 ): Promise<WelcomeResponse> {
-  const res = await fetch("http://localhost:8000/api/chat/welcome/", {
+  const res = await fetch(`${API_BASE}/chat/welcome/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -344,6 +313,7 @@ export async function apiChatWelcome(
       test_context,
       ...(lang_pref ? { lang_pref } : {}),
       ...(voiceWelcomeUrduScript ? { voice_welcome_urdu_script: true } : {}),
+      ...(test_context_key != null ? { test_context_key } : {}),
     }),
   })
 
@@ -368,7 +338,7 @@ export async function apiChatSummary(
   conversation_history: ChatMessage[],
   lang_pref?: "en" | "ur" | null
 ): Promise<SummaryResponse> {
-  const res = await fetch("http://localhost:8000/api/chat/summary/", {
+  const res = await fetch(`${API_BASE}/chat/summary/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -396,7 +366,7 @@ export type SessionCountResponse = {
 }
 
 export async function apiGetSessionCount(user_id: string): Promise<SessionCountResponse> {
-  const res = await fetch("http://localhost:8000/api/sessions/count/", {
+  const res = await fetch(`${API_BASE}/sessions/count/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -474,7 +444,7 @@ export async function apiSaveSession(
     metadata: message.metadata ?? {},
   }))
 
-  const res = await fetch("http://localhost:8000/api/sessions/save/", {
+  const res = await fetch(`${API_BASE}/sessions/save/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -507,7 +477,7 @@ export async function apiGetRecentSessions(
   user_id: string,
   limit: number = 3
 ): Promise<RecentSessionsResponse> {
-  const res = await fetch("http://localhost:8000/api/sessions/recent/", {
+  const res = await fetch(`${API_BASE}/sessions/recent/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -532,7 +502,7 @@ export async function apiGetSessionById(
   user_id: string,
   session_id: string
 ): Promise<GetSessionResponse> {
-  const res = await fetch("http://localhost:8000/api/sessions/get/", {
+  const res = await fetch(`${API_BASE}/sessions/get/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -558,7 +528,7 @@ export async function apiToggleSessionStar(
   session_id: string,
   star: boolean
 ): Promise<ToggleStarResponse> {
-  const res = await fetch("http://localhost:8000/api/sessions/star/", {
+  const res = await fetch(`${API_BASE}/sessions/star/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -588,7 +558,7 @@ export type UserProfileData = {
 }
 
 export async function apiGetUserProfile(user_id: string): Promise<UserProfileData> {
-  const res = await fetch("http://localhost:8000/api/profile/get/", {
+  const res = await fetch(`${API_BASE}/profile/get/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -633,7 +603,7 @@ export async function apiUpdateUserProfile(
   user_id: string,
   data: UpdateProfileData
 ): Promise<UpdateProfileResponse> {
-  const res = await fetch("http://localhost:8000/api/profile/update/", {
+  const res = await fetch(`${API_BASE}/profile/update/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -689,7 +659,7 @@ export async function apiGetTherapists(
   if (params?.service_type) search.set("service_type", params.service_type)
   if (params?.limit != null && params.limit > 0) search.set("limit", String(params.limit))
   const qs = search.toString()
-  const url = `http://localhost:8000/api/therapists/${qs ? `?${qs}` : ""}`
+  const url = `${API_BASE}/therapists/${qs ? `?${qs}` : ""}`
   const res = await fetch(url, { method: "GET" })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -701,7 +671,7 @@ export async function apiGetTherapists(
 export type TherapistFiltersResponse = { cities: string[] }
 
 export async function apiGetTherapistFilters(): Promise<TherapistFiltersResponse> {
-  const res = await fetch("http://localhost:8000/api/therapists/filters/", { method: "GET" })
+  const res = await fetch(`${API_BASE}/therapists/filters/`, { method: "GET" })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || "Failed to load filters")
@@ -733,7 +703,7 @@ export async function apiSTTTranscribe(
   formData.append("audio", audioBlob, "recording.webm")
   formData.append("language", language)
 
-  const res = await fetch("http://localhost:8000/api/stt/transcribe/", {
+  const res = await fetch(`${API_BASE}/stt/transcribe/`, {
     method: "POST",
     body: formData,
     // Don't set Content-Type header - browser will set it with boundary for FormData
@@ -767,7 +737,7 @@ export async function apiSTTTranscribePartial(
   formData.append("audio", audioBlob, "partial.webm")
   formData.append("language", language)
 
-  const res = await fetch("http://localhost:8000/api/stt/transcribe-partial/", {
+  const res = await fetch(`${API_BASE}/stt/transcribe-partial/`, {
     method: "POST",
     body: formData,
   })
@@ -792,7 +762,7 @@ export async function apiVoiceProcess(
   const form = new FormData()
   form.append("audio", audioBlob, "recording.webm")
   form.append("language", language)
-  const res = await fetch("http://localhost:8000/api/voice/process/", { method: "POST", body: form })
+  const res = await fetch(`${API_BASE}/voice/process/`, { method: "POST", body: form })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error((err as { error?: string }).error || "Voice process failed")
@@ -842,7 +812,7 @@ export async function apiGetWelcomeAudio(
   }
   if (langPref === "ur") params.set("lang_pref", "ur")
   if (voiceWelcomeUrduScript) params.set("voice_welcome_urdu_script", "true")
-  const res = await fetch(`http://localhost:8000/api/voice/welcome-audio/?${params}`)
+  const res = await fetch(`${API_BASE}/voice/welcome-audio/?${params}`)
   if (!res.ok) throw new Error(res.status === 404 ? "No welcome audio" : "Failed to get welcome audio")
   const blob = await res.blob()
   const encoded = res.headers.get("X-Welcome-Message")
@@ -880,7 +850,7 @@ export async function apiGenerateAndSaveWelcomeAudio(
   }
   if (includeTestContext && testContextKey != null) body.test_context_key = testContextKey
   if (voiceWelcomeUrduScript) body.voice_welcome_urdu_script = true
-  const res = await fetch("http://localhost:8000/api/voice/welcome-audio/", {
+  const res = await fetch(`${API_BASE}/voice/welcome-audio/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -901,7 +871,7 @@ export async function apiTTSSynthesize(
     throw new Error("Text cannot be empty")
   }
 
-  const res = await fetch("http://localhost:8000/api/tts/synthesize/", {
+  const res = await fetch(`${API_BASE}/tts/synthesize/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -936,6 +906,43 @@ export async function apiTTSSynthesize(
 }
 
 // ============================================
+// CONSOLIDATED DASHBOARD DATA
+// ============================================
+
+export type DashboardData = {
+  session_count: number
+  sessions: { sessions: SessionPreview[]; total: number }
+  test_status: DiagnosticTestStatus
+  test_history: TestHistoryItem[]
+  mood_trend: { trend_data: MoodTrendData[]; primary_condition: string | null }
+  streak: StreakResponse
+  therapists: TherapistsResponse
+}
+
+export async function apiGetDashboardData(
+  user_id: string,
+  therapist_city?: string,
+  therapist_limit?: number,
+  sessions_limit?: number,
+): Promise<DashboardData> {
+  const res = await fetch(`${API_BASE}/dashboard/data/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_id,
+      therapist_city: therapist_city || undefined,
+      therapist_limit: therapist_limit ?? 4,
+      sessions_limit: sessions_limit ?? 5,
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || "Failed to load dashboard data")
+  }
+  return res.json()
+}
+
+// ============================================
 // DIAGNOSTIC TESTS
 // ============================================
 
@@ -950,7 +957,7 @@ export type DiagnosticTestStatus = {
 export async function apiGetDiagnosticTestStatus(
   user_id: string
 ): Promise<DiagnosticTestStatus> {
-  const res = await fetch("http://localhost:8000/api/diagnostic-tests/status/", {
+  const res = await fetch(`${API_BASE}/diagnostic-tests/status/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -986,7 +993,7 @@ export type MoodTrendResponse = {
 export async function apiGetMoodTrend(
   user_id: string
 ): Promise<MoodTrendResponse> {
-  const res = await fetch("http://localhost:8000/api/diagnostic-tests/mood-trend/", {
+  const res = await fetch(`${API_BASE}/diagnostic-tests/mood-trend/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1011,7 +1018,7 @@ export type StreakResponse = {
 export async function apiGetStreak(
   user_id: string
 ): Promise<StreakResponse> {
-  const res = await fetch("http://localhost:8000/api/diagnostic-tests/streak/", {
+  const res = await fetch(`${API_BASE}/diagnostic-tests/streak/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1045,7 +1052,7 @@ export async function apiSubmitDiagnosticTest(
   test_type: string,
   answers: Record<string, number>
 ): Promise<TestSubmissionResponse> {
-  const res = await fetch("http://localhost:8000/api/diagnostic-tests/submit/", {
+  const res = await fetch(`${API_BASE}/diagnostic-tests/submit/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1081,7 +1088,7 @@ export type TestHistoryResponse = {
 export async function apiGetDiagnosticTestHistory(
   user_id: string
 ): Promise<TestHistoryResponse> {
-  const res = await fetch("http://localhost:8000/api/diagnostic-tests/history/", {
+  const res = await fetch(`${API_BASE}/diagnostic-tests/history/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

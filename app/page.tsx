@@ -1,14 +1,19 @@
 "use client"
 
 import Link from "next/link"
+import dynamic from "next/dynamic"
+import { useRouter } from "next/navigation"
 import { dict, useLanguage } from "@/lib/i18n"
 import { LanguageToggle } from "@/components/LanguageToggle"
 import { useEffect, useState, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
 import { ArrowRight, MessageCircle, Mic2, Play, Pause, Volume2, Sun, Moon } from "lucide-react"
-import { FeatureSteps } from "@/components/ui/feature-section"
-import { BeamsBackground } from "@/components/ui/beams-background"
 import { useTheme } from "next-themes"
+
+import { BeamsBackground } from "@/components/ui/beams-background"
+
+// FeatureSteps is below the fold — lazy-load it
+const FeatureSteps = dynamic(() => import("@/components/ui/feature-section").then(m => ({ default: m.FeatureSteps })), { ssr: false })
 
 // ─── Design tokens — all CSS variables so dark mode works automatically ───────
 const C = {
@@ -101,9 +106,7 @@ function WebAppMockup() {
         }}>
           {/* Logo */}
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem", padding: "0 0.25rem" }}>
-            <div style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="white"/></svg>
-            </div>
+            <img src="/logo.svg" alt="MindEase" style={{ width: 26, height: 26, borderRadius: 7, objectFit: "contain" }} />
             <span style={{ ...serif, fontSize: "0.9375rem", fontWeight: 600, color: "var(--foreground)" }}>MindEase</span>
           </div>
           {/* Nav items */}
@@ -369,6 +372,7 @@ export default function HomePage() {
   const t      = dict[lang]
   const isUrdu = lang === "ur"
   const { theme, setTheme } = useTheme()
+  const router = useRouter()
 
   const [mounted,  setMounted]  = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -377,12 +381,14 @@ export default function HomePage() {
     setMounted(true)
     const onScroll = () => setScrolled(window.scrollY > 40)
     window.addEventListener("scroll", onScroll, { passive: true })
+    // Prefetch likely next destinations so they compile before user clicks
+    router.prefetch("/auth")
+    router.prefetch("/auth?mode=signup")
     return () => window.removeEventListener("scroll", onScroll)
   }, [])
 
-  if (!mounted) return null
-
-  const isDark   = theme === "dark"
+  // Don't block render — default to light until mounted (avoids blank page on first load)
+  const isDark   = mounted && theme === "dark"
   const features = isUrdu ? FEATURES_UR : FEATURES_EN
 
   return (
@@ -410,11 +416,7 @@ export default function HomePage() {
           style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "1.25rem", paddingBottom: "1.25rem" }}
         >
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: "0.625rem", textDecoration: "none" }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: C.clay, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 10px rgba(166,124,82,0.22)" }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="white" />
-              </svg>
-            </div>
+            <img src="/logo.svg" alt="MindEase" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "contain" }} />
             <span style={{ ...serif, fontSize: "1.5rem", fontWeight: 600, letterSpacing: "-0.01em", color: C.ink }}>MindEase</span>
           </Link>
 
@@ -506,17 +508,20 @@ export default function HomePage() {
               >
                 <Link href="/auth?mode=signup">
                   <motion.div
-                    whileHover={{ scale: 1.04, boxShadow: "0 8px 28px rgba(166,124,82,0.32)" }}
+                    whileHover={{ scale: 1.04 }}
                     whileTap={{ scale: 0.97 }}
-                    style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.8125rem 1.875rem", borderRadius: 100, backgroundColor: C.clay, color: "white", fontSize: "0.9375rem", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 18px rgba(166,124,82,0.28)" }}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.8125rem 1.875rem", borderRadius: 100, backgroundColor: C.clay, color: "white", fontSize: "0.9375rem", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 18px rgba(166,124,82,0.28)", transition: "box-shadow 0.2s ease" }}
+                    onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 8px 28px rgba(166,124,82,0.32)")}
+                    onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 4px 18px rgba(166,124,82,0.28)")}
                   >
                     {isUrdu ? "مفت شروع کریں" : "Start for free"} <ArrowRight size={15} />
                   </motion.div>
                 </Link>
                 <Link href="/auth" style={{ textDecoration: "none" }}>
                   <motion.div
-                    whileHover={{ color: C.ink }}
-                    style={{ display: "inline-flex", alignItems: "center", padding: "0.8125rem 1rem", fontSize: "0.9375rem", fontWeight: 500, color: C.muted, cursor: "pointer", borderBottom: `1px solid var(--border)` }}
+                    style={{ display: "inline-flex", alignItems: "center", padding: "0.8125rem 1rem", fontSize: "0.9375rem", fontWeight: 500, color: C.muted, cursor: "pointer", borderBottom: `1px solid var(--border)`, transition: "color 0.2s ease" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "var(--foreground)")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "var(--muted-foreground)")}
                   >
                     {t.login}
                   </motion.div>
@@ -826,9 +831,11 @@ export default function HomePage() {
             </p>
             <Link href="/auth?mode=signup">
               <motion.div
-                whileHover={{ scale: 1.04, boxShadow: "0 12px 32px rgba(0,0,0,0.18)" }}
+                whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.97 }}
-                style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.9375rem 2.25rem", borderRadius: 100, backgroundColor: "white", color: C.clay, fontSize: "1rem", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.9375rem 2.25rem", borderRadius: 100, backgroundColor: "white", color: C.clay, fontSize: "1rem", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 16px rgba(0,0,0,0.12)", transition: "box-shadow 0.2s ease" }}
+                onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 12px 32px rgba(0,0,0,0.18)")}
+                onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)")}
               >
                 {isUrdu ? "مفت میں شروع کریں" : "Start for free"} <ArrowRight size={16} />
               </motion.div>
@@ -844,11 +851,7 @@ export default function HomePage() {
       <footer style={{ borderTop: `1px solid var(--border)`, padding: "2.5rem 1.5rem", backgroundColor: C.bg }}>
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <div style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: C.clay, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                <path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="white" />
-              </svg>
-            </div>
+            <img src="/logo.svg" alt="MindEase" style={{ width: 26, height: 26, borderRadius: 7, objectFit: "contain" }} />
             <span style={{ ...serif, fontWeight: 600, fontSize: "1.0625rem", color: C.ink }}>MindEase</span>
           </div>
           <p style={{ fontSize: "0.8125rem", color: C.muted }}>

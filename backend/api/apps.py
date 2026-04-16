@@ -33,6 +33,30 @@ class ApiConfig(AppConfig):
     verbose_name = "API"
 
     def ready(self) -> None:
+        # Warm Urdu emotion model (XLM-R) in background so first Urdu chat msg has 0 load cost.
+        # Only in the real worker process (not Django's autoreload parent).
+        if os.environ.get("RUN_MAIN") == "true" or any(
+            x in sys.argv[0].replace("\\", "/").lower()
+            for x in ("gunicorn", "uvicorn", "daphne")
+        ):
+            import threading, time
+
+            def _warm_urdu_emotion():
+                try:
+                    import sys as _sys
+                    from chatbot.urdu_emotion_detector import warmup_urdu_emotion_model, detect_emotions_urdu
+                    t0 = time.perf_counter()
+                    load_s = warmup_urdu_emotion_model()
+                    # One dummy inference so CUDA kernels are compiled too
+                    detect_emotions_urdu("test", top_k=1, threshold=0.0)
+                    total = time.perf_counter() - t0
+                    print(f"[urdu-emotion] startup warmup complete — load {load_s:.2f}s, ready in {total:.2f}s",
+                          file=_sys.stderr, flush=True)
+                except Exception as exc:
+                    logger.warning("Urdu emotion warmup failed: %s", exc)
+
+            threading.Thread(target=_warm_urdu_emotion, daemon=True).start()
+
         if not _should_warm_qwen3_tts():
             return
         try:

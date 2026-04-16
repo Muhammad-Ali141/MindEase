@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from "react"
 import { X, Brain, AlertCircle, CheckCircle2, ArrowRight, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/context/AuthContext"
-import { apiGetDiagnosticTestStatus, apiGetDiagnosticTestHistory, type TestHistoryItem } from "@/lib/api"
+import { apiGetDiagnosticTestHistory, type TestHistoryItem } from "@/lib/api"
+import { getTestHistoryCache, setTestHistoryCache } from "@/lib/cache"
 import { useRouter } from "next/navigation"
 import { useProfileDict } from "@/lib/i18n"
 
@@ -66,8 +67,8 @@ function buildAssessmentTestContext(test: TestHistoryItem, lang: "en" | "ur"): s
 type ShareTestModalProps = {
   open: boolean
   onClose: () => void
-  onShare: (testContext: string, resultId?: number) => void
-  onSkip: () => void
+  onShare: (testContext: string, resultId: number | undefined, lang: "en" | "ur") => void
+  onSkip: (lang: "en" | "ur") => void
 }
 
 export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModalProps) {
@@ -78,10 +79,16 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
     const s = ((user as { lang_pref?: string })?.lang_pref || "en").toLowerCase()
     return s === "ur" || s === "urdu" ? "ur" : "en"
   }, [user])
+  const [chosenLang, setChosenLang] = useState<"en" | "ur">(profileLang)
+  useEffect(() => { if (open) setChosenLang(profileLang) }, [open, profileLang])
 
-  const [loading, setLoading] = useState(true)
-  const [latestTest, setLatestTest] = useState<TestHistoryItem | null>(null)
-  const [hasTests, setHasTests] = useState(false)
+  // Seed from cache so the modal opens instantly
+  const cachedHistory = user?.id ? getTestHistoryCache(user.id) : null
+  const cachedDaily = cachedHistory?.data.results.filter((r: TestHistoryItem) => r.test_type !== "generic-screening") ?? []
+
+  const [loading, setLoading] = useState(!cachedHistory)
+  const [latestTest, setLatestTest] = useState<TestHistoryItem | null>(cachedDaily[0] ?? null)
+  const [hasTests, setHasTests] = useState(cachedDaily.length > 0)
 
   useEffect(() => {
     if (open && user?.id) loadTestData()
@@ -90,21 +97,19 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
   const loadTestData = async () => {
     if (!user?.id) return
     try {
-      setLoading(true)
-      const [, history] = await Promise.all([
-        apiGetDiagnosticTestStatus(user.id).catch(() => null),
-        apiGetDiagnosticTestHistory(user.id).catch(() => ({ results: [] })),
-      ])
+      if (!cachedHistory) setLoading(true)
+      const history = await apiGetDiagnosticTestHistory(user.id).catch(() => ({ results: [] }))
+      setTestHistoryCache(user.id, history)
       const dailyTests = history.results.filter((r: TestHistoryItem) => r.test_type !== "generic-screening")
       if (dailyTests.length > 0) { setLatestTest(dailyTests[0]); setHasTests(true) }
       else setHasTests(false)
-    } catch { setHasTests(false) }
+    } catch { if (!cachedHistory) setHasTests(false) }
     finally { setLoading(false) }
   }
 
   const handleShare = () => {
     if (!latestTest) return
-    onShare(buildAssessmentTestContext(latestTest, profileLang), latestTest.result_id)
+    onShare(buildAssessmentTestContext(latestTest, chosenLang), latestTest.result_id, chosenLang)
   }
 
   if (!open) return null
@@ -112,9 +117,50 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
   const sev = severityColor(latestTest?.severity_level)
   const severityDisplay =
     latestTest?.severity_level &&
-    (profileLang === "ur"
+    (chosenLang === "ur"
       ? severityLabelForContext(latestTest.severity_level, true)
       : latestTest.severity_level)
+
+  const LangToggle = (
+    <div style={{ marginBottom: "1.125rem" }}>
+      <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted-foreground)", marginBottom: "0.5rem" }}>
+        Chat language
+      </p>
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6,
+        padding: 4, borderRadius: 10,
+        border: "1px solid var(--border)",
+        backgroundColor: "color-mix(in srgb, var(--muted) 35%, transparent)",
+      }}>
+        {([
+          { key: "en" as const, label: "English" },
+          { key: "ur" as const, label: "اردو" },
+        ]).map(opt => {
+          const active = chosenLang === opt.key
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={e => { e.preventDefault(); e.stopPropagation(); setChosenLang(opt.key) }}
+              style={{
+                ...sans,
+                height: 32, borderRadius: 7, border: "none", cursor: "pointer",
+                fontSize: "0.8125rem", fontWeight: 600,
+                color: active ? "white" : "var(--muted-foreground)",
+                background: active
+                  ? "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)"
+                  : "transparent",
+                boxShadow: active ? "0 2px 6px rgba(166,124,82,0.3)" : "none",
+                transition: "color 0.15s ease, opacity 0.15s ease",
+              }}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 
   return (
     <AnimatePresence>
@@ -230,6 +276,8 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                   </p>
                 </div>
 
+                {LangToggle}
+
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <button
                     type="button"
@@ -249,7 +297,7 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                   </button>
                   <button
                     type="button"
-                    onClick={e => { e.preventDefault(); e.stopPropagation(); onSkip() }}
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); onSkip(chosenLang) }}
                     style={{
                       flex: 1, height: 44, borderRadius: 11,
                       border: "1px solid var(--border)", background: "none",
@@ -306,6 +354,8 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                   ))}
                 </div>
 
+                {LangToggle}
+
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <button
                     type="button"
@@ -325,7 +375,7 @@ export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModa
                   </button>
                   <button
                     type="button"
-                    onClick={e => { e.preventDefault(); e.stopPropagation(); onSkip() }}
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); onSkip(chosenLang) }}
                     style={{
                       flex: 1, height: 44, borderRadius: 11,
                       border: "1px solid var(--border)", background: "none",

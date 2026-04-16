@@ -13,6 +13,7 @@ import { DiagnosticTests } from "@/components/diagnostic-tests"
 import { TherapistDirectory } from "@/components/therapist-directory"
 import { BeamsBackground } from "@/components/ui/beams-background"
 import { useAuth } from "@/context/AuthContext"
+import { DashboardDataProvider } from "@/context/DashboardDataContext"
 import { DashboardTour, type TourCompletionAction } from "@/components/dashboard-tour"
 import { apiUpdateDashboardTour, apiLoginOauth } from "@/lib/api"
 import { useProfileDict } from "@/lib/i18n"
@@ -26,7 +27,16 @@ export default function Dashboard() {
   const { theme } = useTheme()
   const t = useProfileDict()
   const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    setMounted(true)
+    // Prefetch all app routes so navigation feels instant after dashboard loads
+    router.prefetch("/chat")
+    router.prefetch("/voice-chat")
+    router.prefetch("/sessions")
+    router.prefetch("/profile")
+    router.prefetch("/diagnostic-test")
+    router.prefetch("/dashboard/therapists")
+  }, [])
   const isDark = mounted ? theme === "dark" : false
 
   const [isTourOpen, setIsTourOpen]       = useState(false)
@@ -70,8 +80,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (authLoading) return
+    if (!clerkLoaded) return
+    // oauthSyncedRef is a ref (synchronous) — it's set to true at the very start
+    // of the OAuth sync effect, before sessionStorage is cleared and before
+    // setIsOauthSyncing(true) takes effect. This is the only reliable guard
+    // against the React batching race condition where both effects run in the
+    // same synchronous pass when clerkLoaded transitions to true.
+    if (oauthSyncedRef.current) return
     if (!token && !isOauthSyncing) router.push("/login")
-  }, [token, isOauthSyncing, authLoading, router])
+  }, [token, isOauthSyncing, authLoading, clerkLoaded, router])
 
   useEffect(() => {
     if (!user) { setIsTourOpen(false); return }
@@ -111,9 +128,7 @@ export default function Dashboard() {
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: "0 4px 20px rgba(166,124,82,0.4)",
         }}>
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-            <path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="white" />
-          </svg>
+          <img src="/logo.svg" alt="MindEase" style={{ width: 28, height: 28, objectFit: "contain" }} />
         </div>
         <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>
           {authLoading ? t.loading : isOauthSyncing ? t.signingIn : t.loading}
@@ -124,7 +139,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <div style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
+      <div data-page-root style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
 
         {/* BeamsBackground — fixed, behind everything */}
         <div style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }}>
@@ -146,24 +161,26 @@ export default function Dashboard() {
 
           {/* Scrollable content */}
           <main style={{ flex: 1, overflowY: "auto" }}>
-            <div style={{ padding: "1.625rem 1.875rem 2.5rem", display: "flex", flexDirection: "column", gap: "1.375rem" }}>
+            <DashboardDataProvider>
+              <div style={{ padding: "1.625rem 1.875rem 2.5rem", display: "flex", flexDirection: "column", gap: "1.375rem" }}>
 
-              {/* 3 action cards */}
-              <TherapyOptions />
+                {/* 3 action cards */}
+                <TherapyOptions />
 
-              {/* 3 stat cards */}
-              <QuickStats />
+                {/* 3 stat cards */}
+                <QuickStats />
 
-              {/* 2-column: sessions + assessments */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
-                <SessionHistory />
-                <DiagnosticTests />
+                {/* 2-column: sessions + assessments */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+                  <SessionHistory />
+                  <DiagnosticTests />
+                </div>
+
+                {/* Full-width therapist preview */}
+                <TherapistDirectory />
+
               </div>
-
-              {/* Full-width therapist preview */}
-              <TherapistDirectory />
-
-            </div>
+            </DashboardDataProvider>
           </main>
         </div>
       </div>

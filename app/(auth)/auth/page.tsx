@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { PageLoading } from "@/components/page-loading"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useForm } from "react-hook-form"
@@ -224,11 +225,7 @@ function BrandPanel({ mode, isUrdu }: { mode: "login" | "signup"; isUrdu: boolea
       {/* Logo — anchored top */}
       <div style={{ position: "relative", zIndex: 1, flexShrink: 0 }}>
         <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: "0.625rem", textDecoration: "none" }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(166,124,82,0.45)" }}>
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="white" />
-            </svg>
-          </div>
+          <img src="/logo.svg" alt="MindEase" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "contain" }} />
           <span style={{ ...serif, fontSize: "1.25rem", fontWeight: 600, color: "rgba(255,255,255,0.85)", letterSpacing: "-0.01em" }}>MindEase</span>
         </Link>
       </div>
@@ -303,8 +300,12 @@ export default function AuthPage() {
   const isUrdu = lang === "ur"
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  const isDark = theme === "dark"
+  useEffect(() => {
+    setMounted(true)
+    // Prefetch dashboard so post-auth navigation is instant
+    router.prefetch("/dashboard")
+  }, [])
+  const isDark = mounted && theme === "dark"
 
   const initialMode = (searchParams.get("mode") === "signup" ? "signup" : "login") as "login" | "signup"
   const [mode, setMode] = useState<"login" | "signup">(initialMode)
@@ -388,7 +389,7 @@ export default function AuthPage() {
   const showGoogleFlow = googleFlow !== "idle" && googleUser
   const showOauthLoading = isOauthSyncing || (clerkLoaded && isSignedIn && !!clerkUser?.primaryEmailAddress?.emailAddress && typeof window !== "undefined" && sessionStorage.getItem("mindease_oauth_pending") === "1" && !showGoogleFlow)
 
-  if (!mounted) return null
+  if (!mounted) return <PageLoading />
 
   return (
     <div style={{ ...sans, minHeight: "100dvh", backgroundColor: "var(--background)", color: "var(--foreground)", position: "relative", overflow: "hidden" }}>
@@ -403,9 +404,7 @@ export default function AuthPage() {
         {/* Minimal top bar */}
         <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem 2rem", borderBottom: "1px solid var(--border)" }}>
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="white" /></svg>
-            </div>
+            <img src="/logo.svg" alt="MindEase" style={{ width: 30, height: 30, borderRadius: 8, objectFit: "contain" }} />
             <span style={{ ...serif, fontSize: "1.25rem", fontWeight: 600, color: "var(--foreground)", letterSpacing: "-0.01em" }}>MindEase</span>
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>

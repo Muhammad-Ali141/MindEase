@@ -3,11 +3,17 @@ Qwen-only Roman Urdu mental health companion.
 No Qalb, no local LLM, no script conversion. All in Roman Urdu via Alibaba (qwen3.5-122b-a10b).
 """
 import os
+import sys
 from typing import Optional, List, Dict
 
-# Alibaba Cloud Model Studio
-_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-_MODEL = "qwen3.5-122b-a10b"
+def _qlog(msg: str):
+    print(msg, file=sys.stderr, flush=True)
+
+# Provider cascade: try OpenRouter keys in order, then Alibaba as final fallback.
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+_OPENROUTER_MODEL = "qwen/qwen3.5-122b-a10b"
+_ALIBABA_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+_ALIBABA_MODEL = "qwen3.5-122b-a10b"
 _PROMPT_FILE = os.path.join(os.path.dirname(__file__), "system_prompt_roman_urdu.txt")
 
 # Full English system prompt (therapy-only, boundaries, crisis, structured steps). Kept in codebase.
@@ -69,47 +75,60 @@ Baraye meherbani call karne mein hichkichayein na. Aap ko is mushkil waqt mein a
 
 Main is mushkil waqt mein aap ki madad ke liye yahan hoon. Kya aap bata sakte hain kya ho raha hai?"""
 
-_client = None
+_clients = None  # list of (label, OpenAI client, model_name)
 _system_prompt_roman_urdu: Optional[str] = None
 
 
+def _load_env_once():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+        load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+    except Exception:
+        pass
+
+
+def _get_clients():
+    """Return cascade list: [(label, client, model), ...] — OpenRouter keys first, Alibaba last."""
+    global _clients
+    if _clients is not None:
+        return _clients
+    from openai import OpenAI
+    _load_env_once()
+    out = []
+    or_key1 = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    or_key2 = (os.environ.get("OPENROUTER_API_KEY_2") or "").strip()
+    ali_key = (os.environ.get("ALIBABA_API_KEY") or "").strip()
+    if or_key1:
+        out.append(("openrouter#1", OpenAI(api_key=or_key1, base_url=_OPENROUTER_BASE_URL), _OPENROUTER_MODEL))
+    if or_key2:
+        out.append(("openrouter#2", OpenAI(api_key=or_key2, base_url=_OPENROUTER_BASE_URL), _OPENROUTER_MODEL))
+    if ali_key:
+        out.append(("alibaba", OpenAI(api_key=ali_key, base_url=_ALIBABA_BASE_URL), _ALIBABA_MODEL))
+    if not out:
+        raise RuntimeError(
+            "No Urdu LLM keys configured. Set OPENROUTER_API_KEY, OPENROUTER_API_KEY_2, or ALIBABA_API_KEY in backend/.env."
+        )
+    _qlog(f"[urdu-llm] cascade: {[lbl for lbl, _, _ in out]}")
+    _clients = out
+    return _clients
+
+
 def _get_client():
-    global _client
-    if _client is None:
-        from openai import OpenAI
-        api_key = os.environ.get("ALIBABA_API_KEY") or os.getenv("ALIBABA_API_KEY")
-        if not api_key:
-            try:
-                from dotenv import load_dotenv
-                load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-                api_key = os.environ.get("ALIBABA_API_KEY")
-            except Exception:
-                pass
-        if not api_key:
-            raise RuntimeError(
-                "ALIBABA_API_KEY is not set. Add it to backend/chatbot/.env for Urdu (Qwen) chat."
-            )
-        _client = OpenAI(api_key=api_key, base_url=_BASE_URL)
-    return _client
+    """Back-compat: return first client in the cascade."""
+    return _get_clients()[0][1]
 
 
 def _translate_system_prompt_to_roman_urdu() -> str:
-    """Call Qwen once to translate English system prompt to Roman Urdu. No fallback."""
-    client = _get_client()
-    resp = client.chat.completions.create(
-        model=_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are an expert translator. Translate the following English text into Roman Urdu. Roman Urdu means Urdu written in Latin script (e.g. mujhe, kya, hai, dil). Keep the structure, meaning, and all instructions exactly. Output only the Roman Urdu text, no explanations.",
-            },
-            {"role": "user", "content": SYSTEM_PROMPT_ENGLISH},
-        ],
-        temperature=0,
-        max_tokens=2048,
-    )
-    out = (resp.choices[0].message.content or "").strip()
-    return out
+    """Call Qwen once to translate English system prompt to Roman Urdu."""
+    messages = [
+        {
+            "role": "system",
+            "content": "You are an expert translator. Translate the following English text into Roman Urdu. Roman Urdu means Urdu written in Latin script (e.g. mujhe, kya, hai, dil). Keep the structure, meaning, and all instructions exactly. Output only the Roman Urdu text, no explanations.",
+        },
+        {"role": "user", "content": SYSTEM_PROMPT_ENGLISH},
+    ]
+    return qwen_chat(messages, max_tokens=2048, temperature=0)
 
 
 def get_system_prompt_roman_urdu(force_translate: bool = False) -> str:
@@ -140,40 +159,93 @@ def qwen_chat(
     temperature: float = 0.7,
 ) -> str:
     """
-    Single Qwen chat call. No fallback; raises on failure.
-    messages: list of {"role": "system"|"user"|"assistant", "content": "..."}
-    Returns assistant reply text.
+    Qwen chat call with cascade fallback: OpenRouter#1 → OpenRouter#2 → Alibaba.
+    Returns assistant reply text. Raises only if every provider fails.
     """
-    client = _get_client()
-    resp = client.chat.completions.create(
-        model=_MODEL,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    out = (resp.choices[0].message.content or "").strip()
-    return out
+    clients = _get_clients()
+    last_err = None
+    for label, client, model in clients:
+        try:
+            _qlog(f"[urdu-llm] trying {label} (model={model})")
+            extra = {}
+            if label.startswith("openrouter"):
+                extra = {"extra_headers": {
+                    "HTTP-Referer": "http://localhost:3000",
+                    "X-OpenRouter-Title": "MindEase",
+                }}
+            resp = client.with_options(timeout=45.0).chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **extra,
+            )
+            content = (resp.choices[0].message.content or "").strip()
+            if not content:
+                raise RuntimeError(f"{label} returned empty content")
+            return content
+        except Exception as e:
+            last_err = e
+            _qlog(f"[urdu-llm] {label} failed: {e}")
+    raise RuntimeError(f"All Urdu LLM providers failed. Last error: {last_err}")
 
 
 def summarize_session_roman_urdu(conversation_text: str, user_first_name: Optional[str] = None) -> str:
-    """
-    End-of-session recap in Roman Urdu for Urdu-profile users. Same facts as English summary, script only.
-    """
+    """End-of-session therapist note in Roman Urdu (third person, structured)."""
+    lower = conversation_text.lower()
+    client_count = lower.count("client:") or lower.count("user:") or conversation_text.count(":")
+    is_brief = client_count < 3
+
+    if is_brief:
+        user_instruction = (
+            "Neeche di gayi therapy guftagu ka ek garmjoshi bhara mukhtasar khulasa "
+            "likhen (2 se 4 jumle, saadi prose, koi heading nahi). Seedha user se "
+            "'aap' keh kar baat karen. Unka naam istemal na karen aur 'client' ya "
+            "'patient' jaise lafz hargiz na likhen. Sirf transcript se maloomat lein; "
+            "koi andaza na lagayein. Koi bullet, dash, ya separator line nahi.\n\n"
+            f"Transcript:\n{conversation_text}\n\nRoman Urdu khulasa:"
+        )
+    else:
+        user_instruction = (
+            "Neeche di gayi therapy guftagu ka ek narm, journal-jaisa khulasa Roman "
+            "Urdu mein likhen, seedha user se 'aap' keh kar. In exact Markdown "
+            "headings ke neeche tarteeb se likhen. Har heading ke neeche 1 se 3 "
+            "jumle saadi prose mein.\n\n"
+            "Required headings:\n"
+            "**Aaj Hum Ne Kya Baat Ki**\n"
+            "**Aap Kaisa Mehsoos Kar Rahe The**\n"
+            "**Kya Samne Aaya**\n"
+            "**Hum Ne Mil Kar Kya Socha**\n"
+            "**Aap Ka Radd-e-amal**\n"
+            "**Aagay Ka Raasta**\n\n"
+            "Rules:\n"
+            "- Seedha 'aap' keh kar baat karen. Naam istemal na karen. 'Client' ya "
+            "'patient' jaise lafz hargiz na likhen.\n"
+            "- Lehja garmjoshi bhara aur hamdardana ho, clinical nahi.\n"
+            "- Sirf Roman Urdu (Latin script). English jumle ya Arabic script nahi.\n"
+            "- Sirf transcript ki baatein; andaza, diagnosis ya nayi baat mat banayein.\n"
+            "- Koi bullet list, koi '---', koi long dashes, koi emoji, koi wrap "
+            "quotes, koi 'Note:' prefix nahi.\n"
+            "- Kul takreeban 140 se 260 alfaaz.\n\n"
+            f"Transcript:\n{conversation_text}\n\nRoman Urdu khulasa:"
+        )
+
     messages = [
         {
             "role": "system",
             "content": (
-                "You write therapy session recaps in Roman Urdu only (Urdu in Latin script: kya, hai, aap, main, mehsoos). "
-                "Address the client as 'aap'. 2–5 sentences. Only facts from the transcript. Warm, validating. "
-                "If the chat was very short, keep the recap very short. Do not invent. No English. No Arabic script."
+                "Aap ek hamdardana therapist hain jo session ke baad user ko Roman Urdu "
+                "(Latin script) mein ek narm khulasa bhejte hain. Seedha 'aap' keh kar "
+                "likhen — clinical ya door ka lehja nahi. 'Client' ya 'patient' jaise "
+                "lafz hargiz na likhen. Har baat transcript se grounded honi chahiye. "
+                "Separator lines, long dashes, ya wrap quotes hargiz istemal na karen. "
+                "Kisi bhi label (Note:, Summary:) se start na karen. Sirf Roman Urdu, "
+                "English jumle ya Arabic script nahi."
             ),
         },
-        {
-            "role": "user",
-            "content": f"Transcript:\n{conversation_text}\n\nRoman Urdu session recap for the client:",
-        },
+        {"role": "user", "content": user_instruction},
     ]
-    return qwen_chat(messages, max_tokens=450, temperature=0.45)
+    return qwen_chat(messages, max_tokens=700, temperature=0.45)
 
 
 def welcome_with_assessment_roman_urdu(test_context: str, user_first_name: Optional[str] = None) -> str:

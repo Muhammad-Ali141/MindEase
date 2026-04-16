@@ -1,42 +1,16 @@
 "use client"
 
 import { TrendingUp, Calendar, Award, TrendingDown, Minus, Info, Flame } from "lucide-react"
-import { useEffect, useState } from "react"
-import { useAuth } from "@/context/AuthContext"
-import { apiGetSessionCount, apiGetMoodTrend, apiGetStreak, type MoodTrendData } from "@/lib/api"
+import { useDashboardData } from "@/context/DashboardDataContext"
+import { type MoodTrendData } from "@/lib/api"
 import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 export function QuickStats() {
-  const { user } = useAuth()
   const t = useProfileDict()
-  const [sessionCount, setSessionCount] = useState<number | null>(null)
-  const [moodTrend, setMoodTrend]       = useState<MoodTrendData[]>([])
-  const [streak, setStreak]             = useState<{ current: number; longest: number } | null>(null)
-  const [loading, setLoading]           = useState(true)
-
-  useEffect(() => { if (user?.id) loadAllData() }, [user?.id])
-
-  const loadAllData = async () => {
-    if (!user?.id) return
-    try {
-      setLoading(true)
-      const [sr, tr, kr] = await Promise.all([
-        apiGetSessionCount(user.id).catch(() => ({ session_count: 0 })),
-        apiGetMoodTrend(user.id).catch(() => ({ trend_data: [], primary_condition: null, test_type: "" })),
-        apiGetStreak(user.id).catch(() => ({ current_streak: 0, longest_streak: 0, last_test_date: null })),
-      ])
-      setSessionCount(sr.session_count)
-      setMoodTrend(tr.trend_data || [])
-      setStreak({ current: kr.current_streak || 0, longest: kr.longest_streak || 0 })
-    } catch {
-      setSessionCount(0); setMoodTrend([]); setStreak({ current: 0, longest: 0 })
-    } finally {
-      setLoading(false)
-    }
-  }
+  const { loading, sessionCount, moodTrend, streak } = useDashboardData()
 
   // ── Mood chart ──────────────────────────────────────────────────────────────
   const MoodChart = ({ data }: { data: MoodTrendData[] }) => {
@@ -130,11 +104,10 @@ export function QuickStats() {
     <div
       data-tour-target={tourTarget}
       style={{
-        backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
+        backgroundColor: "var(--card)",
         borderRadius: 16, padding: "1.25rem 1.375rem",
         border: "1px solid var(--border)",
         boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
-        backdropFilter: "blur(8px)",
       }}
     >
       {children}

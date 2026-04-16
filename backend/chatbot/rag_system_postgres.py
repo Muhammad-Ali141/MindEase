@@ -395,57 +395,84 @@ class RAGSystem:
             cursor.close()
             conn.close()
     
+    def _get_persistent_conn(self):
+        """Return a reusable connection (opened once, reused across retrievals).
+        Verifies liveness with a lightweight ping; reconnects on failure."""
+        import threading as _threading
+        if not hasattr(self, "_conn_lock"):
+            self._conn_lock = _threading.Lock()
+            self._conn = None
+        with self._conn_lock:
+            if self._conn is not None:
+                try:
+                    cur = self._conn.cursor()
+                    cur.execute("SELECT 1")
+                    cur.fetchone()
+                    cur.close()
+                    return self._conn
+                except Exception:
+                    try:
+                        self._conn.close()
+                    except Exception:
+                        pass
+                    self._conn = None
+            self._conn = psycopg2.connect(**self.db_config)
+            self._conn.autocommit = True
+            return self._conn
+
     def retrieve_context(
-        self, 
-        query: str, 
+        self,
+        query: str,
         top_k: int = 3,
         similarity_threshold: float = 0.5
     ) -> List[Dict]:
         """
         Retrieve relevant context for a query using hierarchical retrieval
-        
-        Args:
-            query: User query text
-            top_k: Number of chunks to retrieve
-            similarity_threshold: Minimum similarity score (0-1)
-            
-        Returns:
-            List of dictionaries containing retrieved context
         """
-        # Generate query embedding
+        import sys as _sys
+        import time as _time
+
+        def _log(msg):
+            print(msg, file=_sys.stderr, flush=True)
+
+        t0 = _time.perf_counter()
+
+        # Generate query embedding (local sentence-transformer)
         query_embedding = self.embedder.encode([query], convert_to_numpy=True)[0]
         query_embedding_str = str(query_embedding.tolist())
-        
-        # Connect to database
-        conn = psycopg2.connect(**self.db_config)
+        t_embed = _time.perf_counter()
+        _log(f"[rag-timing] embedding:  {(t_embed - t0):.3f}s")
+
+        # Reuse persistent connection (avoids TCP+TLS handshake every call)
+        conn = self._get_persistent_conn()
         cursor = conn.cursor()
-        
+        t_conn = _time.perf_counter()
+        _log(f"[rag-timing] db_connect: {(t_conn - t_embed):.3f}s")
+
         try:
-            # Perform similarity search using pgvector cosine distance
-            # Similarity = 1 - cosine_distance
             cursor.execute("""
-                SELECT 
+                SELECT
                     i.question_no,
                     i.chunk_index,
                     i.content as input_content,
                     o.content as output_content,
                     1 - (i.embedding <=> %s::vector) as similarity
                 FROM input_chunks i
-                JOIN output_chunks o 
-                    ON i.question_no = o.question_no 
+                JOIN output_chunks o
+                    ON i.question_no = o.question_no
                     AND i.chunk_index = o.chunk_index
                 WHERE 1 - (i.embedding <=> %s::vector) >= %s
                 ORDER BY i.embedding <=> %s::vector
                 LIMIT %s
             """, (query_embedding_str, query_embedding_str, similarity_threshold, query_embedding_str, top_k))
-            
             results = cursor.fetchall()
-            
-            # Process results
+            t_query = _time.perf_counter()
+            _log(f"[rag-timing] sql_query: {(t_query - t_conn):.3f}s")
+            _log(f"[rag-timing] TOTAL:     {(t_query - t0):.3f}s")
+
             retrieved_contexts = []
             for row in results:
                 question_no, chunk_index, input_content, output_content, similarity = row
-                
                 retrieved_contexts.append({
                     'question_no': question_no,
                     'chunk_index': chunk_index,
@@ -453,12 +480,10 @@ class RAGSystem:
                     'output_chunk': output_content,
                     'similarity': float(similarity)
                 })
-            
             return retrieved_contexts
-            
         finally:
             cursor.close()
-            conn.close()
+            # NOTE: do NOT close the connection — it's reused
     
     def format_context_for_llm(self, contexts: List[Dict]) -> str:
         """

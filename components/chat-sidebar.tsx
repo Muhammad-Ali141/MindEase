@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { useClerk } from "@clerk/nextjs"
 import { apiGetRecentSessions, type SessionPreview } from "@/lib/api"
+import { getSessionsCache, setSessionsCache } from "@/lib/cache"
 import {
   Plus, LayoutDashboard, Settings, LogOut,
   MessageCircle, Mic2, ChevronLeft, ChevronRight,
@@ -18,6 +19,8 @@ export interface ChatSidebarProps {
   onSessionSelect?: (session: SessionPreview) => void
   open: boolean
   onToggle: () => void
+  /** Bump this number after a session save to trigger a sidebar refresh. */
+  refreshKey?: number
 }
 
 function groupByDate(sessions: SessionPreview[]) {
@@ -33,18 +36,20 @@ function groupByDate(sessions: SessionPreview[]) {
   return { today, thisWeek, older }
 }
 
-export function ChatSidebar({ currentSessionId, onNewChat, onSessionSelect, open, onToggle }: ChatSidebarProps) {
+export function ChatSidebar({ currentSessionId, onNewChat, onSessionSelect, open, onToggle, refreshKey }: ChatSidebarProps) {
   const router = useRouter()
   const { user, logout } = useAuth()
   const { signOut: clerkSignOut } = useClerk()
-  const [sessions, setSessions] = useState<SessionPreview[]>([])
+  const cached = user?.id ? getSessionsCache(user.id) : null
+  const [sessions, setSessions] = useState<SessionPreview[]>(cached?.data.sessions ?? [])
 
-  useEffect(() => { if (user?.id) loadSessions() }, [user?.id, currentSessionId])
+  useEffect(() => { if (user?.id) loadSessions() }, [user?.id, refreshKey])
 
   const loadSessions = async () => {
     try {
       const res = await apiGetRecentSessions(user!.id, 30)
       setSessions(res.sessions)
+      setSessionsCache(user!.id, res)
     } catch {}
   }
 
@@ -108,16 +113,7 @@ export function ChatSidebar({ currentSessionId, onNewChat, onSessionSelect, open
             {/* Logo + toggle */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.875rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <div style={{
-                  width: 26, height: 26, borderRadius: 7, flexShrink: 0,
-                  background: "linear-gradient(135deg, #7a5535, #a67c52)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 2px 8px rgba(166,124,82,0.3)",
-                }}>
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 13.5C8 13.5 2 10 2 6C2 4 3.5 2.5 5.5 2.5C6.5 2.5 7.5 3 8 4C8.5 3 9.5 2.5 10.5 2.5C12.5 2.5 14 4 14 6C14 10 8 13.5 8 13.5Z" fill="white" />
-                  </svg>
-                </div>
+                <img src="/logo.svg" alt="MindEase" style={{ width: 26, height: 26, borderRadius: 7, flexShrink: 0, objectFit: "contain" }} />
                 <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em", whiteSpace: "nowrap" }}>
                   MindEase
                 </span>

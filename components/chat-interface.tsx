@@ -7,7 +7,7 @@ import { type ChatMessage as ChatMessageType } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { Brain } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useProfileDict } from "@/lib/i18n"
+import { useProfileDict, dict, type Language } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -17,17 +17,41 @@ interface ChatInterfaceProps {
   onSendMessage: (message: string) => void
   loading: boolean
   onResponseComplete?: () => void
+  lang?: Language
 }
 
-export function ChatInterface({ messages, onSendMessage, loading, onResponseComplete }: ChatInterfaceProps) {
+export function ChatInterface({ messages, onSendMessage, loading, onResponseComplete, lang }: ChatInterfaceProps) {
   const messagesEndRef   = useRef<HTMLDivElement>(null)
   const prevLoadingRef   = useRef(loading)
   const { user } = useAuth()
-  const t = useProfileDict()
+  const profileDict = useProfileDict()
+  const t = lang ? dict[lang] : profileDict
   const userInitial      = user?.first_name?.[0]?.toUpperCase() ?? "U"
   const hasUserMessages  = messages.some(m => m.role === "user")
   const welcomeMessage   = !hasUserMessages ? messages.find(m => m.role === "assistant") : null
   const suggestions = [t.chatSug1, t.chatSug2, t.chatSug3, t.chatSug4]
+  const latestAssistantIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return i
+    }
+    return -1
+  })()
+  const latestAssistantMessage =
+    latestAssistantIndex >= 0 ? messages[latestAssistantIndex] : null
+  // Only treat it as "stream text visible" if the latest assistant message
+  // comes AFTER the latest user message (i.e. it's the current response, not a prior one)
+  const latestUserIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") return i
+    }
+    return -1
+  })()
+  const assistantHasVisibleStreamText = Boolean(
+    loading &&
+    latestAssistantMessage &&
+    latestAssistantIndex > latestUserIndex &&
+    latestAssistantMessage.content.trim().length > 0
+  )
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -158,6 +182,16 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
         >
           <AnimatePresence initial={false}>
             {messages.map((msg, i) => {
+              const isEmptyAssistantPlaceholder =
+                msg.role === "assistant" &&
+                msg.content.trim().length === 0 &&
+                loading &&
+                i === latestAssistantIndex
+
+              if (isEmptyAssistantPlaceholder) {
+                return null
+              }
+
               const prev      = messages[i - 1]
               const isGrouped = prev?.role === msg.role
               return (
@@ -168,14 +202,20 @@ export function ChatInterface({ messages, onSendMessage, loading, onResponseComp
                   transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                   style={{ marginBottom: isGrouped ? "0.3rem" : "0.875rem" }}
                 >
-                  <ChatMessage message={msg} userInitial={userInitial} grouped={isGrouped} />
+                  <ChatMessage
+                    message={msg}
+                    userInitial={userInitial}
+                    grouped={isGrouped}
+                    animateTyping={i === latestAssistantIndex}
+                    streaming={loading && i === latestAssistantIndex}
+                  />
                 </motion.div>
               )
             })}
           </AnimatePresence>
 
           <AnimatePresence>
-            {loading && (
+            {loading && !assistantHasVisibleStreamText && (
               <motion.div
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}

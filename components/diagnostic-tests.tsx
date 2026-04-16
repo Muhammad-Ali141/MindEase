@@ -1,14 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { useAuth } from "@/context/AuthContext"
-import {
-  apiGetDiagnosticTestStatus,
-  apiGetDiagnosticTestHistory,
-  type DiagnosticTestStatus,
-  type TestHistoryItem
-} from "@/lib/api"
+import { useDashboardData } from "@/context/DashboardDataContext"
 import { CheckCircle2, Brain, AlertCircle, Heart, Smile, ArrowRight, Loader2 } from "lucide-react"
 import { useProfileDict } from "@/lib/i18n"
 
@@ -17,30 +10,8 @@ const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 export function DiagnosticTests() {
   const router = useRouter()
-  const { user } = useAuth()
   const t = useProfileDict()
-  const [testStatus, setTestStatus]   = useState<DiagnosticTestStatus | null>(null)
-  const [testHistory, setTestHistory] = useState<TestHistoryItem[]>([])
-  const [loading, setLoading]         = useState(true)
-
-  useEffect(() => { if (user?.id) loadTestData() }, [user?.id])
-
-  const loadTestData = async () => {
-    if (!user?.id) return
-    try {
-      setLoading(true)
-      const [status, history] = await Promise.all([
-        apiGetDiagnosticTestStatus(user.id),
-        apiGetDiagnosticTestHistory(user.id)
-      ])
-      setTestStatus(status)
-      setTestHistory(history.results)
-    } catch {
-      // keep defaults
-    } finally {
-      setLoading(false)
-    }
-  }
+  const { loading, testStatus, testHistory } = useDashboardData()
 
   const getTestInfo = (testType: string | null) => {
     if (!testType) return null
@@ -75,8 +46,7 @@ export function DiagnosticTests() {
       data-tour-target="mental-health-assessments"
       style={{
         ...sans,
-        backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
-        backdropFilter: "blur(8px)",
+        backgroundColor: "var(--card)",
         borderRadius: 16, border: "1px solid var(--border)",
         boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
         display: "flex", flexDirection: "column", overflow: "hidden",

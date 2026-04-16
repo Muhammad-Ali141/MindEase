@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
@@ -17,22 +17,71 @@ import { ChatInterface } from "@/components/chat-interface"
 import { ShareTestModal } from "@/components/share-test-modal"
 import { ArrowLeft, Star, Loader2, CheckCircle2, MessageCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { useProfileDict } from "@/lib/i18n"
+import { dict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+
+type ChatShellProps = {
+  isDark: boolean
+  currentSessionId: string | null
+  sidebarOpen: boolean
+  sidebarRefreshKey?: number
+  onNewChat: () => void
+  onSessionSelect: (session: SessionPreview) => void
+  onToggleSidebar: () => void
+  children: ReactNode
+}
+
+function ChatShell({
+  isDark,
+  currentSessionId,
+  sidebarOpen,
+  sidebarRefreshKey,
+  onNewChat,
+  onSessionSelect,
+  onToggleSidebar,
+  children,
+}: ChatShellProps) {
+  return (
+    <div data-page-root style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
+      {/* Background */}
+      <div style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none" }}>
+        <BeamsBackground isDark={isDark} intensity="subtle" />
+        <div style={{ position: "absolute", inset: 0, backgroundColor: isDark ? "rgba(0,0,0,0.36)" : "rgba(255,255,255,0.18)" }} />
+      </div>
+
+      {/* Chat sidebar */}
+      <div style={{ position: "relative", zIndex: 10, flexShrink: 0, height: "100%" }}>
+        <ChatSidebar
+          currentSessionId={currentSessionId}
+          onNewChat={onNewChat}
+          onSessionSelect={onSessionSelect}
+          open={sidebarOpen}
+          onToggle={onToggleSidebar}
+          refreshKey={sidebarRefreshKey}
+        />
+      </div>
+
+      {/* Main column */}
+      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {children}
+      </div>
+    </div>
+  )
+}
 
 export default function ChatPage() {
   const router = useRouter()
   const { user, token } = useAuth()
   const { toast } = useToast()
-  const t = useProfileDict()
   const { resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const isDark = mounted ? resolvedTheme === "dark" : false
 
   const [sidebarOpen, setSidebarOpen]           = useState(true)
+  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0)
   const [messages, setMessages]                 = useState<ChatMessage[]>([])
   const [loading, setLoading]                   = useState(false)
   const [welcomeLoading, setWelcomeLoading]     = useState(true)
@@ -46,12 +95,14 @@ export default function ChatPage() {
   const [testContext, setTestContext]           = useState<string | null>(null)
   const shareModalShownRef = useRef(false)
 
-  /** Language for text chat: from profile only (English pipeline if en, Urdu if ur) */
+  /** Language for THIS chat session. Seeded from profile, overridable in ShareTestModal. */
   const profileLangPref: "en" | "ur" = (() => {
     const lp = (user as { lang_pref?: string })?.lang_pref
     const s = (lp || "en").toLowerCase()
     return s === "ur" || s === "urdu" ? "ur" : "en"
   })()
+  const [chatLang, setChatLang] = useState<"en" | "ur">(profileLangPref)
+  const t = dict[chatLang]
 
   const sessionTitle = savedSession?.title || (currentSessionId ? t.chatConversation : t.chatNewConversation)
 
@@ -72,13 +123,17 @@ export default function ChatPage() {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  const loadWelcomeMessage = async (sharedTestContext?: string) => {
+  const loadWelcomeMessage = async (sharedTestContext?: string, testContextKey?: string | number, langOverride?: "en" | "ur") => {
     try {
       setWelcomeLoading(true)
       setSavedSession(null)
       setShowSummary(false)
       setSummary("")
-      const response = await apiChatWelcome(user!.id, user!.first_name || null, sharedTestContext || null, profileLangPref)
+      const lp = langOverride ?? chatLang
+      const response = await apiChatWelcome(
+        user!.id, user!.first_name || null, sharedTestContext || null,
+        lp, undefined, testContextKey ?? null,
+      )
       setMessages([{ role: "assistant", content: response.welcome_message, content_type: "text" }])
       setCurrentSessionId(null)
       setBaselineUserMessageCount(0)
@@ -94,10 +149,13 @@ export default function ChatPage() {
     if (!user || !token) return
     const currentUserMessages = messages.filter(m => m.role === "user").length
     if (currentUserMessages <= baselineUserMessageCount) return
+    // Skip background save for very short interactions (< 2 new user messages since last save).
+    // The explicit end-chat save (handleEndChat) has its own threshold and still saves at >= 1.
+    if (currentUserMessages - baselineUserMessageCount < 2) return
     const msgSnapshot     = [...messages]
     const sessionSnapshot = currentSessionId
 
-    apiChatSummary(user.id, user.first_name || null, user.gender || null, msgSnapshot, profileLangPref)
+    apiChatSummary(user.id, user.first_name || null, user.gender || null, msgSnapshot, chatLang)
       .then(res => {
         if (res.no_user_messages || !res.summary?.trim()) return
         return apiSaveSession(
@@ -151,6 +209,7 @@ export default function ChatPage() {
     setSummary("")
     setTestContext(null)
     setBaselineUserMessageCount(0)
+    setChatLang(profileLangPref)
     shareModalShownRef.current = false
     window.history.pushState({}, "", "/chat")
     setShowShareModal(true)
@@ -176,16 +235,18 @@ export default function ChatPage() {
     loadSession(session.session_id)
   }
 
-  const handleShareTest = (context: string) => {
+  const handleShareTest = (context: string, resultId: number | undefined, lang: "en" | "ur") => {
+    setChatLang(lang)
     setTestContext(context)
     setShowShareModal(false)
-    loadWelcomeMessage(context)
+    loadWelcomeMessage(context, resultId, lang)
   }
 
-  const handleSkipShare = () => {
+  const handleSkipShare = (lang: "en" | "ur") => {
+    setChatLang(lang)
     setTestContext(null)
     setShowShareModal(false)
-    loadWelcomeMessage()
+    loadWelcomeMessage(undefined, undefined, lang)
   }
 
   const handleSendMessage = async (message: string) => {
@@ -199,7 +260,7 @@ export default function ChatPage() {
         message, user.id, user.first_name || null,
         user.gender || null, historyForRequest, testContext || null,
         undefined,
-        profileLangPref
+        chatLang
       )
       const primaryEmotion = response.emotions?.[0]
       const assistantMessage: ChatMessage = { role: "assistant", content: response.response, content_type: "text" }
@@ -231,7 +292,7 @@ export default function ChatPage() {
     setIsEnding(true)
     setLoading(true)
     try {
-      const response = await apiChatSummary(user.id, user.first_name || null, user.gender || null, messages, profileLangPref)
+      const response = await apiChatSummary(user.id, user.first_name || null, user.gender || null, messages, chatLang)
       if (response.no_user_messages || !response.summary?.trim()) { router.push("/dashboard"); return }
       try {
         const saveResponse = await apiSaveSession(
@@ -241,6 +302,7 @@ export default function ChatPage() {
         setSavedSession(saveResponse.session)
         setCurrentSessionId(saveResponse.session.session_id)
         setBaselineUserMessageCount(saveResponse.session.messages.filter(m => m.role === "user").length)
+        setSidebarRefreshKey(k => k + 1)
       } catch (err) { console.error("Failed to save session:", err) }
       setSummary(response.summary)
       setShowSummary(true)
@@ -272,38 +334,19 @@ export default function ChatPage() {
     }
   }
 
-  // ── Page shell ─────────────────────────────────────────────────────────────
-  const Shell = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ position: "fixed", inset: 0, display: "flex", backgroundColor: "var(--background)" }}>
-      {/* Background */}
-      <div style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none" }}>
-        <BeamsBackground isDark={isDark} intensity="subtle" />
-        <div style={{ position: "absolute", inset: 0, backgroundColor: isDark ? "rgba(0,0,0,0.36)" : "rgba(255,255,255,0.18)" }} />
-      </div>
-
-      {/* Chat sidebar */}
-      <div style={{ position: "relative", zIndex: 10, flexShrink: 0, height: "100%" }}>
-        <ChatSidebar
-          currentSessionId={currentSessionId}
-          onNewChat={handleNewChat}
-          onSessionSelect={handleSessionSelect}
-          open={sidebarOpen}
-          onToggle={() => setSidebarOpen(v => !v)}
-        />
-      </div>
-
-      {/* Main column */}
-      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {children}
-      </div>
-    </div>
-  )
-
   // ── Summary screen ─────────────────────────────────────────────────────────
   if (showSummary) {
     return (
       <AuthGuard>
-        <Shell>
+        <ChatShell
+          isDark={isDark}
+          currentSessionId={currentSessionId}
+          sidebarOpen={sidebarOpen}
+          sidebarRefreshKey={sidebarRefreshKey}
+          onNewChat={handleNewChat}
+          onSessionSelect={handleSessionSelect}
+          onToggleSidebar={() => setSidebarOpen(v => !v)}
+        >
           <Header />
           <main style={{ flex: 1, overflowY: "auto" }}>
             <div style={{ maxWidth: 680, margin: "0 auto", padding: "1.75rem 1.5rem 3rem" }}>
@@ -363,7 +406,7 @@ export default function ChatPage() {
               </div>
             </div>
           </main>
-        </Shell>
+        </ChatShell>
       </AuthGuard>
     )
   }
@@ -371,7 +414,15 @@ export default function ChatPage() {
   // ── Chat screen ────────────────────────────────────────────────────────────
   return (
     <AuthGuard>
-      <Shell>
+      <ChatShell
+        isDark={isDark}
+        currentSessionId={currentSessionId}
+        sidebarOpen={sidebarOpen}
+        sidebarRefreshKey={sidebarRefreshKey}
+        onNewChat={handleNewChat}
+        onSessionSelect={handleSessionSelect}
+        onToggleSidebar={() => setSidebarOpen(v => !v)}
+      >
         {/* Header (greeting + date + theme + avatar) */}
         <Header />
 
@@ -418,12 +469,13 @@ export default function ChatPage() {
             messages={messages}
             onSendMessage={handleSendMessage}
             loading={loading || welcomeLoading}
+            lang={chatLang}
             onResponseComplete={() => {
               setTimeout(() => { const ta = document.querySelector("textarea") as HTMLTextAreaElement; if (ta) ta.focus() }, 100)
             }}
           />
         </div>
-      </Shell>
+      </ChatShell>
     </AuthGuard>
   )
 }

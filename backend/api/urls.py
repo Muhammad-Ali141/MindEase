@@ -15,6 +15,7 @@ urlpatterns = [
     path("voice/welcome-audio/", views.voice_welcome_audio, name="voice_welcome_audio"),
     path("chat/welcome/", views.chat_welcome, name="chat_welcome"),
     path("chat/summary/", views.chat_summary, name="chat_summary"),
+    path("dashboard/data/", views.dashboard_data, name="dashboard_data"),
     path("sessions/count/", views.get_session_count, name="get_session_count"),
     path("sessions/save/", views.save_session, name="save_session"),
     path("sessions/recent/", views.get_recent_sessions, name="get_recent_sessions"),

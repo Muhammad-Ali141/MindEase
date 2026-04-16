@@ -1,13 +1,55 @@
 import json
 import random
+import re
 import secrets
 import threading
 import uuid
 from datetime import timedelta
 
+
+_SUMMARY_PREFIX_RE = re.compile(
+    r"^(session\s+(recap|summary|note)|clinical\s+note|therapist\s+note|summary|recap|note|brief\s+summary|short\s+summary)\s*[:\-–—]\s*",
+    re.IGNORECASE,
+)
+_SEP_LINE_RE = re.compile(r"(?m)^\s*[-*_=~]{3,}\s*$")
+_LONG_DASH_RUN_RE = re.compile(r"[-–—]{3,}")
+_TRAILING_PUNCT_RE = re.compile(r"[\s\-–—_*#]+$")
+_MULTIBLANK_RE = re.compile(r"\n{3,}")
+
+
+def _sanitize_summary(text: str) -> str:
+    """Clean LLM summary output: strip separator lines, ---- trails, wrapping
+    quotes, common label prefixes, and collapse excess whitespace."""
+    if not text:
+        return ""
+    cleaned = str(text).replace("\r\n", "\n").replace("\r", "\n").strip()
+    # Drop wrapping quotes
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in ('"', "'", "`"):
+        cleaned = cleaned[1:-1].strip()
+    # Strip leading label prefixes repeatedly
+    for _ in range(3):
+        new = _SUMMARY_PREFIX_RE.sub("", cleaned).strip()
+        if new == cleaned:
+            break
+        cleaned = new
+    # Remove separator-only lines
+    cleaned = _SEP_LINE_RE.sub("", cleaned)
+    # Remove inline runs of 3+ dashes
+    cleaned = _LONG_DASH_RUN_RE.sub("", cleaned)
+    # Strip markdown bold/italic markers and hash headings (plain-text rendering)
+    cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"\1", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"(?m)^#{1,6}\s+", "", cleaned)
+    # Trim trailing dashes/symbols on each line
+    cleaned = "\n".join(_TRAILING_PUNCT_RE.sub("", line).rstrip() for line in cleaned.split("\n"))
+    # Collapse excess blank lines
+    cleaned = _MULTIBLANK_RE.sub("\n\n", cleaned).strip()
+    return cleaned
+
 import requests
 
 from django.conf import settings
+from django.db.models import Exists, OuterRef
 from django.contrib.auth.hashers import check_password, make_password
 from django.http import JsonResponse, StreamingHttpResponse, FileResponse, Http404
 from django.utils import timezone
@@ -149,6 +191,284 @@ def _get_welcome_audio_path(
     else:
         mid = "_with_context" if include_context else ""
     return os.path.join(welcome_dir, f"{user_id}{lang_suffix}{mid}.wav")
+
+
+def _get_welcome_text_path(
+    user_id, include_context=False, test_context_key=None, lang_pref=None, voice_welcome_urdu_script=False
+):
+    """Path to cached welcome text (mirror of audio path, .txt)."""
+    base = getattr(settings, "MEDIA_ROOT", None) or os.path.join(settings.BASE_DIR, "media")
+    text_dir = os.path.join(base, "welcome_text")
+    os.makedirs(text_dir, exist_ok=True)
+    lang_suffix = _welcome_audio_lang_suffix(lang_pref, voice_welcome_urdu_script=voice_welcome_urdu_script)
+    if include_context and test_context_key:
+        safe_key = _sanitize_test_context_key(test_context_key)
+        mid = f"_with_context_{safe_key}" if safe_key else "_with_context"
+    else:
+        mid = "_with_context" if include_context else ""
+    return os.path.join(text_dir, f"{user_id}{lang_suffix}{mid}.txt")
+
+
+# ---- Welcome cache single-flight locks (per cache path) ----
+_welcome_cache_locks = {}
+_welcome_cache_locks_mutex = threading.Lock()
+
+
+def _get_cache_lock(key: str) -> threading.Lock:
+    with _welcome_cache_locks_mutex:
+        lock = _welcome_cache_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _welcome_cache_locks[key] = lock
+        return lock
+
+
+def _atomic_write_bytes(path: str, data: bytes):
+    tmp = f"{path}.tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+
+
+def _atomic_write_text(path: str, text: str):
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def _build_assessment_test_context(test_result, lang_pref=None) -> str:
+    """Backend mirror of components/share-test-modal.tsx:buildAssessmentTestContext.
+    Used by background precompute so we don't depend on the client sending the context."""
+    is_urdu = bool(lang_pref) and str(lang_pref).lower() in ("urdu", "ur")
+    try:
+        test_name = DiagnosticTestService.get_test_name(test_result.test_type)
+    except Exception:
+        test_name = test_result.test_type
+    score = test_result.score
+    sev = (test_result.severity_level or "").strip()
+    try:
+        taken_at = test_result.taken_at
+        date_str = taken_at.strftime("%d %B %Y")
+    except Exception:
+        date_str = ""
+    if is_urdu:
+        urdu_sev_map = {
+            "minimal": "bohot kam", "mild": "halka", "moderate": "darmiyani",
+            "moderately severe": "darmiyani se shadeed", "severe": "shadeed",
+            "extremely severe": "bohot shadeed", "none": "koi nahi", "normal": "normal",
+        }
+        sev_disp = urdu_sev_map.get(sev.lower(), sev)
+        return (
+            f"User ne {test_name} assessment mukammal ki hai.\n\n"
+            f"Natayij:\n"
+            f"- Assessment: {test_name}\n"
+            f"- Kul score: {score} (zyada score ka matlab zyada alamat; Daily Mood Check-In mein zyada score behtar mood ka ishara hai)\n"
+            f"- Shadeediyat: {sev_disp}\n"
+            f"- Mukammal hone ki tareekh: {date_str}\n\n"
+            f"Is maloomat se user ki zehni sehat ki halat samjhein aur munasib, shakhsi madad den. Assessment dobara poochne ki zaroorat nahi."
+        )
+    sev_disp = sev.title() if sev else ""
+    return (
+        f"The user has completed a {test_name} assessment.\n\n"
+        f"Assessment results:\n"
+        f"- Assessment: {test_name}\n"
+        f"- Total score: {score} (higher scores indicate greater symptom burden, except for Daily Mood Check-In where higher means better mood)\n"
+        f"- Severity: {sev_disp}\n"
+        f"- Date completed: {date_str}\n\n"
+        f"Use this information to understand the user's current mental health context and provide appropriate, personalized support. You do not need to ask them to repeat their assessment results."
+    )
+
+
+def _strip_welcome_meta_phrases(welcome_msg: str) -> str:
+    welcome_msg = (welcome_msg or "").strip()
+    meta_phrases = [
+        "Here is a warm message for the user:", "Here's a warm message for the user:",
+        "Here is a warm message:", "Here's a warm message:",
+        "Here is warm message for user:", "Here's warm message for user:",
+        "Here is warm message:", "Here's warm message:",
+        "Here is the welcome message:", "Here's the welcome message:",
+    ]
+    for phrase in meta_phrases:
+        if welcome_msg.lower().startswith(phrase.lower()):
+            welcome_msg = welcome_msg[len(phrase):].strip()
+            if welcome_msg.startswith('"') and welcome_msg.endswith('"'):
+                welcome_msg = welcome_msg[1:-1].strip()
+            if welcome_msg.startswith("'") and welcome_msg.endswith("'"):
+                welcome_msg = welcome_msg[1:-1].strip()
+            break
+    return welcome_msg
+
+
+def _generate_welcome_text(user_first_name, test_context, lang_pref, voice_welcome_urdu_script=False) -> str:
+    """Generate a welcome message (LLM if test_context, else static). Pure function."""
+    is_urdu = bool(lang_pref) and str(lang_pref).lower() in ("urdu", "ur")
+
+    if test_context:
+        import sys as _sys
+        chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "chatbot")
+        if chatbot_dir not in _sys.path:
+            _sys.path.insert(0, chatbot_dir)
+        if is_urdu:
+            if voice_welcome_urdu_script:
+                from chatbot.urdu_qwen_chat import welcome_with_assessment_arabic_urdu
+                return welcome_with_assessment_arabic_urdu(test_context, user_first_name).strip()
+            from chatbot.urdu_qwen_chat import welcome_with_assessment_roman_urdu
+            return welcome_with_assessment_roman_urdu(test_context, user_first_name).strip()
+        from chatbot.llm_client import LLMClient
+        llm_client = LLMClient()
+        system_prompt = f"""You are a compassionate mental health therapist speaking directly to the user in first person. The user has shared their assessment results with you.
+
+Test Context:
+{test_context}
+
+Write a direct, warm welcome message (NOT a description of what to write, but the actual message itself) that:
+1. Greets the user warmly using their name: {user_first_name or 'there'}
+2. Briefly acknowledges you've reviewed their assessment results
+3. Shows understanding of their current condition
+4. Invites them to share what's on their mind
+
+STRICT RULES:
+- Speak ONLY as "I" / "me" / "my". NEVER use "we", "we've", "we're", "us", or "our". You are one therapist, not a team.
+- Do NOT include meta-commentary like "Here is", "Here's a", or "I'll write".
+- Write the actual welcome message directly, as if speaking to the user.
+
+Keep it concise (2-3 sentences) and natural. Start directly with the greeting."""
+        msg = llm_client.generate_response(
+            user_message="Hello, I'm ready to chat.",
+            system_prompt_override=system_prompt,
+            user_first_name=user_first_name,
+        ).strip()
+        return _strip_welcome_meta_phrases(msg)
+
+    # No test_context: static strings
+    if is_urdu:
+        if voice_welcome_urdu_script:
+            return _urdu_voice_welcome_arabic_script(user_first_name)
+        if user_first_name:
+            return f"MindEase mein khush aamdeed, {user_first_name}. Main aap ki zehni aur jazbati behbood ke liye yahan hoon.\n\nAaj aap kaisa mehsoos kar rahe hain? Aap ke zehan mein kya hai?"
+        return "MindEase mein khush aamdeed. Main aap ki zehni aur jazbati behbood ke liye yahan hoon.\n\nAaj aap kaisa mehsoos kar rahe hain? Aap ke zehan mein kya hai?"
+    if user_first_name:
+        return f"Welcome to MindEase, {user_first_name}. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+    return "Welcome to MindEase. I'm here to support you with your mental and emotional well-being.\n\nHow are you feeling today? What's on your mind?"
+
+
+def _synthesize_welcome_audio(welcome_message: str, audio_path: str, lang_pref=None):
+    """TTS the welcome message to audio_path (atomic). Also writes sidecar .json with the text."""
+    language = "ur" if (lang_pref and str(lang_pref).lower() in ("urdu", "ur")) else "en"
+    if _resolve_tts_backend({}, language=language) == "xtts":
+        tts_service = _get_tts_service()
+    else:
+        tts_service = _get_qwen3_tts_service()
+    # soundfile infers format from extension → keep .wav on the tmp file
+    root, ext = os.path.splitext(audio_path)
+    tmp_audio = f"{root}.part{ext or '.wav'}"
+    tts_service.synthesize_to_file(text=welcome_message, output_path=tmp_audio, language=language)
+    os.replace(tmp_audio, audio_path)
+    sidecar = audio_path.replace(".wav", ".json")
+    try:
+        _atomic_write_text(sidecar, json.dumps({"welcome_message": welcome_message}, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def _ensure_welcome_text_cached(
+    user_id, user_first_name, test_context, lang_pref,
+    include_context=False, test_context_key=None, voice_welcome_urdu_script=False,
+) -> str:
+    """Return welcome text, generating and caching under single-flight lock if missing."""
+    path = _get_welcome_text_path(
+        user_id, include_context=include_context, test_context_key=test_context_key,
+        lang_pref=lang_pref, voice_welcome_urdu_script=voice_welcome_urdu_script,
+    )
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+    lock = _get_cache_lock(path)
+    with lock:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception:
+                pass
+        welcome_msg = _generate_welcome_text(
+            user_first_name, test_context, lang_pref,
+            voice_welcome_urdu_script=voice_welcome_urdu_script,
+        )
+        try:
+            _atomic_write_text(path, welcome_msg)
+        except Exception as e:
+            print(f"[welcome-cache] text write failed: {e}")
+        return welcome_msg
+
+
+def _ensure_welcome_audio_cached(
+    user_id, user_first_name, test_context, lang_pref,
+    include_context=False, test_context_key=None, voice_welcome_urdu_script=False,
+    welcome_message_override=None,
+) -> str:
+    """Return path to cached welcome audio, generating under single-flight lock if missing."""
+    path = _get_welcome_audio_path(
+        user_id, include_context=include_context, test_context_key=test_context_key,
+        lang_pref=lang_pref, voice_welcome_urdu_script=voice_welcome_urdu_script,
+    )
+    if os.path.isfile(path):
+        return path
+    lock = _get_cache_lock(path)
+    with lock:
+        if os.path.isfile(path):
+            return path
+        if welcome_message_override:
+            welcome_msg = welcome_message_override
+        else:
+            welcome_msg = _ensure_welcome_text_cached(
+                user_id, user_first_name, test_context, lang_pref,
+                include_context=include_context, test_context_key=test_context_key,
+                voice_welcome_urdu_script=voice_welcome_urdu_script,
+            )
+        _synthesize_welcome_audio(welcome_msg, path, lang_pref=lang_pref)
+        return path
+
+
+def _precompute_welcomes_for_test_result(user_id, user_first_name, lang_pref, test_result_id, test_context):
+    """Generate and cache all welcome variants (text + audio, with-context only for this result).
+    Safe to call concurrently with on-demand: single-flight locks prevent duplicate work."""
+    def _worker():
+        variants = [("", False)]  # English/Roman-Urdu
+        if lang_pref and str(lang_pref).lower() in ("urdu", "ur"):
+            variants.append(("ur_ar", True))  # Arabic-script voice variant
+        for _label, vus in variants:
+            try:
+                _ensure_welcome_text_cached(
+                    user_id, user_first_name, test_context, lang_pref,
+                    include_context=True, test_context_key=test_result_id,
+                    voice_welcome_urdu_script=vus,
+                )
+            except Exception as e:
+                print(f"[welcome-precompute] text(ctx) failed: {e}")
+            try:
+                _ensure_welcome_audio_cached(
+                    user_id, user_first_name, test_context, lang_pref,
+                    include_context=True, test_context_key=test_result_id,
+                    voice_welcome_urdu_script=vus,
+                )
+            except Exception as e:
+                print(f"[welcome-precompute] audio(ctx) failed: {e}")
+            # No-context voice (text no-context is static, no caching needed)
+            try:
+                _ensure_welcome_audio_cached(
+                    user_id, user_first_name, None, lang_pref,
+                    include_context=False, test_context_key=None,
+                    voice_welcome_urdu_script=vus,
+                )
+            except Exception as e:
+                print(f"[welcome-precompute] audio(no-ctx) failed: {e}")
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
 
 
 def _resolve_session_for_user(user_id, identifier):
@@ -570,21 +890,15 @@ def chat_message(request):
             if chatbot_dir not in sys.path:
                 sys.path.insert(0, chatbot_dir)
             
-            from chatbot.chat import MindEaseChat
-            
-            # Initialize chatbot with user's first name, test context, and language preference
-            chatbot = MindEaseChat(
+            from chatbot.chat import get_cached_chatbot
+            chatbot = get_cached_chatbot(
                 user_first_name=user_first_name,
                 test_context=test_context,
                 lang_pref=lang_pref,
             )
             
-            # Populate conversation history from frontend
-            for msg in conversation_history:
-                role = msg.get("role")
-                content = msg.get("content")
-                if role and content:
-                    chatbot.memory.add_message(role, content)
+            # Populate conversation history from frontend (bulk load, no periodic summary)
+            chatbot.memory.load_history(conversation_history)
             
             emotions_override = None
             if emotions_from_client and isinstance(emotions_from_client, list):
@@ -593,20 +907,17 @@ def chat_message(request):
                     print("[Voice chat] Using emotions from audio (SER):", emotions_override)
             
             response = chatbot._process_message(message, test_context=test_context, emotions_override=emotions_override)
-            
+
             updated_history = [
                 msg for msg in chatbot.memory.get_history()
                 if msg.get('role') in ['user', 'assistant']
             ]
-            
+
+            # Reuse emotions already computed inside _process_message — avoid duplicate DeBERTa call.
             if emotions_override:
                 emotions = emotions_override
             else:
-                emotions = chatbot.emotion_detector.detect_emotions(
-                    message,
-                    top_k=2,
-                    threshold=0.3
-                )
+                emotions = getattr(chatbot, "last_emotions", None) or []
             
             # Format emotions for response
             emotions_list = []
@@ -658,8 +969,8 @@ def chat_message_stream(request):
         chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'chatbot')
         if chatbot_dir not in sys.path:
             sys.path.insert(0, chatbot_dir)
-        from chatbot.chat import MindEaseChat
-        chatbot = MindEaseChat(
+        from chatbot.chat import get_cached_chatbot
+        chatbot = get_cached_chatbot(
             user_first_name=user_first_name,
             test_context=test_context,
             lang_pref=lang_pref,
@@ -847,7 +1158,6 @@ def voice_welcome_audio(request):
                 return JsonResponse({"error": "user_id and welcome_message required."}, status=400)
             if include_test_context and not test_context_key:
                 return JsonResponse({"error": "test_context_key required when include_test_context is true."}, status=400)
-            language = "ur" if (lang_pref and str(lang_pref).lower() in ("urdu", "ur")) else "en"
             path = _get_welcome_audio_path(
                 user_id,
                 include_context=bool(include_test_context),
@@ -855,16 +1165,11 @@ def voice_welcome_audio(request):
                 lang_pref=lang_pref,
                 voice_welcome_urdu_script=voice_welcome_urdu_script,
             )
-            # Welcome audio uses Qwen3 by default (same as /api/tts/synthesize/). XTTS opt-in: TTS_BACKEND=xtts.
-            if _resolve_tts_backend({}, language=language) == "xtts":
-                tts_service = _get_tts_service()
-            else:
-                tts_service = _get_qwen3_tts_service()
-            tts_service.synthesize_to_file(text=welcome_message, output_path=path, language=language)
-            # Store welcome message so GET can return matching text
-            sidecar = path.replace(".wav", ".json")
-            with open(sidecar, "w", encoding="utf-8") as sf:
-                json.dump({"welcome_message": welcome_message}, sf, ensure_ascii=False)
+            # Single-flight: if cached (possibly by background precompute), skip TTS entirely.
+            lock = _get_cache_lock(path)
+            with lock:
+                if not os.path.isfile(path):
+                    _synthesize_welcome_audio(welcome_message, path, lang_pref=lang_pref)
             with open(path, "rb") as f:
                 audio_data = f.read()
             return FileResponse(BytesIO(audio_data), content_type="audio/wav", as_attachment=False)
@@ -886,6 +1191,7 @@ def chat_welcome(request):
             user_first_name = data.get("user_first_name")
             user_id = data.get("user_id")
             test_context = data.get("test_context")
+            test_context_key = data.get("test_context_key")  # e.g. result_id; enables caching
             lang_pref = data.get("lang_pref")
             is_urdu = lang_pref and str(lang_pref).lower() in ("urdu", "ur")
             voice_welcome_urdu_script = bool(data.get("voice_welcome_urdu_script"))
@@ -893,68 +1199,31 @@ def chat_welcome(request):
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
-            # Generate welcome message with test context if provided
+            # Warm up chatbot models in background so first message is fast
+            import threading
+            def _warmup():
+                try:
+                    from chatbot.chat import get_cached_chatbot
+                    get_cached_chatbot(lang_pref=lang_pref)
+                except Exception:
+                    pass
+            threading.Thread(target=_warmup, daemon=True).start()
+
+            # Cache fast-path (with-context + test_context_key) — hit cache or single-flight generate
+            if test_context and test_context_key:
+                welcome_msg = _ensure_welcome_text_cached(
+                    user_id, user_first_name, test_context, lang_pref,
+                    include_context=True, test_context_key=test_context_key,
+                    voice_welcome_urdu_script=voice_welcome_urdu_script,
+                )
+                return JsonResponse({"welcome_message": welcome_msg, "user_id": user_id}, status=200)
+
+            # Generate welcome message with test context if provided (no cache key — call helper directly)
             if test_context:
-                import sys
-                import os
-                chatbot_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'chatbot')
-                if chatbot_dir not in sys.path:
-                    sys.path.insert(0, chatbot_dir)
-
-                if is_urdu:
-                    if voice_welcome_urdu_script:
-                        from chatbot.urdu_qwen_chat import welcome_with_assessment_arabic_urdu
-                        welcome_msg = welcome_with_assessment_arabic_urdu(test_context, user_first_name).strip()
-                    else:
-                        from chatbot.urdu_qwen_chat import welcome_with_assessment_roman_urdu
-                        welcome_msg = welcome_with_assessment_roman_urdu(test_context, user_first_name).strip()
-                else:
-                    from chatbot.llm_client import LLMClient
-                    llm_client = LLMClient()
-                    system_prompt = f"""You are a compassionate mental health therapist. The user has shared their assessment results with you. 
-
-Test Context:
-{test_context}
-
-Write a direct, warm welcome message (NOT a description of what to write, but the actual message itself) that:
-1. Greets the user warmly using their name: {user_first_name or 'there'}
-2. Briefly acknowledges you've reviewed their assessment results
-3. Shows understanding of their current condition
-4. Invites them to share what's on their mind
-
-IMPORTANT: Write the actual welcome message directly. Do NOT include phrases like "Here is", "Here's a", "I'll write", or any meta-commentary. Just write the message as if you're speaking directly to the user.
-
-Keep it concise (2-3 sentences) and natural. Start directly with the greeting."""
-                    welcome_msg = llm_client.generate_response(
-                        user_message="Hello, I'm ready to chat.",
-                        system_prompt_override=system_prompt,
-                        user_first_name=user_first_name
-                    ).strip()
-
-                # Clean up any meta-commentary that might have slipped through
-                welcome_msg = welcome_msg.strip()
-                # Remove common meta-phrases
-                meta_phrases = [
-                    "Here is a warm message for the user:",
-                    "Here's a warm message for the user:",
-                    "Here is a warm message:",
-                    "Here's a warm message:",
-                    "Here is warm message for user:",
-                    "Here's warm message for user:",
-                    "Here is warm message:",
-                    "Here's warm message:",
-                    "Here is the welcome message:",
-                    "Here's the welcome message:",
-                ]
-                if not is_urdu:
-                    for phrase in meta_phrases:
-                        if welcome_msg.lower().startswith(phrase.lower()):
-                            welcome_msg = welcome_msg[len(phrase):].strip()
-                            if welcome_msg.startswith('"') and welcome_msg.endswith('"'):
-                                welcome_msg = welcome_msg[1:-1].strip()
-                            if welcome_msg.startswith("'") and welcome_msg.endswith("'"):
-                                welcome_msg = welcome_msg[1:-1].strip()
-                            break
+                welcome_msg = _generate_welcome_text(
+                    user_first_name, test_context, lang_pref,
+                    voice_welcome_urdu_script=voice_welcome_urdu_script,
+                )
             else:
                 # Standard welcome message - Urdu or English based on lang_pref
                 if is_urdu:
@@ -1079,49 +1348,59 @@ def get_session_count(request):
 # GENERATE SESSION TITLE
 # -------------------------
 def _generate_session_title(conversation_history, llm_client, user_first_name=None):
-    """Generate a concise title for a session based on conversation content"""
+    """Generate a concise, descriptive heading for the session.
+
+    The heading is shown to the user as the chat's description in the session
+    list, so it must be a clean noun phrase (no quotes, punctuation trails, or
+    meta commentary).
+    """
     try:
-        # Get user messages to understand what the session was about
         user_messages = [
-            msg.get("content", "") 
-            for msg in conversation_history 
-            if msg.get("role") == "user"
+            msg.get("content", "")
+            for msg in conversation_history
+            if msg.get("role") == "user" and msg.get("content")
         ]
-        
         if not user_messages:
             return "New Chat"
-        
-        # Create prompt for title generation
-        conversation_preview = "\n".join(user_messages[:3])  # First 3 user messages
-        
-        title_prompt = f"""Based on this conversation, generate a concise, descriptive title (maximum 6-8 words) that captures what this therapy session was about.
 
-Conversation preview:
-{conversation_preview}
+        preview_turns = []
+        for msg in conversation_history[:10]:
+            role = msg.get("role")
+            content = (msg.get("content") or "").strip()
+            if not content or role not in ("user", "assistant"):
+                continue
+            label = "Client" if role == "user" else "Therapist"
+            preview_turns.append(f"{label}: {content}")
+        conversation_preview = "\n".join(preview_turns)
 
-Generate ONLY a short title (no quotes, no explanation, just the title). Examples:
-- "Anxiety about upcoming exams"
-- "Relationship stress and communication"
-- "Work-life balance struggles"
-- "Feeling overwhelmed with daily tasks"
+        title_prompt = (
+            "Read the therapy conversation excerpt below and produce a short, "
+            "descriptive heading (3 to 7 words) that captures what the session "
+            "was about from a clinical standpoint.\n\n"
+            "Rules:\n"
+            "- Noun phrase in Title Case (e.g. 'Exam Anxiety and Sleep Disruption').\n"
+            "- Describe the theme, not the client by name.\n"
+            "- No quotes, no trailing punctuation, no emojis, no dashes, no colons.\n"
+            "- Do not write 'Session on ...' or 'Chat about ...'. Just the topic.\n\n"
+            f"Excerpt:\n{conversation_preview}\n\nHeading:"
+        )
 
-Title:"""
-        
-        title = llm_client.generate_response(
+        raw = llm_client.generate_response(
             user_message=title_prompt,
             emotions="",
             context="",
             conversation_history=[],
-            system_prompt_override="You are a helpful assistant that generates concise, descriptive titles for therapy sessions. Generate only the title, nothing else."
-        ).strip()
-        
-        # Clean up title (remove quotes, extra spaces)
-        title = title.strip('"\'')
+            system_prompt_override=(
+                "You generate clean, descriptive headings for therapy sessions. "
+                "Output only the heading itself, nothing else."
+            ),
+        )
+        title = _sanitize_summary(raw)
+        title = title.splitlines()[0] if title else ""
+        title = title.strip(" .:-–—\"'`")
         if len(title) > 60:
-            title = title[:57] + "..."
-        
-        return title if title else "Therapy Session"
-        
+            title = title[:57].rstrip() + "..."
+        return title or "Therapy Session"
     except Exception as e:
         print(f"Error generating session title: {e}")
         return "Therapy Session"
@@ -1131,79 +1410,173 @@ Title:"""
 # GENERATE SHORT SUMMARY
 # -------------------------
 def _generate_short_summary(conversation_history, llm_client, user_first_name=None, user_gender=None):
-    """Generate a concise 2-3 line summary for session list display"""
+    """Generate a concise clinical-style 2-3 sentence blurb for the session list.
+
+    Written as a therapist's note: third person, focused on the client's
+    presentation and what was explored. No direct address, no filler.
+    """
     try:
-        # Get user messages to understand what was discussed
-        user_messages = [
-            msg.get("content", "") 
-            for msg in conversation_history 
-            if msg.get("role") == "user"
-        ]
-        
-        if not user_messages:
-            return "No conversation content available."
-        
-        # Get first few user messages as context
-        conversation_preview = "\n".join(user_messages[:5])  # First 5 user messages
-        
-        # Determine pronouns based on gender
-        pronouns = {"he": "he", "him": "him", "his": "his"}
-        if user_gender:
-            gender_lower = user_gender.lower()
-            if gender_lower == "female":
-                pronouns = {"he": "she", "him": "her", "his": "her"}
-            elif gender_lower == "male":
-                pronouns = {"he": "he", "him": "him", "his": "his"}
-            else:
-                pronouns = {"he": "they", "him": "them", "his": "their"}
-        
-        user_label = user_first_name if user_first_name else "the user"
-        
-        short_summary_prompt = f"""Based on this therapy conversation, write a brief 2-3 line summary (maximum 3 sentences) that describes what {user_label} discussed in this session.
+        turns = []
+        for msg in conversation_history:
+            role = msg.get("role")
+            content = (msg.get("content") or "").strip()
+            if not content or role not in ("user", "assistant"):
+                continue
+            label = "Client" if role == "user" else "Therapist"
+            turns.append(f"{label}: {content}")
+        if not any(t.startswith("Client:") for t in turns):
+            return "No client messages were exchanged this session."
 
-IMPORTANT:
-- Write in 2-3 sentences only
-- Focus on what {user_label} shared (their feelings, concerns, or situation)
-- Be specific and factual - only mention what was actually discussed
-- Use {pronouns['he']}/{pronouns['him']}/{pronouns['his']} pronouns for {user_label}
-- Do NOT include therapist responses or suggestions
-- Keep it concise and informative
+        transcript = "\n".join(turns[:40])
 
-Conversation preview:
-{conversation_preview}
+        prompt = (
+            "Write a short, warm blurb (2 to 3 sentences) that will be shown on a "
+            "therapy session card in the user's session history. It should help the "
+            "person quickly remember what this session was about.\n\n"
+            "Rules:\n"
+            "- Address the person as 'you'. Do not use their name, and never use the "
+            "words 'client' or 'patient'.\n"
+            "- Capture what they brought to the session, how they were feeling, and "
+            "what was explored. Warm and validating, not clinical.\n"
+            "- Factual, grounded only in the transcript. No invention, no quotes.\n"
+            "- Plain prose only. No bullets, no headings, no dashes, no markdown.\n"
+            "- Under 60 words total.\n\n"
+            f"Transcript:\n{transcript}\n\nBlurb:"
+        )
 
-Brief Summary (2-3 lines):"""
-        
-        short_summary = llm_client.generate_response(
-            user_message=short_summary_prompt,
+        raw = llm_client.generate_response(
+            user_message=prompt,
             emotions="",
             context="",
             conversation_history=[],
-            system_prompt_override=f"You are summarizing a therapy session. Write a brief 2-3 line summary focusing on what {user_label} discussed. Use {pronouns['he']}/{pronouns['him']}/{pronouns['his']} pronouns. Be factual and concise."
-        ).strip()
-        
-        # Clean up summary (remove quotes, extra spaces)
-        short_summary = short_summary.strip('"\'')
-        
-        # Ensure it's not too long (max 200 characters for 2-3 lines)
-        if len(short_summary) > 200:
-            # Try to truncate at sentence boundary
-            sentences = short_summary.split('. ')
-            result = ""
+            system_prompt_override=(
+                "You write short, warm second-person blurbs for a therapy session "
+                "history. Address the reader as 'you'. Never use 'client' or "
+                "'patient'. Output plain prose only: no headings, bullets, dashes, "
+                "or markdown."
+            ),
+        )
+        short = _sanitize_summary(raw)
+        # Collapse any remaining line breaks into a single line
+        short = " ".join(s for s in short.split("\n") if s.strip()).strip()
+
+        if len(short) > 260:
+            sentences = re.split(r"(?<=[.!?])\s+", short)
+            buf = ""
             for sentence in sentences:
-                if len(result + sentence + '. ') <= 200:
-                    result += sentence + '. '
-                else:
+                if len(buf) + len(sentence) + 1 > 260:
                     break
-            short_summary = result.strip()
-            if not short_summary.endswith('.'):
-                short_summary += '.'
-        
-        return short_summary if short_summary else "Session discussion summary."
-        
+                buf = (buf + " " + sentence).strip()
+            short = buf
+            if short and short[-1] not in ".!?":
+                short += "."
+        return short or "Brief session with limited content to summarise."
     except Exception as e:
         print(f"Error generating short summary: {e}")
-        return "Session discussion summary."
+        return "Brief session with limited content to summarise."
+
+
+# -------------------------
+# COMBINED TITLE + SHORT_SUMMARY (single LLM call)
+# -------------------------
+def _generate_title_and_summary(conversation_history, llm_client, user_first_name=None, user_gender=None):
+    """Generate session title and short_summary in a single LLM call (JSON response).
+
+    Returns (title, short_summary) tuple. On any failure (JSON parse error, missing keys,
+    empty values) falls back to calling the original two separate helpers so nothing breaks.
+    """
+    try:
+        # Build conversation preview (same as individual helpers)
+        preview_turns = []
+        all_turns = []
+        for msg in conversation_history[:40]:
+            role = msg.get("role")
+            content = (msg.get("content") or "").strip()
+            if not content or role not in ("user", "assistant"):
+                continue
+            label = "Client" if role == "user" else "Therapist"
+            all_turns.append(f"{label}: {content}")
+            if len(preview_turns) < 10:
+                preview_turns.append(f"{label}: {content}")
+
+        if not any(t.startswith("Client:") for t in all_turns):
+            # No user content at all — use safe defaults
+            return "Therapy Session", "No client messages were exchanged this session."
+
+        preview = "\n".join(preview_turns)
+        transcript = "\n".join(all_turns)
+
+        combined_prompt = (
+            "You are generating metadata for a therapy session card.\n\n"
+            "Return ONLY valid JSON (no markdown fences, no extra text) in this exact shape:\n"
+            '{"title": "...", "short_summary": "..."}\n\n'
+            "Rules for title:\n"
+            "- Noun phrase in Title Case, 3 to 7 words.\n"
+            "- Captures the session theme clinically (e.g. 'Exam Anxiety and Sleep Disruption').\n"
+            "- No quotes, no trailing punctuation, no emojis, no dashes, no colons.\n\n"
+            "Rules for short_summary:\n"
+            "- 2 to 3 sentences, plain prose, under 60 words.\n"
+            "- Address the person as 'you'. Never use 'client' or 'patient'.\n"
+            "- Warm and validating. Only facts from the transcript.\n"
+            "- No bullets, no headings, no markdown.\n\n"
+            f"Conversation excerpt (for title):\n{preview}\n\n"
+            f"Full transcript (for summary):\n{transcript}\n\n"
+            "JSON:"
+        )
+
+        raw = llm_client.generate_response(
+            user_message=combined_prompt,
+            emotions="",
+            context="",
+            conversation_history=[],
+            system_prompt_override=(
+                "You output only valid JSON with keys 'title' and 'short_summary'. "
+                "No markdown fences, no extra commentary."
+            ),
+        )
+
+        # Strip any accidental markdown fences
+        raw_stripped = raw.strip()
+        if raw_stripped.startswith("```"):
+            raw_stripped = raw_stripped.split("```")[1]
+            if raw_stripped.startswith("json"):
+                raw_stripped = raw_stripped[4:]
+            raw_stripped = raw_stripped.strip()
+
+        parsed = json.loads(raw_stripped)
+        title = (parsed.get("title") or "").strip(" .:-–—\"'`")
+        short_summary = (parsed.get("short_summary") or "").strip()
+
+        # Validate non-empty
+        if not title or not short_summary:
+            raise ValueError("Empty title or short_summary in parsed JSON")
+
+        # Apply same post-processing as individual helpers
+        title = _sanitize_summary(title)
+        title = title.splitlines()[0].strip(" .:-–—\"'`") if title else ""
+        if len(title) > 60:
+            title = title[:57].rstrip() + "..."
+
+        short_summary = _sanitize_summary(short_summary)
+        short_summary = " ".join(s for s in short_summary.split("\n") if s.strip()).strip()
+        if len(short_summary) > 260:
+            sentences = re.split(r"(?<=[.!?])\s+", short_summary)
+            buf = ""
+            for sentence in sentences:
+                if len(buf) + len(sentence) + 1 > 260:
+                    break
+                buf = (buf + " " + sentence).strip()
+            short_summary = buf
+            if short_summary and short_summary[-1] not in ".!?":
+                short_summary += "."
+
+        return (title or "Therapy Session"), (short_summary or "Brief session with limited content to summarise.")
+
+    except Exception as e:
+        print(f"[INFO] Combined title+summary LLM call failed ({e}); falling back to two-call path.")
+        title = _generate_session_title(conversation_history, llm_client, user_first_name)
+        short_summary = _generate_short_summary(conversation_history, llm_client, user_first_name, user_gender)
+        return title, short_summary
 
 
 # -------------------------
@@ -1228,8 +1601,9 @@ def save_session(request):
             llm_client = LLMClient()
             user_first_name = data.get("user_first_name")
             user_gender = data.get("user_gender")
-            title = _generate_session_title(conversation_history, llm_client, user_first_name)
-            short_summary = _generate_short_summary(conversation_history, llm_client, user_first_name, user_gender)
+            title, short_summary = _generate_title_and_summary(
+                conversation_history, llm_client, user_first_name, user_gender
+            )
 
             messages_payload = []
             for index, msg in enumerate(conversation_history):
@@ -1312,14 +1686,16 @@ def get_recent_sessions(request):
             if not user_id:
                 return JsonResponse({"error": "User ID is required."}, status=400)
 
-            sessions = list(SessionService.get_recent_sessions(user_id, limit))
-            session_ids = [s.session_id for s in sessions]
-            voice_session_ids = set(
+            voice_subquery = Exists(
                 Message.objects.filter(
-                    session_id__in=session_ids,
+                    session_id=OuterRef("session_id"),
                     content_type=Message.ContentType.AUDIO,
-                ).values_list("session_id", flat=True)
+                )
             )
+            qs = Session.objects.filter(user_id=user_id).order_by(
+                '-started_at', '-created_at', '-session_id'
+            ).annotate(_has_voice=voice_subquery)
+            sessions = list(qs[:limit] if limit else qs)
 
             sessions_list = [
                 {
@@ -1332,7 +1708,7 @@ def get_recent_sessions(request):
                     "state": session.state,
                     "is_starred": session.is_starred,
                     "has_full_transcript": session.state == Session.SessionState.FULL,
-                    "has_voice": session.session_id in voice_session_ids,
+                    "has_voice": session._has_voice,
                 }
                 for session in sessions
             ]
@@ -1349,6 +1725,203 @@ def get_recent_sessions(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+# -------------------------
+# CONSOLIDATED DASHBOARD DATA
+# -------------------------
+@csrf_exempt
+def dashboard_data(request):
+    """Return all dashboard data in a single response to avoid multiple round-trips."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method."}, status=405)
+    try:
+        data = json.loads(request.body)
+        user_id = data.get("user_id")
+        therapist_city = data.get("therapist_city")
+        therapist_limit = data.get("therapist_limit", 4)
+        sessions_limit = data.get("sessions_limit", 5)
+
+        if not user_id:
+            return JsonResponse({"error": "User ID is required."}, status=400)
+
+        try:
+            user = User.objects.get(user_id=user_id)
+        except User.DoesNotExist:
+            return JsonResponse({"error": "User not found."}, status=404)
+
+        # --- Session count ---
+        session_count = SessionService.get_session_count(user_id)
+
+        # --- Recent sessions ---
+        voice_subquery = Exists(
+            Message.objects.filter(
+                session_id=OuterRef("session_id"),
+                content_type=Message.ContentType.AUDIO,
+            )
+        )
+        sessions_qs = list(
+            Session.objects.filter(user_id=user_id)
+            .order_by('-started_at', '-created_at', '-session_id')
+            .annotate(_has_voice=voice_subquery)[:sessions_limit]
+        )
+        sessions_list = [
+            {
+                "session_id": s.session_uuid.hex,
+                "title": s.title or "Therapy Session",
+                "summary": s.full_summary or "",
+                "short_summary": s.short_summary or s.full_summary or "",
+                "created_at": s.created_at.isoformat() if s.created_at else s.started_at.isoformat(),
+                "updated_at": s.updated_at.isoformat() if s.updated_at else s.ended_at.isoformat() if s.ended_at else s.created_at.isoformat() if s.created_at else s.started_at.isoformat(),
+                "state": s.state,
+                "is_starred": s.is_starred,
+                "has_full_transcript": s.state == Session.SessionState.FULL,
+                "has_voice": s._has_voice,
+            }
+            for s in sessions_qs
+        ]
+        sessions_total = Session.objects.filter(user_id=user_id).count()
+
+        # --- Diagnostic test status ---
+        generic_screening_completed = user.generic_screening_completed
+        primary_condition = user.primary_condition
+        last_test_date = user.last_test_date
+        test_taken_today = DiagnosticTestService.test_taken_today(last_test_date)
+
+        available_test = None
+        daily_test_available = False
+        if not generic_screening_completed:
+            if not test_taken_today:
+                available_test = "generic-screening"
+        else:
+            if last_test_date is None or not test_taken_today:
+                daily_test_available = True
+                condition_to_test = {
+                    "depression": "phq9", "anxiety": "gad7",
+                    "stress": "pss10", "general-mood": "mood_test",
+                }
+                available_test = condition_to_test.get(primary_condition, "phq9")
+
+        test_status = {
+            "generic_screening_completed": generic_screening_completed,
+            "primary_condition": primary_condition,
+            "daily_test_available": daily_test_available,
+            "last_test_date": last_test_date.isoformat() if last_test_date else None,
+            "available_test": available_test,
+        }
+
+        # --- Test history ---
+        results = Testresult.objects.filter(user=user).order_by("-taken_at")
+        test_history = [
+            {
+                "result_id": r.result_id,
+                "test_type": r.test_type,
+                "test_name": DiagnosticTestService.get_test_name(r.test_type),
+                "score": r.score,
+                "severity_level": r.severity_level,
+                "taken_at": r.taken_at.isoformat() if r.taken_at else None,
+            }
+            for r in results
+        ]
+
+        # --- Mood trend ---
+        trend_data = []
+        if primary_condition:
+            condition_to_test = {
+                "depression": "phq9", "anxiety": "gad7",
+                "stress": "pss10", "general-mood": "mood_test",
+            }
+            trend_test_type = condition_to_test.get(primary_condition, "phq9")
+            trend_results = Testresult.objects.filter(
+                user=user, test_type=trend_test_type
+            ).order_by("taken_at")
+            for r in trend_results:
+                trend = "stable"
+                if len(trend_data) > 0:
+                    prev_score = trend_data[-1]["score"]
+                    if r.score < prev_score:
+                        trend = "improved"
+                    elif r.score > prev_score:
+                        trend = "worsened"
+                    if trend_test_type == "mood_test":
+                        if r.score > prev_score:
+                            trend = "improved"
+                        elif r.score < prev_score:
+                            trend = "worsened"
+                trend_data.append({
+                    "date": r.taken_at.isoformat(),
+                    "score": r.score,
+                    "severity": r.severity_level,
+                    "trend": trend,
+                })
+
+        # --- Streak ---
+        streak_results = Testresult.objects.filter(
+            user=user
+        ).exclude(test_type="generic-screening").order_by("-taken_at")
+
+        current_streak = 0
+        longest_streak = 0
+        streak_last_test_date = None
+
+        if streak_results.exists():
+            last_result = streak_results.first()
+            streak_last_test_date = last_result.taken_at.date()
+            test_dates = {r.taken_at.date() for r in streak_results}
+
+            if streak_last_test_date < date.today() - timedelta(days=1):
+                current_streak = 0
+            else:
+                check_date = streak_last_test_date
+                while check_date in test_dates:
+                    current_streak += 1
+                    check_date -= timedelta(days=1)
+
+            sorted_dates = sorted(test_dates, reverse=True)
+            if sorted_dates:
+                temp_streak = 1
+                longest_streak = 1
+                for i in range(len(sorted_dates) - 1):
+                    if sorted_dates[i] - sorted_dates[i + 1] == timedelta(days=1):
+                        temp_streak += 1
+                        longest_streak = max(longest_streak, temp_streak)
+                    else:
+                        temp_streak = 1
+
+        # --- Therapists ---
+        therapists_list = []
+        therapists_total = 0
+        try:
+            qs = Therapistdirectory.objects.all().order_by("first_name", "last_name")
+            if therapist_city:
+                qs = qs.filter(city__iexact=therapist_city)
+            therapists_total = qs.count()
+            if therapist_limit and therapist_limit > 0:
+                qs = qs[:therapist_limit]
+            therapists_list = [_serialize_therapist(t) for t in qs]
+        except Exception:
+            pass  # therapists are non-critical
+
+        return JsonResponse({
+            "session_count": session_count,
+            "sessions": {"sessions": sessions_list, "total": sessions_total},
+            "test_status": test_status,
+            "test_history": test_history,
+            "mood_trend": {"trend_data": trend_data, "primary_condition": primary_condition},
+            "streak": {
+                "current_streak": current_streak,
+                "longest_streak": longest_streak,
+                "last_test_date": streak_last_test_date.isoformat() if streak_last_test_date else None,
+            },
+            "therapists": {"therapists": therapists_list, "total": therapists_total},
+        }, status=200)
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 # -------------------------
@@ -2253,6 +2826,19 @@ def diagnostic_test_submit(request):
                 response_data["primary_condition"] = primary_condition
             if domain_scores:
                 response_data["domain_scores"] = domain_scores
+
+            # Background precompute: welcome text + audio for this result so chat/voice-chat opens are instant.
+            try:
+                precompute_ctx = _build_assessment_test_context(test_result, lang_pref=user.lang_pref)
+                _precompute_welcomes_for_test_result(
+                    user_id=user.user_id,
+                    user_first_name=user.first_name,
+                    lang_pref=user.lang_pref,
+                    test_result_id=test_result.result_id,
+                    test_context=precompute_ctx,
+                )
+            except Exception as e:
+                print(f"[welcome-precompute] failed to kick off: {e}")
 
             return JsonResponse(response_data, status=200)
 

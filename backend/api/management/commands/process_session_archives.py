@@ -2,8 +2,39 @@ from __future__ import annotations
 
 import time
 import json
+import re
 
 from django.core.management.base import BaseCommand
+
+
+_ARCHIVE_PREFIX_RE = re.compile(
+    r"^(therapist'?s?\s+note|clinical\s+note|session\s+(recap|summary|note)|summary|recap|note)\s*[:\-–—]\s*",
+    re.IGNORECASE,
+)
+
+
+def _clean_archive_text(value: str) -> str:
+    if not value:
+        return ""
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'", "`"):
+        text = text[1:-1].strip()
+    for _ in range(3):
+        new = _ARCHIVE_PREFIX_RE.sub("", text).strip()
+        if new == text:
+            break
+        text = new
+    text = re.sub(r"(?m)^\s*[-*_=~]{3,}\s*$", "", text)
+    text = re.sub(r"[-–—]{3,}", "", text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"(?m)^#{1,6}\s+", "", text)
+    text = "\n".join(
+        re.sub(r"[\s\-–—_*#]+$", "", line).rstrip()
+        for line in text.split("\n")
+    )
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
 from django.db import transaction
 from django.utils import timezone
 
@@ -150,31 +181,44 @@ class Command(BaseCommand):
             }
 
         user = session.user
-        user_label = user.first_name or "the user"
-        you_label = user.first_name or "you"
+        user_label = user.first_name or "the client"
 
         system_prompt = (
-            "You are summarising a therapy session that will be archived. Produce two outputs strictly "
-            "as JSON with keys `context_summary` and `resume_message`.\n\n"
+            "You are a warm, caring therapist writing a reflection for a person after "
+            "their therapy session. Return strict JSON with keys `context_summary` and "
+            "`resume_message`. No prose outside the JSON.\n\n"
             "Rules:\n"
-            "1. `context_summary`: 3-4 sentences maximum, factual, for internal LLM context. Summarise only what the client said "
-            "and how the therapist responded. No speculation.\n"
-            "2. `resume_message`: 2-3 sentences addressed directly to the client as 'you'. Open with a warm 'Welcome back' style line, "
-            "briefly remind them what they shared and how you supported them, and invite them to continue. "
-            "Keep it empathetic, specific, and under 80 words.\n"
-            "3. Do not invent details. Only include material present in the transcript.\n"
-            "4. Return JSON only, no extra commentary."
+            "1. `context_summary`: a warm, journal-style reflection addressed directly "
+            "to the person as 'you'. Do NOT use their name, and never use the words "
+            "'client' or 'patient'. Structure with these Markdown headings in order, "
+            "1-3 sentences under each, plain prose only:\n"
+            "   **What We Talked About**\n"
+            "   **How You Were Feeling**\n"
+            "   **What Came Up**\n"
+            "   **What We Explored Together**\n"
+            "   **How You Responded**\n"
+            "   **Looking Ahead**\n"
+            "   Omit a heading only if truly nothing to report. Around 140-260 words total.\n"
+            "2. `resume_message`: 2-3 short sentences addressed directly to the person "
+            "as 'you'. Warm and specific, under 80 words. Briefly recall what came up "
+            "and invite them to continue whenever they're ready.\n"
+            "3. Ground every statement in the transcript. No speculation, no invented "
+            "diagnoses.\n"
+            "4. No separator lines, no runs of dashes, no emojis, no wrap quotes, no "
+            "'Note:' / 'Summary:' prefixes.\n"
+            "5. Return JSON only."
         )
 
         user_prompt = (
-            f"Client name: {user_label}.\n"
-            "Conversation transcript follows. Use it verbatim; do not add assumptions.\n\n"
+            "The transcript follows verbatim. Use it as the sole source of facts. "
+            "Address the reader as 'you'. Do not use their name anywhere in the output.\n\n"
             "Transcript:\n"
         )
 
         transcript = ""
         for turn in conversation:
-            transcript += f"{turn['role'].title()}: {turn['content']}\n"
+            role = "You" if turn["role"] == "user" else "Therapist"
+            transcript += f"{role}: {turn['content']}\n"
 
         prompt = user_prompt + transcript
 
@@ -187,9 +231,16 @@ class Command(BaseCommand):
                 system_prompt_override=system_prompt,
             ).strip()
 
+            # Strip accidental code fences around JSON
+            if raw.startswith("```"):
+                raw = raw.strip("`")
+                if raw.lower().startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
+
             data = json.loads(raw)
-            context_summary = data.get("context_summary", "").strip()
-            resume_message = data.get("resume_message", "").strip()
+            context_summary = _clean_archive_text(data.get("context_summary", ""))
+            resume_message = _clean_archive_text(data.get("resume_message", ""))
             if not context_summary:
                 context_summary = session.full_summary or session.short_summary or "No transcript available."
             if not resume_message:

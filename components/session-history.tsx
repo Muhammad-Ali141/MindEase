@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
-import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from "@/lib/api"
-import { exportPreviewsToTextFile, exportSinglePreviewToTextFile } from "@/lib/export-sessions"
+import { useDashboardData } from "@/context/DashboardDataContext"
+import { apiToggleSessionStar, type SessionPreview } from "@/lib/api"
+import { exportPreviewsToPdfFile, exportSinglePreviewToPdfFile } from "@/lib/export-sessions"
 import { MessageCircle, Star, Mic2, ArrowRight, Clock, Download, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useProfileDict } from "@/lib/i18n"
@@ -16,26 +17,10 @@ export function SessionHistory() {
   const router = useRouter()
   const { user } = useAuth()
   const t = useProfileDict()
-  const [sessions, setSessions] = useState<SessionPreview[]>([])
-  const [loading, setLoading]   = useState(true)
+  const { loading, sessions, patchSession } = useDashboardData()
   const [exporting, setExporting] = useState(false)
   const [exportingSessionId, setExportingSessionId] = useState<string | null>(null)
   const { toast } = useToast()
-
-  useEffect(() => { if (user?.id) loadRecentSessions() }, [user?.id])
-
-  const loadRecentSessions = async () => {
-    if (!user?.id) return
-    try {
-      setLoading(true)
-      const res = await apiGetRecentSessions(user.id, 5)
-      setSessions(res.sessions)
-    } catch {
-      setSessions([])
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleSessionClick = (s: SessionPreview) => {
     router.push(s.has_voice ? `/voice-chat?session_id=${s.session_id}` : `/chat?session_id=${s.session_id}`)
@@ -59,7 +44,7 @@ export function SessionHistory() {
     if (!user?.id) return
     try {
       setExportingSessionId(s.session_id)
-      await exportSinglePreviewToTextFile(user.id, s, displayNameForExport())
+      await exportSinglePreviewToPdfFile(user.id, s, displayNameForExport())
       toast({ title: t.exportSessionsSuccess })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -80,7 +65,7 @@ export function SessionHistory() {
     }
     try {
       setExporting(true)
-      await exportPreviewsToTextFile(user.id, sessions, displayNameForExport())
+      await exportPreviewsToPdfFile(user.id, sessions, displayNameForExport())
       toast({ title: t.exportSessionsSuccess })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -102,7 +87,7 @@ export function SessionHistory() {
     }
     try {
       const res = await apiToggleSessionStar(user.id, s.session_id, !s.is_starred)
-      setSessions(prev => prev.map(item => item.session_id === s.session_id ? { ...item, ...res.session } : item))
+      patchSession(s.session_id, res.session)
       toast({ title: res.session.is_starred ? t.sessionStarred : t.sessionUnstarred })
     } catch (e: any) {
       toast({ title: t.unableToUpdateSession, description: (e as Error).message, variant: "destructive" })
@@ -114,8 +99,7 @@ export function SessionHistory() {
       data-tour-target="recent-sessions"
       style={{
         ...sans,
-        backgroundColor: "color-mix(in srgb, var(--card) 90%, transparent)",
-        backdropFilter: "blur(8px)",
+        backgroundColor: "var(--card)",
         borderRadius: 16, border: "1px solid var(--border)",
         boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
         display: "flex", flexDirection: "column", overflow: "hidden",

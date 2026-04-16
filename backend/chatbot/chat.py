@@ -30,6 +30,30 @@ def _is_urdu_lang(lang_pref: str) -> bool:
     return s in ("urdu", "ur")
 
 
+_CHATBOT_CACHE = {}
+_CHATBOT_CACHE_LOCK = None
+
+def get_cached_chatbot(user_first_name=None, test_context=None, lang_pref=None):
+    """Return a shared MindEaseChat per lang_pref, resetting per-request state.
+    Keeps DeBERTa / sentence-transformer / RAG connection warm across requests."""
+    import threading
+    global _CHATBOT_CACHE_LOCK
+    if _CHATBOT_CACHE_LOCK is None:
+        _CHATBOT_CACHE_LOCK = threading.Lock()
+    key = "urdu" if _is_urdu_lang(lang_pref) else "english"
+    with _CHATBOT_CACHE_LOCK:
+        bot = _CHATBOT_CACHE.get(key)
+        if bot is None:
+            bot = MindEaseChat(user_first_name=user_first_name, test_context=test_context, lang_pref=lang_pref)
+            _CHATBOT_CACHE[key] = bot
+    bot.user_first_name = user_first_name
+    bot.test_context = test_context
+    bot.lang_pref = lang_pref or "english"
+    bot.memory = ConversationMemory(max_history_length=20)
+    bot.last_emotions = None
+    return bot
+
+
 class MindEaseChat:
     """Clean chat interface for MindEase therapy chatbot"""
     
@@ -49,7 +73,14 @@ class MindEaseChat:
         self.memory = ConversationMemory(max_history_length=20)
         
     def _initialize_components(self):
-        """Initialize all components silently; on failure set component to None so chat can still run."""
+        """Initialize all components silently; on failure set component to None so chat can still run.
+        Urdu pipeline uses Qwen exclusively — skip EmotionDetector, RAG, and OpenRouter LLM."""
+        if _is_urdu_lang(self.lang_pref):
+            self.emotion_detector = None
+            self.rag_system = None
+            self.llm_client = None
+            return
+
         import io
         import contextlib
         f = io.StringIO()
@@ -106,51 +137,117 @@ class MindEaseChat:
             # Urdu text chat: Qwen-only Roman Urdu (no Qalb, no transliteration)
             if _is_urdu_lang(self.lang_pref):
                 self._ensure_urdu_system_prompt()
+                import concurrent.futures as _cf
+                import time as _time
+                import sys as _sys
+
+                def _ulog(msg):
+                    print(msg, file=_sys.stderr, flush=True)
+
                 from chatbot.urdu_chat_pipeline import run_urdu_pipeline
+                from chatbot.urdu_emotion_detector import detect_emotions_urdu, format_emotions_for_llm as _fmt_emo
+
                 history = self.memory.get_history_with_context()
+                while history and history[-1].get("role") == "user":
+                    history.pop()
+
+                t0 = _time.perf_counter()
+
+                # 1) Emotion detection first (local XLM-R, ~200ms once warm)
+                t_emo_start = _time.perf_counter()
+                if emotions_override is not None and len(emotions_override) > 0:
+                    emotions = emotions_override
+                else:
+                    emotions = detect_emotions_urdu(text=user_input, top_k=2, threshold=0.3)
+                emo_s = _time.perf_counter() - t_emo_start
+
+                # 2) LLM call with emotion injected into system prompt
+                t_llm_start = _time.perf_counter()
                 response = run_urdu_pipeline(
                     roman_user_input=user_input,
                     conversation_history_roman=history,
                     test_context=effective_test_context,
                     user_first_name=self.user_first_name,
+                    detected_emotions=emotions,
                 )
+                llm_s = _time.perf_counter() - t_llm_start
+
+                total_s = _time.perf_counter() - t0
+                _ulog("[urdu-chat-timing] ─────────────────────────────")
+                _ulog(f"[urdu-chat-timing]  emotion_inference : {emo_s:.3f}s")
+                _ulog(f"[urdu-chat-timing]  llm_call          : {llm_s:.3f}s")
+                _ulog(f"[urdu-chat-timing]  total             : {total_s:.3f}s")
+                _ulog(f"[urdu-chat-timing]  {_fmt_emo(emotions)}")
+                _ulog("[urdu-chat-timing] ─────────────────────────────")
+
+                self.last_emotions = emotions
                 self.memory.add_exchange(user_input, response)
                 return response
 
-            # English pipeline
-            # Step 1: Emotion Detection (from text via DeBERTa, or from audio via SER when emotions_override is provided)
-            if emotions_override is not None and len(emotions_override) > 0:
-                emotions = emotions_override
-                emotions_str = (self.emotion_detector.format_emotions_for_llm(emotions) if self.emotion_detector
+            # English pipeline — run emotion + RAG in parallel, time each step
+            import concurrent.futures as _cf
+            import time as _time
+            import sys as _sys
+
+            def _log(msg):
+                print(msg, file=_sys.stderr, flush=True)
+
+            t0 = _time.perf_counter()
+
+            def _emotions_task():
+                if emotions_override is not None and len(emotions_override) > 0:
+                    return emotions_override
+                if self.emotion_detector is not None:
+                    return self.emotion_detector.detect_emotions(user_input, top_k=2, threshold=0.3)
+                return None
+
+            # Skip RAG for very short messages / greetings (low signal, high cost)
+            _words = user_input.strip().split()
+            _greeting_re = ("hi", "hello", "hey", "yo", "sup", "hola", "salaam", "assalam")
+            _skip_rag = (
+                len(_words) < 4
+                or user_input.strip().lower().startswith(_greeting_re)
+            )
+
+            def _rag_task():
+                if _skip_rag or self.rag_system is None:
+                    return None
+                # top_k=2 keeps context tight; drop threshold a bit since we take fewer
+                return self.rag_system.retrieve_context(query=user_input, top_k=1, similarity_threshold=0.65)
+
+            with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
+                t_em_start = _time.perf_counter()
+                _fut_emo = _ex.submit(_emotions_task)
+                _fut_rag = _ex.submit(_rag_task)
+                emotions = _fut_emo.result()
+                t_em_done = _time.perf_counter()
+                contexts = _fut_rag.result()
+                t_rag_done = _time.perf_counter()
+            _log(f"[chat-timing] emotion_detection: {(t_em_done - t_em_start):.3f}s")
+            _log(f"[chat-timing] rag_retrieval:    {(t_rag_done - t_em_start):.3f}s (parallel with emotion){' [SKIPPED]' if _skip_rag else ''}")
+
+            if emotions:
+                emotions_str = (self.emotion_detector.format_emotions_for_llm(emotions)
+                                if self.emotion_detector
                                 else "Detected emotions: " + ", ".join(f"{e} ({p:.2f})" for e, p in emotions))
-            elif self.emotion_detector is not None:
-                emotions = self.emotion_detector.detect_emotions(
-                    user_input,
-                    top_k=2,
-                    threshold=0.3
-                )
-                emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
             else:
                 emotions_str = ""
-            
-            # Step 2: RAG Retrieval
-            if self.rag_system is not None:
-                contexts = self.rag_system.retrieve_context(
-                    query=user_input,
-                    top_k=3,
-                    similarity_threshold=0.5
-                )
-                context_str = self.rag_system.format_context_for_llm(contexts) if contexts else ""
-            else:
-                context_str = ""
-            
+            context_str = self.rag_system.format_context_for_llm(contexts) if (contexts and self.rag_system) else ""
+            import sys as __sys
+            print("[RAG context] ==================== START ====================", file=__sys.stderr, flush=True)
+            print(context_str if context_str else "(no RAG context retrieved)", file=__sys.stderr, flush=True)
+            print(f"[RAG context] length: {len(context_str)} chars", file=__sys.stderr, flush=True)
+            print("[RAG context] ===================== END =====================", file=__sys.stderr, flush=True)
+
+            # Stash for caller so view doesn't re-run detection
+            self.last_emotions = emotions
+
             # Step 3: Generate LLM Response
             conversation_history = self.memory.get_history_with_context()
-            
-            # Add test context to context string if provided
             if effective_test_context:
                 context_str = f"{effective_test_context}\n\n{context_str}" if context_str else effective_test_context
-            
+
+            t_llm_start = _time.perf_counter()
             response = self.llm_client.generate_response(
                 user_message=user_input,
                 emotions=emotions_str,
@@ -159,13 +256,20 @@ class MindEaseChat:
                 user_first_name=self.user_first_name,
                 test_context=effective_test_context
             )
-            
+            t_llm_done = _time.perf_counter()
+            _log(f"[chat-timing] llm_call:         {(t_llm_done - t_llm_start):.3f}s")
+            _log(f"[chat-timing] TOTAL:            {(t_llm_done - t0):.3f}s")
+
             # Update memory
             self.memory.add_exchange(user_input, response)
-            
+
             return response
-            
+
         except Exception as e:
+            import traceback, sys as _sys
+            print(f"[chat ERROR] _process_message raised: {type(e).__name__}: {e}",
+                  file=_sys.stderr, flush=True)
+            traceback.print_exc(file=_sys.stderr)
             return f"I apologize, but I'm having trouble processing that right now. Could you try rephrasing your message?"
 
     def _process_message_stream(self, user_input: str, test_context: str = None, emotions_override: List[tuple] = None):
@@ -179,35 +283,84 @@ class MindEaseChat:
             # Urdu: Qwen-only Roman Urdu (yields full response as single chunk)
             if _is_urdu_lang(self.lang_pref):
                 self._ensure_urdu_system_prompt()
-                from chatbot.urdu_chat_pipeline import run_urdu_pipeline_stream
+                import concurrent.futures as _cf
+                from chatbot.urdu_chat_pipeline import run_urdu_pipeline
+                from chatbot.urdu_emotion_detector import detect_emotions_urdu
+
                 history = self.memory.get_history_with_context()
-                for chunk in run_urdu_pipeline_stream(
-                    roman_user_input=user_input,
-                    conversation_history_roman=history,
-                    test_context=effective_test_context,
-                    user_first_name=self.user_first_name,
-                ):
-                    yield chunk
+                while history and history[-1].get("role") == "user":
+                    history.pop()
+
+                def _emo_task():
+                    if emotions_override is not None and len(emotions_override) > 0:
+                        return emotions_override
+                    return detect_emotions_urdu(text=user_input, top_k=2, threshold=0.3)
+
+                with _cf.ThreadPoolExecutor(max_workers=2) as ex:
+                    fut_emo = ex.submit(_emo_task)
+                    fut_chat = ex.submit(
+                        run_urdu_pipeline,
+                        roman_user_input=user_input,
+                        conversation_history_roman=history,
+                        test_context=effective_test_context,
+                        user_first_name=self.user_first_name,
+                    )
+                    self.last_emotions = fut_emo.result()
+                    response = fut_chat.result()
+
+                yield response
                 return
 
-            # English pipeline
-            if emotions_override is not None and len(emotions_override) > 0:
-                emotions = emotions_override
-                emotions_str = (self.emotion_detector.format_emotions_for_llm(emotions) if self.emotion_detector
+            # English pipeline — run emotion detection + RAG retrieval in parallel
+            import concurrent.futures as _cf
+            import time as _time
+            import sys as _sys
+
+            def _slog(msg):
+                print(msg, file=_sys.stderr, flush=True)
+
+            t0s = _time.perf_counter()
+
+            def _emotions_task():
+                if emotions_override is not None and len(emotions_override) > 0:
+                    return emotions_override
+                if self.emotion_detector is not None:
+                    return self.emotion_detector.detect_emotions(user_input, top_k=2, threshold=0.3)
+                return None
+
+            def _rag_task():
+                if self.rag_system is not None:
+                    return self.rag_system.retrieve_context(query=user_input, top_k=1, similarity_threshold=0.65)
+                return None
+
+            with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
+                _fut_emo = _ex.submit(_emotions_task)
+                _fut_rag = _ex.submit(_rag_task)
+                emotions = _fut_emo.result()
+                t_em_done = _time.perf_counter()
+                contexts = _fut_rag.result()
+                t_rag_done = _time.perf_counter()
+            _slog(f"[chat-timing stream] emotion_detection: {(t_em_done - t0s):.3f}s")
+            _slog(f"[chat-timing stream] rag_retrieval:    {(t_rag_done - t0s):.3f}s (parallel)")
+
+            if emotions:
+                emotions_str = (self.emotion_detector.format_emotions_for_llm(emotions)
+                                if self.emotion_detector
                                 else "Detected emotions: " + ", ".join(f"{e} ({p:.2f})" for e, p in emotions))
-            elif self.emotion_detector is not None:
-                emotions = self.emotion_detector.detect_emotions(user_input, top_k=2, threshold=0.3)
-                emotions_str = self.emotion_detector.format_emotions_for_llm(emotions) if emotions else ""
             else:
                 emotions_str = ""
-            if self.rag_system is not None:
-                contexts = self.rag_system.retrieve_context(query=user_input, top_k=3, similarity_threshold=0.5)
-                context_str = self.rag_system.format_context_for_llm(contexts) if contexts else ""
-            else:
-                context_str = ""
+            context_str = self.rag_system.format_context_for_llm(contexts) if (contexts and self.rag_system) else ""
+            import sys as __sys
+            print("[RAG context] ==================== START ====================", file=__sys.stderr, flush=True)
+            print(context_str if context_str else "(no RAG context retrieved)", file=__sys.stderr, flush=True)
+            print(f"[RAG context] length: {len(context_str)} chars", file=__sys.stderr, flush=True)
+            print("[RAG context] ===================== END =====================", file=__sys.stderr, flush=True)
+            self.last_emotions = emotions
             conversation_history = self.memory.get_history_with_context()
             if effective_test_context:
                 context_str = f"{effective_test_context}\n\n{context_str}" if context_str else effective_test_context
+            t_llm_start = _time.perf_counter()
+            t_first_chunk = None
             for chunk in self.llm_client.generate_response_stream(
                 user_message=user_input,
                 emotions=emotions_str,
@@ -216,7 +369,13 @@ class MindEaseChat:
                 user_first_name=self.user_first_name,
                 test_context=effective_test_context,
             ):
+                if t_first_chunk is None:
+                    t_first_chunk = _time.perf_counter()
+                    _slog(f"[chat-timing stream] llm_ttft:         {(t_first_chunk - t_llm_start):.3f}s (time to first token)")
                 yield chunk
+            t_llm_done = _time.perf_counter()
+            _slog(f"[chat-timing stream] llm_total:        {(t_llm_done - t_llm_start):.3f}s")
+            _slog(f"[chat-timing stream] TOTAL:            {(t_llm_done - t0s):.3f}s")
         except Exception as e:
             yield f"I apologize, but I'm having trouble processing that right now. Could you try rephrasing your message?"
 

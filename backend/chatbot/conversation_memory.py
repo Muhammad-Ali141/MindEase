@@ -51,6 +51,22 @@ class ConversationMemory:
         if len(self.conversation_history) % 6 == 0:  # Every 3 exchanges
             self._update_session_summary()
     
+    def load_history(self, messages: list):
+        """Bulk-load prior messages without firing the periodic session summary.
+
+        Use this when replaying conversation history from the client payload at
+        the start of a request, so that ``_update_session_summary`` is not
+        triggered unnecessarily for already-seen messages.
+
+        Args:
+            messages: List of dicts with at least ``role`` and ``content`` keys.
+        """
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role and content:
+                self.conversation_history.append({"role": role, "content": content})
+
     def add_exchange(self, user_message: str, assistant_response: str):
         """
         Add a complete exchange (user message + assistant response)
@@ -273,28 +289,63 @@ class ConversationMemory:
                     elif role == 'assistant':
                         conversation_text += f"Therapist: {content}\n\n"
                 
-                # Create summary prompt
-                user_label = user_first_name if user_first_name else "the user"
-                
-                summary_prompt = f"""Write a short recap of this therapy chat addressed directly to {user_label} as "you".
+                # Build a therapist-style clinical note about the client.
+                # Third person, structured, grounded only in the transcript.
+                user_count = sum(1 for m in history if m.get("role") == "user")
+                is_brief = user_count < 3
 
-Rules:
-- Reference ONLY what was actually said. If the exchange was brief, keep the recap equally brief (even 1–2 sentences).
-- Summarise how you felt or what you shared, in your own words.
-- Mention how the therapist responded or supported you only if it truly happened in the transcript.
-- Close with a gentle invitation or reassurance when appropriate.
-
-Tone: warm, validating, professional. Maximum length: 5 sentences.
-
-Conversation:
-{conversation_text}
-
-Session recap:"""
+                if is_brief:
+                    summary_prompt = (
+                        "Write a short, warm reflection (2 to 4 sentences, plain prose, no "
+                        "headings) summarising this brief therapy exchange for the person "
+                        "who had the session.\n\n"
+                        "Rules:\n"
+                        "- Address the person directly as 'you'. Do not use their name.\n"
+                        "- Reflect what came up, how they were feeling, and any gentle "
+                        "support offered.\n"
+                        "- Only use information present in the transcript. No speculation.\n"
+                        "- No bullets, no dashes, no separator lines, no markdown.\n"
+                        "- Tone: warm, validating, non-clinical.\n\n"
+                        f"Transcript:\n{conversation_text}\n\nReflection:"
+                    )
+                else:
+                    summary_prompt = (
+                        "Write a warm, journal-style reflection of this therapy session, "
+                        "addressed to the person who had the session. Structure it under the "
+                        "exact Markdown headings listed, in order. Plain prose under each. "
+                        "Omit a heading only if truly nothing to report for it.\n\n"
+                        "Required headings:\n"
+                        "**What We Talked About**\n"
+                        "**How You Were Feeling**\n"
+                        "**What Came Up**\n"
+                        "**What We Explored Together**\n"
+                        "**How You Responded**\n"
+                        "**Looking Ahead**\n\n"
+                        "Rules:\n"
+                        "- Address the reader as 'you' throughout. Do not use their first "
+                        "name. Warm, validating, gentle — like a caring therapist writing a "
+                        "note back to the person, not a clinical chart.\n"
+                        "- Describe what you shared, how you felt, the themes that came up, "
+                        "what was explored together, any ideas or coping strategies offered, "
+                        "and how you responded to them.\n"
+                        "- Only use information present in the transcript. Do not invent "
+                        "details, diagnoses, or past sessions.\n"
+                        "- Under each heading, write 1 to 3 tight sentences. No bullet lists.\n"
+                        "- No horizontal rules, no '---', no em-dash trails, no emojis, no "
+                        "quotes around the whole note. Do not prefix with 'Summary:' or "
+                        "'Reflection:'.\n"
+                        "- Aim for roughly 140 to 260 words total.\n\n"
+                        f"Transcript:\n{conversation_text}\n\nReflection:"
+                    )
 
                 summary_system_prompt = (
-                    "You summarise therapy conversations for the client. "
-                    "Respond with 2–5 sentences written in the second person (\"you\"), accurately reflecting only the transcript. "
-                    "If the discussion was very short, keep the recap short. Mention therapist responses only when they appear, and end with an encouraging invitation when it fits. Do not invent details."
+                    "You are a warm, caring therapist writing a short reflection back to the "
+                    "person after their session. Use second person ('you'), gentle and "
+                    "validating — never clinical or distant, never using the word 'client' "
+                    "or 'patient'. Ground every statement in the transcript. Never use "
+                    "separator lines or runs of dashes. Never wrap output in quotes. Never "
+                    "prefix with labels like 'Note:' or 'Summary:'. Output only the "
+                    "reflection itself."
                 )
 
                 try:
@@ -360,8 +411,39 @@ Session recap:"""
         return lines
 
     def _normalise_summary_text(self, value: str) -> str:
-        text = value.strip()
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        import re as _re
+        if not value:
+            return ""
+        text = str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+        # Strip wrap quotes
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'", "`"):
+            text = text[1:-1].strip()
+        # Strip leading label prefixes a few times
+        prefix_re = _re.compile(
+            r"^(therapist'?s?\s+note|session\s+(recap|summary|note)|clinical\s+note|summary|recap|note)\s*[:\-–—]\s*",
+            _re.IGNORECASE,
+        )
+        for _ in range(3):
+            new = prefix_re.sub("", text).strip()
+            if new == text:
+                break
+            text = new
+        # Drop separator-only lines
+        text = _re.sub(r"(?m)^\s*[-*_=~]{3,}\s*$", "", text)
+        # Remove inline 3+ dash runs
+        text = _re.sub(r"[-–—]{3,}", "", text)
+        # Strip markdown bold/italic markers (frontend renders as plain text)
+        text = _re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=_re.DOTALL)
+        text = _re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"\1", text, flags=_re.DOTALL)
+        text = _re.sub(r"(?m)^#{1,6}\s+", "", text)
+        # Trim trailing dash/symbol noise on each line
+        lines = [
+            _re.sub(r"[\s\-–—_*#]+$", "", line).rstrip()
+            for line in text.split("\n")
+        ]
+        text = "\n".join(lines)
+        # Collapse excess blank lines
+        text = _re.sub(r"\n{3,}", "\n\n", text).strip()
         return "\n\n".join(
             paragraph.strip()
             for paragraph in text.split("\n\n")
