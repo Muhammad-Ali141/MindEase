@@ -284,8 +284,13 @@ class MindEaseChat:
             if _is_urdu_lang(self.lang_pref):
                 self._ensure_urdu_system_prompt()
                 import concurrent.futures as _cf
+                import time as _time
+                import sys as _sys
                 from chatbot.urdu_chat_pipeline import run_urdu_pipeline
                 from chatbot.urdu_emotion_detector import detect_emotions_urdu
+
+                def _ulog(msg):
+                    print(msg, file=_sys.stderr, flush=True)
 
                 history = self.memory.get_history_with_context()
                 while history and history[-1].get("role") == "user":
@@ -296,6 +301,8 @@ class MindEaseChat:
                         return emotions_override
                     return detect_emotions_urdu(text=user_input, top_k=2, threshold=0.3)
 
+                t0_urdu = _time.perf_counter()
+                _ulog(f"[urdu-llm-timing] ── LLM start ──────────────────────────")
                 with _cf.ThreadPoolExecutor(max_workers=2) as ex:
                     fut_emo = ex.submit(_emo_task)
                     fut_chat = ex.submit(
@@ -307,6 +314,9 @@ class MindEaseChat:
                     )
                     self.last_emotions = fut_emo.result()
                     response = fut_chat.result()
+                t_llm_done = _time.perf_counter()
+                _ulog(f"[urdu-llm-timing] llm_total:  {(t_llm_done - t0_urdu):.3f}s  chars={len(response or '')}")
+                _ulog(f"[urdu-llm-timing] ── LLM done ───────────────────────────")
 
                 yield response
                 return

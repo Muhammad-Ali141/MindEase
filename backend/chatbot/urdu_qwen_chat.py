@@ -9,11 +9,18 @@ from typing import Optional, List, Dict
 def _qlog(msg: str):
     print(msg, file=sys.stderr, flush=True)
 
-# Provider cascade: try OpenRouter keys in order, then Alibaba as final fallback.
+# ── Provider constants ────────────────────────────────────────────────────────
+_GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
+_GROQ_MODEL         = "llama-3.3-70b-versatile"   # 2-4s, direct inference, great Urdu
+
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-_OPENROUTER_MODEL = "qwen/qwen3.5-122b-a10b"
-_ALIBABA_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-_ALIBABA_MODEL = "qwen3.5-122b-a10b"
+_OPENROUTER_MODEL    = "qwen/qwen3-14b"            # fallback via proxy
+
+_ALIBABA_BASE_URL   = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+_ALIBABA_MODEL      = "qwen-plus"                  # qwen-plus: fast & reliable on DashScope intl
+
+# Models that understand the /no_think soft-switch (Qwen3 family only)
+_QWEN3_MODELS = {"qwen/qwen3-14b", "qwen3-14b", "qwen/qwen3.5-122b-a10b", "qwen3.5-122b-a10b"}
 _PROMPT_FILE = os.path.join(os.path.dirname(__file__), "system_prompt_roman_urdu.txt")
 
 # Full English system prompt (therapy-only, boundaries, crisis, structured steps). Kept in codebase.
@@ -89,27 +96,38 @@ def _load_env_once():
 
 
 def _get_clients():
-    """Return cascade list: [(label, client, model), ...] — OpenRouter keys first, Alibaba last."""
+    """
+    Return cascade list: [(label, client, model, timeout_s), ...]
+    Order: Groq (fastest, direct) → Alibaba → OpenRouter#1 → OpenRouter#2
+    """
     global _clients
     if _clients is not None:
         return _clients
     from openai import OpenAI
     _load_env_once()
     out = []
-    or_key1 = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
-    or_key2 = (os.environ.get("OPENROUTER_API_KEY_2") or "").strip()
-    ali_key = (os.environ.get("ALIBABA_API_KEY") or "").strip()
-    if or_key1:
-        out.append(("openrouter#1", OpenAI(api_key=or_key1, base_url=_OPENROUTER_BASE_URL), _OPENROUTER_MODEL))
-    if or_key2:
-        out.append(("openrouter#2", OpenAI(api_key=or_key2, base_url=_OPENROUTER_BASE_URL), _OPENROUTER_MODEL))
+    groq_key  = (os.environ.get("GROQ_API_KEY") or "").strip()
+    ali_key   = (os.environ.get("ALIBABA_API_KEY") or "").strip()
+    or_key1   = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    or_key2   = (os.environ.get("OPENROUTER_API_KEY_2") or "").strip()
+
+    # Groq: direct inference, 2-4s, no thinking overhead, free tier
+    if groq_key:
+        out.append(("groq", OpenAI(api_key=groq_key, base_url=_GROQ_BASE_URL), _GROQ_MODEL, 15.0))
+    # Alibaba DashScope: Qwen's native provider, consistent latency
     if ali_key:
-        out.append(("alibaba", OpenAI(api_key=ali_key, base_url=_ALIBABA_BASE_URL), _ALIBABA_MODEL))
+        out.append(("alibaba", OpenAI(api_key=ali_key, base_url=_ALIBABA_BASE_URL), _ALIBABA_MODEL, 18.0))
+    # OpenRouter: proxy, slower/variable — fallback only
+    if or_key1:
+        out.append(("openrouter#1", OpenAI(api_key=or_key1, base_url=_OPENROUTER_BASE_URL), _OPENROUTER_MODEL, 18.0))
+    if or_key2:
+        out.append(("openrouter#2", OpenAI(api_key=or_key2, base_url=_OPENROUTER_BASE_URL), _OPENROUTER_MODEL, 18.0))
+
     if not out:
         raise RuntimeError(
-            "No Urdu LLM keys configured. Set OPENROUTER_API_KEY, OPENROUTER_API_KEY_2, or ALIBABA_API_KEY in backend/.env."
+            "No Urdu LLM keys configured. Set GROQ_API_KEY, ALIBABA_API_KEY, or OPENROUTER_API_KEY in backend/.env."
         )
-    _qlog(f"[urdu-llm] cascade: {[lbl for lbl, _, _ in out]}")
+    _qlog(f"[urdu-llm] cascade: {[lbl for lbl, *_ in out]}")
     _clients = out
     return _clients
 
@@ -128,7 +146,7 @@ def _translate_system_prompt_to_roman_urdu() -> str:
         },
         {"role": "user", "content": SYSTEM_PROMPT_ENGLISH},
     ]
-    return qwen_chat(messages, max_tokens=2048, temperature=0)
+    return qwen_chat(messages, max_tokens=2048, temperature=0, enable_thinking=False)
 
 
 def get_system_prompt_roman_urdu(force_translate: bool = False) -> str:
@@ -153,36 +171,64 @@ def get_system_prompt_roman_urdu(force_translate: bool = False) -> str:
     return _system_prompt_roman_urdu
 
 
+def _inject_no_think(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """
+    Prepend /no_think to the last user message — the Qwen3 model-native soft
+    switch to skip thinking. Works on every provider without relying on API params.
+    """
+    msgs = [m.copy() for m in messages]
+    for i in range(len(msgs) - 1, -1, -1):
+        if msgs[i].get("role") == "user":
+            content = msgs[i].get("content", "")
+            if not content.startswith("/no_think"):
+                msgs[i]["content"] = "/no_think\n" + content
+            break
+    return msgs
+
+
 def qwen_chat(
     messages: List[Dict[str, str]],
-    max_tokens: int = 512,
+    max_tokens: int = 800,
     temperature: float = 0.7,
+    enable_thinking: bool = False,
 ) -> str:
     """
-    Qwen chat call with cascade fallback: OpenRouter#1 → OpenRouter#2 → Alibaba.
-    Returns assistant reply text. Raises only if every provider fails.
+    Chat call with cascade fallback: Groq → Alibaba → OpenRouter#1 → OpenRouter#2.
+    Each provider has its own tight timeout so failures fail fast.
+    /no_think is injected only for Qwen3 models (not Groq/Llama).
     """
     clients = _get_clients()
     last_err = None
-    for label, client, model in clients:
+    for entry in clients:
+        label, client, model, timeout_s = entry
+        # /no_think is a Qwen3-specific soft-switch; skip for other models (e.g. Llama on Groq)
+        is_qwen3 = model in _QWEN3_MODELS
+        send_messages = (_inject_no_think(messages) if (not enable_thinking and is_qwen3)
+                         else messages)
         try:
-            _qlog(f"[urdu-llm] trying {label} (model={model})")
-            extra = {}
+            _qlog(f"[urdu-llm] trying {label} (model={model}  timeout={timeout_s}s)")
+            extra_headers = {}
             if label.startswith("openrouter"):
-                extra = {"extra_headers": {
+                extra_headers = {
                     "HTTP-Referer": "http://localhost:3000",
                     "X-OpenRouter-Title": "MindEase",
-                }}
-            resp = client.with_options(timeout=45.0).chat.completions.create(
+                }
+            resp = client.with_options(timeout=timeout_s).chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=send_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                **extra,
+                extra_headers=extra_headers if extra_headers else None,
             )
             content = (resp.choices[0].message.content or "").strip()
+            # Strip any leaked <think>…</think> block Qwen3 may still emit
+            if content.startswith("<think>"):
+                end = content.find("</think>")
+                if end != -1:
+                    content = content[end + len("</think>"):].strip()
             if not content:
                 raise RuntimeError(f"{label} returned empty content")
+            _qlog(f"[urdu-llm] {label} succeeded  chars={len(content)}")
             return content
         except Exception as e:
             last_err = e
@@ -245,7 +291,7 @@ def summarize_session_roman_urdu(conversation_text: str, user_first_name: Option
         },
         {"role": "user", "content": user_instruction},
     ]
-    return qwen_chat(messages, max_tokens=700, temperature=0.45)
+    return qwen_chat(messages, max_tokens=700, temperature=0.45, enable_thinking=False)
 
 
 def welcome_with_assessment_roman_urdu(test_context: str, user_first_name: Optional[str] = None) -> str:
@@ -266,7 +312,7 @@ def welcome_with_assessment_roman_urdu(test_context: str, user_first_name: Optio
         },
     ]
     try:
-        return qwen_chat(messages, max_tokens=280, temperature=0.65)
+        return qwen_chat(messages, max_tokens=280, temperature=0.65, enable_thinking=False)
     except Exception:
         return (
             f"Khush aamdeed, {name}. Main ne aap ki assessment dekh li hai. Main yahan hoon ke aap jo bhi mehsoos kar rahe hain us par baat kar saken. "
@@ -293,7 +339,7 @@ def welcome_with_assessment_arabic_urdu(test_context: str, user_first_name: Opti
         },
     ]
     try:
-        return qwen_chat(messages, max_tokens=280, temperature=0.65)
+        return qwen_chat(messages, max_tokens=280, temperature=0.65, enable_thinking=False)
     except Exception:
         return (
             f"خوش آمدید، {name}۔ میں نے آپ کی تشخیص دیکھ لی ہے۔ میں یہاں ہوں تاکہ آپ جو بھی محسوس کر رہے ہیں اس پر بات کر سکیں۔ "

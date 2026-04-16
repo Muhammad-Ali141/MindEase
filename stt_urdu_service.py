@@ -19,6 +19,26 @@ from faster_whisper import WhisperModel
 logger = logging.getLogger(__name__)
 
 
+def _find_ffmpeg() -> str | None:
+    """Return ffmpeg executable path, checking PATH then known Windows install locations."""
+    import shutil, glob
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    candidates = [
+        r"C:\Users\PC\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin\ffmpeg.exe",
+        r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+    ]
+    for c in candidates:
+        if Path(c).exists():
+            return c
+    # Last resort: glob for any WinGet ffmpeg
+    for c in glob.glob(r"C:\Users\PC\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg*\**\ffmpeg.exe", recursive=True):
+        return c
+    return None
+
+
 def _patch_faster_whisper_mels(model: WhisperModel, model_dir: Path) -> None:
     """
     HF preprocessor_config.json nests keys under feature_extractor; faster_whisper only
@@ -114,8 +134,8 @@ class UrduSpeechToTextService:
         # Anti-hallucination defaults (can be adjusted if needed)
         self.repetition_penalty = 1.05
         self.no_repeat_ngram_size = 3
-        # Allow longer sentences (avoid early cut-offs)
-        self.max_new_tokens = 180
+        # Whisper max_length=448; forced prompt tokens (~4) reduce usable space to 444
+        self.max_new_tokens = 444
 
         if self.device is None:
             env_device = os.environ.get("URDU_STT_DEVICE", "").strip().lower()
@@ -258,20 +278,19 @@ class UrduSpeechToTextService:
                 temperature=(0.0 if beam > 1 else self.temperature),
                 repetition_penalty=self.repetition_penalty,
                 no_repeat_ngram_size=self.no_repeat_ngram_size,
-                without_timestamps=True,
+                without_timestamps=False,
                 vad_filter=use_vad,
                 vad_parameters=dict(
-                    min_silence_duration_ms=600,
-                    threshold=0.45,
+                    threshold=0.3,
+                    min_silence_duration_ms=1200,
+                    speech_pad_ms=400,
                 ) if use_vad else None,
                 initial_prompt=initial_prompt,
                 condition_on_previous_text=False,
-                # Anti-hallucination tuning (especially for live mic)
-                max_new_tokens=self.max_new_tokens,
-                compression_ratio_threshold=2.1,
-                log_prob_threshold=-0.7,
-                no_speech_threshold=0.8,
-                hallucination_silence_threshold=0.5,
+                compression_ratio_threshold=2.4,
+                log_prob_threshold=-1.5,         # was -0.7: complex Urdu words were below threshold → segment discarded
+                no_speech_threshold=0.9,         # was 0.8: more permissive
+                hallucination_silence_threshold=2.0,  # was 0.5: 500ms pause between sentences was triggering this
             )
 
             parts = []
@@ -320,21 +339,39 @@ class UrduSpeechToTextService:
 
         try:
             if needs_conversion:
-                try:
-                    from pydub import AudioSegment
-                    seg = AudioSegment.from_file(file_path)
-                    seg = seg.set_channels(1).set_frame_rate(16000)
+                ffmpeg_exe = _find_ffmpeg()
+                if ffmpeg_exe:
+                    import subprocess
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
                         temp_wav = f.name
-                        seg.export(temp_wav, format="wav")
+                    result = subprocess.run(
+                        [ffmpeg_exe, "-y", "-i", file_path,
+                         "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", temp_wav],
+                        capture_output=True, timeout=60,
+                    )
+                    if result.returncode != 0:
+                        raise RuntimeError(f"ffmpeg conversion failed: {result.stderr.decode(errors='replace')}")
                     audio, sample_rate = sf.read(temp_wav, dtype="float32")
-                except ImportError:
-                    raise RuntimeError("pydub required for WebM/MP4. pip install pydub; ensure ffmpeg is installed.")
+                else:
+                    try:
+                        from pydub import AudioSegment
+                        seg = AudioSegment.from_file(file_path)
+                        seg = seg.set_channels(1).set_frame_rate(16000)
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+                            temp_wav = f.name
+                            seg.export(temp_wav, format="wav")
+                        audio, sample_rate = sf.read(temp_wav, dtype="float32")
+                    except ImportError:
+                        raise RuntimeError("ffmpeg not found and pydub not installed. Cannot convert WebM audio.")
             else:
                 audio, sample_rate = sf.read(file_path, dtype="float32")
 
             if len(audio.shape) > 1:
                 audio = np.mean(audio, axis=1)
+
+            duration_s = len(audio) / sample_rate
+            logger.info("Urdu STT: audio duration=%.2fs  samples=%d  sr=%d", duration_s, len(audio), sample_rate)
+            print(f"[urdu-stt] audio duration={duration_s:.2f}s  samples={len(audio)}")
 
             return self.transcribe_audio_array(
                 audio,

@@ -381,18 +381,25 @@ class TTSService:
         # Check if we already have a cached default speaker
         if self._default_speaker_wav and os.path.exists(self._default_speaker_wav):
             return self._default_speaker_wav
-        
+
         # Look for default speaker in backend/tts/Audios/ directory
         # Get the directory where this file is located
         current_dir = os.path.dirname(os.path.abspath(__file__))
         audios_dir = os.path.join(current_dir, "Audios")
-        
+
+        # Language-specific reference takes priority (e.g. default_ur.wav for Urdu).
+        # Drop any WAV file named default_<lang>.wav in Audios/ to use it for that language.
+        lang_specific = os.path.join(audios_dir, f"default_{language}.wav")
+        if os.path.exists(lang_specific):
+            self._default_speaker_wav = lang_specific
+            logger.info(f"Using language-specific speaker reference: {lang_specific}")
+            return lang_specific
+
         # Try to find Audio1.wav (or other default files)
         default_files = [
             os.path.join(audios_dir, "Default Speaker.wav"),
             os.path.join(audios_dir, "default_speaker.wav"),
             os.path.join(audios_dir, "therapist_voice.wav"),
-            os.path.join(audios_dir, f"default_{language}.wav"),
         ]
         
         # Check each potential file
@@ -449,7 +456,6 @@ class TTSService:
             "ja",  # Japanese
             "hu",  # Hungarian
             "ko",  # Korean
-            "ur",  # Urdu
         ]
     
     def close(self):

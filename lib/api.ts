@@ -865,22 +865,21 @@ export async function apiGenerateAndSaveWelcomeAudio(
 export async function apiTTSSynthesize(
   text: string,
   language: string = "en",
-  ttsBackend: "xtts" | "qwen3" = "qwen3"
+  ttsBackend?: "xtts" | "qwen3" | "edge_tts" | "mms_urdu"
 ): Promise<Blob> {
   if (!text || !text.trim()) {
     throw new Error("Text cannot be empty")
   }
+
+  const body: Record<string, string> = { text: text.trim(), language }
+  if (ttsBackend) body.tts_backend = ttsBackend
 
   const res = await fetch(`${API_BASE}/tts/synthesize/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      text: text.trim(),
-      language: language,
-      tts_backend: ttsBackend,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {

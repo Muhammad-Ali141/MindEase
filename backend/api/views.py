@@ -105,6 +105,77 @@ _qwen3_tts_cache = None
 _qwen3_tts_lock = None
 
 
+# ElevenLabs TTS adapter cache (Urdu primary)
+_elevenlabs_tts_cache = None
+_elevenlabs_tts_lock = None
+
+# MMS-TTS adapter cache (Urdu fallback)
+_mms_urdu_tts_cache = None
+_mms_urdu_tts_lock = None
+
+# Edge TTS adapter cache (English primary)
+_edge_tts_cache = None
+_edge_tts_lock = None
+
+
+def _get_elevenlabs_tts_service():
+    """Get or create ElevenLabs adapter (cached). Returns None if API key not configured."""
+    global _elevenlabs_tts_cache, _elevenlabs_tts_lock
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    if not api_key:
+        return None
+    if _elevenlabs_tts_cache is None:
+        if _elevenlabs_tts_lock is None:
+            _elevenlabs_tts_lock = threading.Lock()
+        with _elevenlabs_tts_lock:
+            if _elevenlabs_tts_cache is None:
+                import sys
+                tts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tts')
+                if tts_dir not in sys.path:
+                    sys.path.insert(0, tts_dir)
+                from tts.elevenlabs_tts_adapter import ElevenLabsTTSAdapter
+                _elevenlabs_tts_cache = ElevenLabsTTSAdapter(
+                    api_key=api_key,
+                    voice_name=os.environ.get("ELEVENLABS_VOICE_NAME", "Jessica"),
+                )
+    return _elevenlabs_tts_cache
+
+
+def _get_mms_urdu_tts_service():
+    """Get or create MMS-TTS adapter for Urdu (cached singleton)."""
+    global _mms_urdu_tts_cache, _mms_urdu_tts_lock
+    if _mms_urdu_tts_cache is None:
+        if _mms_urdu_tts_lock is None:
+            _mms_urdu_tts_lock = threading.Lock()
+        with _mms_urdu_tts_lock:
+            if _mms_urdu_tts_cache is None:
+                import sys
+                tts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tts')
+                if tts_dir not in sys.path:
+                    sys.path.insert(0, tts_dir)
+                from tts.mms_urdu_tts_adapter import MmsUrduTTSAdapter
+                _mms_urdu_tts_cache = MmsUrduTTSAdapter()
+    return _mms_urdu_tts_cache
+
+
+def _get_edge_tts_service():
+    """Get or create Edge TTS adapter (cached singleton). No model download — cloud API."""
+    global _edge_tts_cache, _edge_tts_lock
+    if _edge_tts_cache is None:
+        if _edge_tts_lock is None:
+            _edge_tts_lock = threading.Lock()
+        with _edge_tts_lock:
+            if _edge_tts_cache is None:
+                import sys
+                tts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tts')
+                if tts_dir not in sys.path:
+                    sys.path.insert(0, tts_dir)
+                from tts.edge_tts_adapter import EdgeTTSAdapter
+                voice = os.environ.get("EDGE_TTS_VOICE", "en-US-AriaNeural")
+                _edge_tts_cache = EdgeTTSAdapter(voice=voice)
+    return _edge_tts_cache
+
+
 def _get_qwen3_tts_service():
     """Get or create Qwen3-TTS adapter (cached). Default TTS backend for the API."""
     global _qwen3_tts_cache, _qwen3_tts_lock
@@ -124,19 +195,17 @@ def _get_qwen3_tts_service():
 
 def _resolve_tts_backend(data, language=None):
     """
-    Prefer Qwen3. Coqui XTTS only when explicitly requested:
-    JSON body `tts_backend: \"xtts\"` or env `TTS_BACKEND=xtts`.
-    Urdu always uses Qwen3.
+    Both English and Urdu default to Edge TTS (Microsoft cloud, ~500ms, no GPU).
+    English fallback: Qwen3. Urdu fallback: MMS.
+    Override via JSON body `tts_backend` or env `TTS_BACKEND`.
     """
-    if language and str(language).lower() in ("ur", "urdu"):
-        return "qwen3"
     req = (data.get("tts_backend") or "").strip().lower()
-    if req in ("xtts", "qwen3"):
+    if req in ("xtts", "qwen3", "mms_urdu", "edge_tts"):
         return req
     env = (os.environ.get("TTS_BACKEND") or "").strip().lower()
-    if env in ("xtts", "qwen3"):
+    if env in ("xtts", "qwen3", "mms_urdu", "edge_tts"):
         return env
-    return "qwen3"
+    return "edge_tts"
 
 
 def _sanitize_test_context_key(key):
@@ -356,8 +425,36 @@ Keep it concise (2-3 sentences) and natural. Start directly with the greeting.""
 def _synthesize_welcome_audio(welcome_message: str, audio_path: str, lang_pref=None):
     """TTS the welcome message to audio_path (atomic). Also writes sidecar .json with the text."""
     language = "ur" if (lang_pref and str(lang_pref).lower() in ("urdu", "ur")) else "en"
-    if _resolve_tts_backend({}, language=language) == "xtts":
+    backend = _resolve_tts_backend({}, language=language)
+    if backend == "xtts":
         tts_service = _get_tts_service()
+    elif backend == "edge_tts":
+        is_urdu = language == "ur"
+        voice = (
+            os.environ.get("EDGE_TTS_VOICE_UR", "ur-PK-AsadNeural") if is_urdu
+            else os.environ.get("EDGE_TTS_VOICE", "en-US-AriaNeural")
+        )
+        root, ext = os.path.splitext(audio_path)
+        tmp_audio = f"{root}.part.mp3"
+        try:
+            edge_service = _get_edge_tts_service()
+            edge_service.synthesize_to_file(text=welcome_message, output_path=tmp_audio, language=language, voice=voice)
+            os.replace(tmp_audio, audio_path)
+        except Exception as edge_err:
+            print(f"[TTS] Edge TTS welcome audio failed ({edge_err}), using fallback")
+            if os.path.exists(tmp_audio):
+                try: os.unlink(tmp_audio)
+                except Exception: pass
+            fallback = _get_mms_urdu_tts_service() if is_urdu else _get_qwen3_tts_service()
+            tmp_wav = f"{root}.part{ext or '.wav'}"
+            fallback.synthesize_to_file(text=welcome_message, output_path=tmp_wav, language=language)
+            os.replace(tmp_wav, audio_path)
+        sidecar = audio_path.replace(".wav", ".json")
+        try:
+            _atomic_write_text(sidecar, json.dumps({"welcome_message": welcome_message}, ensure_ascii=False))
+        except Exception:
+            pass
+        return
     else:
         tts_service = _get_qwen3_tts_service()
     # soundfile infers format from extension → keep .wav on the tmp file
@@ -1025,6 +1122,8 @@ def voice_process(request):
     try:
         if "audio" not in request.FILES:
             return JsonResponse({"error": "Audio file is required."}, status=400)
+        import time as _time
+        t0 = _time.perf_counter()
         audio_file = request.FILES["audio"]
         language = request.POST.get("language", "en")
         is_urdu = language and str(language).lower() in ("urdu", "ur")
@@ -1042,11 +1141,17 @@ def voice_process(request):
             for chunk in audio_file.chunks():
                 tmp.write(chunk)
             audio_path = tmp.name
+        t_saved = _time.perf_counter()
+        lang_tag = "ur" if is_urdu else language
+        print(f"[voice-timing] lang={lang_tag}  audio_save: {t_saved - t0:.3f}s  file={suffix}  size={os.path.getsize(audio_path)}B")
         try:
+            stt_start = _time.perf_counter()
+            ser_start_ref = [0.0]
+
             def run_stt():
+                t = _time.perf_counter()
                 if is_urdu:
                     from urdu_stt.stt_urdu_service import UrduSpeechToTextService, MODEL_ID
-
                     svc = UrduSpeechToTextService(
                         model_id=MODEL_ID,
                         device=None,
@@ -1056,11 +1161,11 @@ def voice_process(request):
                         temperature=0.0,
                         vad_filter=True,
                     )
-                    return svc.transcribe_file(audio_path, language="ur")
+                    result = svc.transcribe_file(audio_path, language="ur")
+                    print(f"[voice-timing] urdu_stt: {_time.perf_counter() - t:.3f}s  chars={len(result or '')}")
+                    return result
 
                 from stt.stt_service import SpeechToTextService
-
-                # Distil-large-v3: ~6x faster than large-v3, within ~1% WER (best speed+accuracy)
                 svc = SpeechToTextService(
                     model_id="Systran/faster-distil-whisper-large-v3",
                     device=None,
@@ -1069,13 +1174,18 @@ def voice_process(request):
                     temperature=0.0,
                     vad_filter=True,
                 )
-                return svc.transcribe_file(audio_path, language=language if language != "auto" else None)
+                result = svc.transcribe_file(audio_path, language=language if language != "auto" else None)
+                print(f"[voice-timing] en_stt: {_time.perf_counter() - t:.3f}s  chars={len(result or '')}")
+                return result
 
             def run_ser():
+                t = _time.perf_counter()
                 try:
                     from chatbot.audio_emotion_detector import AudioEmotionDetector
                     det = AudioEmotionDetector()
-                    return det.detect_emotions_from_audio(audio_path, top_k=2, threshold=0.2)
+                    result = det.detect_emotions_from_audio(audio_path, top_k=2, threshold=0.2)
+                    print(f"[voice-timing] ser: {_time.perf_counter() - t:.3f}s")
+                    return result
                 except Exception as ser_err:
                     import logging
                     logging.getLogger(__name__).warning("SER failed: %s", ser_err)
@@ -1089,8 +1199,11 @@ def voice_process(request):
                     ser_emotions = fut_ser.result() or []
                 except Exception:
                     ser_emotions = []
+
+            t_done = _time.perf_counter()
             emotions_list = [{"emotion": e, "score": float(s)} for e, s in ser_emotions]
-            print("[Voice] SER emotions from audio:", emotions_list)
+            print(f"[voice-timing] TOTAL: {t_done - t0:.3f}s  transcript_len={len(transcript)}")
+            print(f"[Voice] SER emotions from audio: {emotions_list}")
             return JsonResponse({"transcript": transcript, "emotions": emotions_list}, status=200)
         finally:
             try:
@@ -2356,11 +2469,13 @@ def stt_transcribe(request):
             if stt_dir not in sys.path and not is_urdu:
                 sys.path.insert(0, stt_dir)
             
+            import time as _time
+            t0_stt = _time.perf_counter()
             with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.name)[1]) as temp_file:
                 for chunk in audio_file.chunks():
                     temp_file.write(chunk)
                 temp_file_path = temp_file.name
-            
+
             try:
                 if is_urdu:
                     from urdu_stt.stt_urdu_service import UrduSpeechToTextService, MODEL_ID
@@ -2378,6 +2493,7 @@ def stt_transcribe(request):
                         temp_file_path,
                         language="ur",
                     )
+                    print(f"[stt-timing] urdu_stt (fallback): {_time.perf_counter() - t0_stt:.3f}s  chars={len(transcript or '')}")
                 else:
                     from stt.stt_service import SpeechToTextService
 
@@ -2394,6 +2510,7 @@ def stt_transcribe(request):
                         temp_file_path,
                         language=language if language != 'auto' else None,
                     )
+                    print(f"[stt-timing] en_stt (fallback): {_time.perf_counter() - t0_stt:.3f}s  chars={len(transcript or '')}")
                 
                 try:
                     os.unlink(temp_file_path)
@@ -2539,6 +2656,57 @@ def tts_synthesize(request):
             if language not in supported_languages:
                 language = "en"  # Default to English if invalid
             
+            if tts_backend == "mms_urdu":
+                # Explicit MMS-only override (e.g. for testing)
+                try:
+                    tts_service = _get_mms_urdu_tts_service()
+                except RuntimeError as e:
+                    return JsonResponse({"error": str(e)}, status=503)
+                try:
+                    audio_data = tts_service.synthesize_to_wav_bytes(text=text, language=language)
+                    from django.http import HttpResponse
+                    response = HttpResponse(audio_data, content_type="audio/wav")
+                    response["Content-Disposition"] = 'inline; filename="tts_audio.wav"'
+                    response["Content-Length"] = len(audio_data)
+                    return response
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    return JsonResponse({"error": f"TTS synthesis failed: {str(e)}"}, status=500)
+
+            if tts_backend == "edge_tts":
+                is_urdu = str(language).lower() in ("ur", "urdu")
+                voice = (
+                    os.environ.get("EDGE_TTS_VOICE_UR", "ur-PK-AsadNeural") if is_urdu
+                    else os.environ.get("EDGE_TTS_VOICE", "en-US-AriaNeural")
+                )
+                try:
+                    edge_service = _get_edge_tts_service()
+                    audio_data = edge_service.synthesize_to_mp3_bytes(text=text, language=language, voice=voice)
+                    from django.http import HttpResponse
+                    response = HttpResponse(audio_data, content_type="audio/mpeg")
+                    response["Content-Disposition"] = 'inline; filename="tts_audio.mp3"'
+                    response["Content-Length"] = len(audio_data)
+                    return response
+                except Exception as edge_err:
+                    import traceback
+                    traceback.print_exc()
+                    if is_urdu:
+                        print(f"[TTS] Edge TTS failed ({edge_err}), falling back to MMS (Urdu)")
+                        try:
+                            tts_service = _get_mms_urdu_tts_service()
+                            audio_data = tts_service.synthesize_to_wav_bytes(text=text, language=language)
+                            from django.http import HttpResponse
+                            response = HttpResponse(audio_data, content_type="audio/wav")
+                            response["Content-Disposition"] = 'inline; filename="tts_audio.wav"'
+                            response["Content-Length"] = len(audio_data)
+                            return response
+                        except Exception as mms_err:
+                            return JsonResponse({"error": f"TTS synthesis failed: {str(mms_err)}"}, status=500)
+                    else:
+                        print(f"[TTS] Edge TTS failed ({edge_err}), falling back to Qwen3 (English)")
+                        tts_backend = "qwen3"
+
             if tts_backend == "qwen3":
                 try:
                     tts_service = _get_qwen3_tts_service()

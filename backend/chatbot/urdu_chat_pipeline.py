@@ -13,8 +13,8 @@ from chatbot.urdu_qwen_chat import (
 )
 
 def _log(msg: str):
-    # Silenced — outer chat.py emits a single consolidated timing block.
-    pass
+    import sys
+    print(msg, file=sys.stderr, flush=True)
 
 # Suicide/self-harm keywords (Roman Urdu + English)
 URDU_CRISIS_KEYWORDS = [
@@ -27,6 +27,11 @@ URDU_CRISIS_KEYWORDS = [
 def _is_crisis_message(roman_text: str) -> bool:
     t = (roman_text or "").lower()
     return any(kw in t for kw in URDU_CRISIS_KEYWORDS)
+
+
+def _is_arabic_script(text: str) -> bool:
+    """True if the text contains Arabic-script characters (i.e. came from Urdu STT / voice chat)."""
+    return any('\u0600' <= c <= '\u06FF' for c in (text or ""))
 
 
 def run_urdu_pipeline(
@@ -52,6 +57,14 @@ def run_urdu_pipeline(
         user_first_name=user_first_name,
         test_context=test_context,
     )
+    # Voice chat: STT produces Arabic-script Urdu. Lock the reply to Arabic script
+    # so TTS always receives proper Urdu and never accidental Roman/English.
+    if _is_arabic_script(roman_user_input):
+        system_content += (
+            "\n\nCRITICAL INSTRUCTION: The user is speaking in Urdu (Arabic script). "
+            "You MUST reply ONLY in Urdu written in Arabic script (اردو). "
+            "Do NOT use Roman Urdu, English, or any Latin characters in your response."
+        )
     t_sys_done = _time.perf_counter()
     _log(f"[urdu-chat-timing] system_prompt_build: {(t_sys_done - t_sys_start):.3f}s")
 
@@ -76,7 +89,7 @@ def run_urdu_pipeline(
     _log(f"[urdu-chat-timing] message_count: {len(messages)} (system + {len(messages)-2} history + user)")
 
     t_llm_start = _time.perf_counter()
-    reply = qwen_chat(messages, max_tokens=512, temperature=0.7)
+    reply = qwen_chat(messages, max_tokens=900, temperature=0.7, enable_thinking=False)
     t_llm_done = _time.perf_counter()
     _log(f"[urdu-chat-timing] qwen_llm_call:      {(t_llm_done - t_llm_start):.3f}s")
     _log(f"[urdu-chat-timing] TOTAL:              {(t_llm_done - t0):.3f}s")
