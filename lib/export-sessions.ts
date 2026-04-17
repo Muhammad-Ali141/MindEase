@@ -80,6 +80,20 @@ function isUrduSession(session: Session): boolean {
   return URDU_REFLECTION_HEADINGS.some(h => text.includes(h))
 }
 
+// Urdu/Arabic script ranges — main Arabic block, supplement/extended, and
+// presentation forms. jsPDF's built-in Helvetica cannot render these code
+// points, so we fall back to an HTML → canvas render path for transcript
+// bubbles that contain them.
+const URDU_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/
+
+function containsUrduScript(text: string | null | undefined): boolean {
+  return !!text && URDU_SCRIPT_RE.test(text)
+}
+
+function sessionTranscriptHasUrduScript(session: Session): boolean {
+  return (session.messages || []).some(m => containsUrduScript(m.content || ""))
+}
+
 // ── Roman Urdu label maps for PDF ───────────────────────────────────────────
 type LabelSet = {
   sessionReport: string
@@ -659,6 +673,131 @@ function drawMessageBubble(
   state.y += totalHeight
 }
 
+// ── Rasterized message bubble (used for transcripts containing Urdu script) ─
+// jsPDF's Helvetica has no glyphs for Arabic-script code points, so we build
+// the bubble as an offscreen HTML element — letting the browser shape and
+// lay out the Urdu text — then rasterize it with html2canvas and embed it
+// as a PNG. Visual styling mirrors drawMessageBubble so English + Roman Urdu
+// sessions (vector path) and Urdu sessions (raster path) look consistent.
+const PDF_PX_PER_MM = 96 / 25.4
+
+async function drawMessageBubbleRasterized(
+  state: PdfState,
+  index: number,
+  message: StoredChatMessage,
+  isUrdu: boolean
+) {
+  const speaker = speakerLabel(message.role, isUrdu)
+  const isUser = message.role === "user"
+  const accent = isUser
+    ? `rgb(${COLOR_PRIMARY.join(",")})`
+    : `rgb(${COLOR_SAGE.join(",")})`
+  const rawText = (message.content ?? "").trim() || "(no text in this turn)"
+  const bodyIsRtl = containsUrduScript(rawText)
+  // System/Urdu font stack — we fall back through fonts commonly present on
+  // Windows, macOS, and Linux, landing on generic sans last.
+  const urduFontStack =
+    "'Noto Nastaliq Urdu','Jameel Noori Nastaleeq','Urdu Typesetting','Noto Naskh Arabic','Geeza Pro','Segoe UI',Arial,sans-serif"
+  const latinFontStack = "Helvetica,Arial,sans-serif"
+
+  const widthPx = Math.round(PDF_CONTENT_W * PDF_PX_PER_MM)
+
+  const container = document.createElement("div")
+  container.style.cssText = [
+    "position:fixed",
+    "left:-10000px",
+    "top:0",
+    `width:${widthPx}px`,
+    "background:rgb(247,243,238)",
+    "border-radius:5.3px",
+    `border-left:4.5px solid ${accent}`,
+    "padding:12px 14px",
+    "box-sizing:border-box",
+    `font-family:${latinFontStack}`,
+    "color:rgb(36,32,28)",
+    "visibility:visible",
+    "pointer-events:none",
+  ].join(";")
+
+  const speakerEl = document.createElement("div")
+  speakerEl.style.cssText = [
+    `color:${accent}`,
+    "font-weight:700",
+    "font-size:11px",
+    "margin-bottom:6px",
+    `font-family:${latinFontStack}`,
+    "direction:ltr",
+    "text-align:left",
+  ].join(";")
+  speakerEl.textContent = `${String(index + 1).padStart(2, "0")} · ${speaker}`
+  container.appendChild(speakerEl)
+
+  const bodyEl = document.createElement("div")
+  bodyEl.style.cssText = [
+    "font-size:13px",
+    "line-height:1.65",
+    `font-family:${bodyIsRtl ? urduFontStack : latinFontStack}`,
+    `direction:${bodyIsRtl ? "rtl" : "ltr"}`,
+    `text-align:${bodyIsRtl ? "right" : "left"}`,
+    "word-break:break-word",
+    "white-space:pre-wrap",
+    "color:rgb(36,32,28)",
+  ].join(";")
+  bodyEl.textContent = rawText
+  container.appendChild(bodyEl)
+
+  const metaExtras: string[] = []
+  if (message.emotion_label) metaExtras.push(`Emotion: ${message.emotion_label}`)
+  if (message.content_type && message.content_type !== "text") {
+    metaExtras.push(`Content: ${message.content_type}`)
+  }
+  if (metaExtras.length) {
+    const metaEl = document.createElement("div")
+    metaEl.style.cssText = [
+      "color:rgb(120,114,107)",
+      "font-style:italic",
+      "font-size:10px",
+      "margin-top:6px",
+      `font-family:${latinFontStack}`,
+      "direction:ltr",
+      "text-align:left",
+    ].join(";")
+    metaEl.textContent = metaExtras.join("  ·  ")
+    container.appendChild(metaEl)
+  }
+
+  document.body.appendChild(container)
+
+  try {
+    const html2canvas = (await import("html2canvas")).default
+    const canvas = await html2canvas(container, {
+      backgroundColor: null,
+      scale: 2,
+      logging: false,
+      useCORS: true,
+    })
+    const heightMm = (canvas.height / canvas.width) * PDF_CONTENT_W
+    const usableH = PDF_PAGE_H - PDF_MARGIN_TOP - PDF_MARGIN_BOTTOM
+    // If the bubble is taller than a full page, scale down to fit; otherwise
+    // let ensureSpace push it to the next page.
+    if (heightMm > usableH) {
+      ensureSpace(state, 0)
+      const scaled = usableH
+      const scaledW = (canvas.width / canvas.height) * scaled
+      const dataUrl = canvas.toDataURL("image/png")
+      state.doc.addImage(dataUrl, "PNG", PDF_MARGIN_X, state.y, scaledW, scaled, undefined, "FAST")
+      state.y += scaled
+    } else {
+      ensureSpace(state, heightMm + 2)
+      const dataUrl = canvas.toDataURL("image/png")
+      state.doc.addImage(dataUrl, "PNG", PDF_MARGIN_X, state.y, PDF_CONTENT_W, heightMm, undefined, "FAST")
+      state.y += heightMm
+    }
+  } finally {
+    container.remove()
+  }
+}
+
 function drawCoverHeader(
   state: PdfState,
   displayName: string | null,
@@ -818,7 +957,8 @@ export async function buildSessionsExportPdf(
   drawCoverHeader(state, displayName ?? null, sessionsInOrder.length, logoDataUrl, reportIsUrdu)
   const L = labelsFor(reportIsUrdu)
 
-  sessionsInOrder.forEach((session, si) => {
+  for (let si = 0; si < sessionsInOrder.length; si += 1) {
+    const session = sessionsInOrder[si]
     // Per-session Urdu detection (for reflection headings + speaker labels)
     const sessionUrdu = isUrduSession(session)
     const SL = labelsFor(sessionUrdu)
@@ -877,12 +1017,18 @@ export async function buildSessionsExportPdf(
         drawTextBlock(state, SL.voiceNote, { size: 9, color: COLOR_MUTED })
         state.y += 1
       }
-      session.messages.forEach((m, i) => {
-        drawMessageBubble(state, i, m, sessionUrdu)
+      const rasterize = sessionTranscriptHasUrduScript(session)
+      for (let i = 0; i < session.messages.length; i += 1) {
+        const m = session.messages[i]
+        if (rasterize) {
+          await drawMessageBubbleRasterized(state, i, m, sessionUrdu)
+        } else {
+          drawMessageBubble(state, i, m, sessionUrdu)
+        }
         state.y += 1.5
-      })
+      }
     }
-  })
+  }
 
   drawFooter(state)
   return state.doc.output("blob")

@@ -6,11 +6,43 @@ import { useClerk } from "@clerk/nextjs"
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
-import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
+import { useProfileDict, useProfileLanguage, dict } from "@/lib/i18n"
 import { apiUpdateUserProfile } from "@/lib/api"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
+
+// Transliteration for common Pakistani / Arabic-origin first names.
+// Falls back to the Roman form when a match isn't found.
+const NAME_UR: Record<string, string> = {
+  hasnain: "حسنین", ahmad: "احمد", ahmed: "احمد", ali: "علی",
+  hassan: "حسن", hasan: "حسن", hussain: "حسین", hussein: "حسین", husain: "حسین",
+  muhammad: "محمد", mohammad: "محمد", mohammed: "محمد", mohamed: "محمد",
+  fatima: "فاطمہ", fatimah: "فاطمہ", ayesha: "عائشہ", aisha: "عائشہ",
+  zainab: "زینب", zaynab: "زینب", omar: "عمر", umar: "عمر", abdullah: "عبداللہ",
+  bilal: "بلال", usman: "عثمان", uthman: "عثمان", khalid: "خالد",
+  saad: "سعد", hamza: "حمزہ", zain: "زین", yasir: "یاسر",
+  ibrahim: "ابراہیم", ismail: "اسماعیل", aafia: "عافیہ", afia: "عافیہ",
+  salman: "سلمان", imran: "عمران", faisal: "فیصل", tariq: "طارق",
+  nadia: "نادیہ", sara: "سارہ", sarah: "سارہ", maryam: "مریم",
+  noor: "نور", hiba: "ہبہ", rida: "ریدا", aleena: "علینہ",
+  anaya: "انایا", ayaan: "ایان", arham: "ارحم", rayyan: "ریان",
+  zoya: "زویا", hira: "حرا", kiran: "کرن", asad: "اسد",
+  waqas: "وقاص", kashif: "کاشف", arif: "عارف", adeel: "عدیل",
+  haris: "حارث", harris: "حارث", owais: "اویس", daniyal: "دانیال",
+  junaid: "جنید", talha: "طلحہ", musa: "موسیٰ", isa: "عیسیٰ",
+  yusuf: "یوسف", yousuf: "یوسف", uzair: "عزیر", anas: "انس",
+  abubakr: "ابوبکر", abubakar: "ابوبکر", raza: "رضا", haider: "حیدر",
+  abbas: "عباس", jafar: "جعفر", kamran: "کامران", farhan: "فرحان",
+  ibrar: "ابرار", butt: "بٹ",
+}
+
+function toUrName(name: string): string {
+  if (!name) return ""
+  return name.split(/\s+/)
+    .map((part) => NAME_UR[part.toLowerCase()] ?? part)
+    .join(" ")
+}
 
 type HeaderProps = { onStartTutorial?: () => void }
 
@@ -21,8 +53,19 @@ export function Header({ onStartTutorial }: HeaderProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const { theme, setTheme } = useTheme()
-  const t = useProfileDict()
-  const lang = useProfileLanguage()
+  const profileT = useProfileDict()
+  const profileLang = useProfileLanguage()
+  const [forceEn, setForceEn] = useState(false)
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    const check = () => setForceEn(document.documentElement.getAttribute("data-layout") === "ltr")
+    check()
+    const obs = new MutationObserver(check)
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-layout"] })
+    return () => obs.disconnect()
+  }, [])
+  const lang: "en" | "ur" = forceEn ? "en" : profileLang
+  const t = forceEn ? dict.en : profileT
   const [langSwitching, setLangSwitching] = useState(false)
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -61,7 +104,10 @@ export function Header({ onStartTutorial }: HeaderProps) {
     window.location.href = "/"
   }
 
-  const getFirstName = () => user?.first_name || user?.email?.split("@")[0] || "there"
+  const getFirstName = () => {
+    const raw = user?.first_name || user?.email?.split("@")[0] || "there"
+    return lang === "ur" ? toUrName(raw) : raw
+  }
   const getInitial  = () => (user?.first_name || user?.email || "U").charAt(0).toUpperCase()
 
   const getGreeting = () => {
@@ -71,8 +117,16 @@ export function Header({ onStartTutorial }: HeaderProps) {
     return t.goodEvening
   }
 
-  const getDate = () =>
-    new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+  const getDate = () => {
+    const d = new Date()
+    if (lang === "ur") {
+      const weekdaysUr = ["اتوار", "پیر", "منگل", "بدھ", "جمعرات", "جمعہ", "ہفتہ"]
+      const monthsUr = ["جنوری","فروری","مارچ","اپریل","مئی","جون","جولائی","اگست","ستمبر","اکتوبر","نومبر","دسمبر"]
+      const day = String(d.getDate()).replace(/\d/g, (c) => "٠١٢٣٤٥٦٧٨٩"[+c])
+      return `${weekdaysUr[d.getDay()]}، ${day} ${monthsUr[d.getMonth()]}`
+    }
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+  }
 
   return (
     <div

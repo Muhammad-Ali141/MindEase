@@ -179,6 +179,11 @@ class MindEaseChat:
                 _ulog(f"[urdu-chat-timing]  total             : {total_s:.3f}s")
                 _ulog(f"[urdu-chat-timing]  {_fmt_emo(emotions)}")
                 _ulog("[urdu-chat-timing] ─────────────────────────────")
+                _ulog("================ URDU CHAT PIPELINE SUMMARY ================")
+                _ulog(f"  emotion_detection   : {emo_s:7.3f}s")
+                _ulog(f"  qwen_llm (+pipeline): {llm_s:7.3f}s  chars={len(response or '')}")
+                _ulog(f"  TOTAL               : {total_s:7.3f}s")
+                _ulog("============================================================")
 
                 self.last_emotions = emotions
                 self.memory.add_exchange(user_input, response)
@@ -257,8 +262,20 @@ class MindEaseChat:
                 test_context=effective_test_context
             )
             t_llm_done = _time.perf_counter()
-            _log(f"[chat-timing] llm_call:         {(t_llm_done - t_llm_start):.3f}s")
-            _log(f"[chat-timing] TOTAL:            {(t_llm_done - t0):.3f}s")
+            emotion_s = t_em_done - t_em_start
+            rag_s = t_rag_done - t_em_start
+            parallel_block_s = t_rag_done - t_em_start
+            llm_total_s = t_llm_done - t_llm_start
+            total_s = t_llm_done - t0
+            _log(f"[chat-timing] llm_call:         {llm_total_s:.3f}s")
+            _log(f"[chat-timing] TOTAL:            {total_s:.3f}s")
+            _log("================ CHAT PIPELINE SUMMARY ================")
+            _log(f"  emotion_detection   : {emotion_s:7.3f}s")
+            _log(f"  rag_retrieval       : {rag_s:7.3f}s  (ran in parallel with emotion){' [SKIPPED]' if _skip_rag else ''}")
+            _log(f"  parallel block end  : {parallel_block_s:7.3f}s")
+            _log(f"  llm_call            : {llm_total_s:7.3f}s  chars={len(response or '')}")
+            _log(f"  TOTAL               : {total_s:7.3f}s")
+            _log("=======================================================")
 
             # Update memory
             self.memory.add_exchange(user_input, response)
@@ -312,11 +329,20 @@ class MindEaseChat:
                         test_context=effective_test_context,
                         user_first_name=self.user_first_name,
                     )
+                    t_emo_urdu_done = None
                     self.last_emotions = fut_emo.result()
+                    t_emo_urdu_done = _time.perf_counter()
                     response = fut_chat.result()
                 t_llm_done = _time.perf_counter()
-                _ulog(f"[urdu-llm-timing] llm_total:  {(t_llm_done - t0_urdu):.3f}s  chars={len(response or '')}")
+                emo_urdu_s = (t_emo_urdu_done - t0_urdu) if t_emo_urdu_done else 0.0
+                llm_urdu_s = t_llm_done - t0_urdu
+                _ulog(f"[urdu-llm-timing] llm_total:  {llm_urdu_s:.3f}s  chars={len(response or '')}")
                 _ulog(f"[urdu-llm-timing] ── LLM done ───────────────────────────")
+                _ulog("================ URDU CHAT PIPELINE SUMMARY ================")
+                _ulog(f"  emotion_detection   : {emo_urdu_s:7.3f}s  (ran in parallel with LLM)")
+                _ulog(f"  qwen_llm (+pipeline): {llm_urdu_s:7.3f}s  chars={len(response or '')}")
+                _ulog(f"  TOTAL               : {llm_urdu_s:7.3f}s")
+                _ulog("============================================================")
 
                 yield response
                 return
@@ -350,8 +376,11 @@ class MindEaseChat:
                 t_em_done = _time.perf_counter()
                 contexts = _fut_rag.result()
                 t_rag_done = _time.perf_counter()
-            _slog(f"[chat-timing stream] emotion_detection: {(t_em_done - t0s):.3f}s")
-            _slog(f"[chat-timing stream] rag_retrieval:    {(t_rag_done - t0s):.3f}s (parallel)")
+            emotion_s = t_em_done - t0s
+            rag_s = t_rag_done - t0s
+            parallel_block_s = t_rag_done - t0s
+            _slog(f"[chat-timing stream] emotion_detection: {emotion_s:.3f}s")
+            _slog(f"[chat-timing stream] rag_retrieval:    {rag_s:.3f}s (parallel)")
 
             if emotions:
                 emotions_str = (self.emotion_detector.format_emotions_for_llm(emotions)
@@ -371,6 +400,7 @@ class MindEaseChat:
                 context_str = f"{effective_test_context}\n\n{context_str}" if context_str else effective_test_context
             t_llm_start = _time.perf_counter()
             t_first_chunk = None
+            llm_ttft_s = None
             for chunk in self.llm_client.generate_response_stream(
                 user_message=user_input,
                 emotions=emotions_str,
@@ -381,11 +411,22 @@ class MindEaseChat:
             ):
                 if t_first_chunk is None:
                     t_first_chunk = _time.perf_counter()
-                    _slog(f"[chat-timing stream] llm_ttft:         {(t_first_chunk - t_llm_start):.3f}s (time to first token)")
+                    llm_ttft_s = t_first_chunk - t_llm_start
+                    _slog(f"[chat-timing stream] llm_ttft:         {llm_ttft_s:.3f}s (time to first token)")
                 yield chunk
             t_llm_done = _time.perf_counter()
-            _slog(f"[chat-timing stream] llm_total:        {(t_llm_done - t_llm_start):.3f}s")
-            _slog(f"[chat-timing stream] TOTAL:            {(t_llm_done - t0s):.3f}s")
+            llm_total_s = t_llm_done - t_llm_start
+            total_s = t_llm_done - t0s
+            _slog(f"[chat-timing stream] llm_total:        {llm_total_s:.3f}s")
+            _slog(f"[chat-timing stream] TOTAL:            {total_s:.3f}s")
+            _slog("================ CHAT STREAM PIPELINE SUMMARY ================")
+            _slog(f"  emotion_detection   : {emotion_s:7.3f}s")
+            _slog(f"  rag_retrieval       : {rag_s:7.3f}s  (ran in parallel with emotion)")
+            _slog(f"  parallel block end  : {parallel_block_s:7.3f}s")
+            _slog(f"  llm_ttft            : {(llm_ttft_s if llm_ttft_s is not None else 0.0):7.3f}s  (time to first token)")
+            _slog(f"  llm_total           : {llm_total_s:7.3f}s  (full streamed response)")
+            _slog(f"  TOTAL               : {total_s:7.3f}s")
+            _slog("==============================================================")
         except Exception as e:
             yield f"I apologize, but I'm having trouble processing that right now. Could you try rephrasing your message?"
 

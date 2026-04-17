@@ -149,3 +149,6 @@ models/**/*.safetensors
 scraper/output/
 # clerk configuration (can include secrets)
 /.clerk/
+
+# Local Remotion sandbox (not part of MindEase app)
+/my-video/

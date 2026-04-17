@@ -7,7 +7,7 @@ import { dict, useLanguage } from "@/lib/i18n"
 import { LanguageToggle } from "@/components/LanguageToggle"
 import { useEffect, useState, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
-import { ArrowRight, MessageCircle, Mic2, Play, Pause, Volume2, Sun, Moon } from "lucide-react"
+import { ArrowRight, ArrowLeft, MessageCircle, Mic2, Play, Pause, Volume2, Sun, Moon } from "lucide-react"
 import { useTheme } from "next-themes"
 
 import { BeamsBackground } from "@/components/ui/beams-background"
@@ -40,7 +40,16 @@ const rise    = {
 }
 
 // ─── Web app browser mockup ───────────────────────────────────────────────────
-function WebAppMockup() {
+function WebAppMockup({ isUrdu = false }: { isUrdu?: boolean }) {
+  const navLabels = isUrdu
+    ? { chat: "چیٹ", progress: "پیش رفت", assessments: "تشخیصات", settings: "سیٹنگز" }
+    : { chat: "Chat", progress: "Progress", assessments: "Assessments", settings: "Settings" }
+  const online = isUrdu ? "● آن لائن" : "● Online"
+  const msgAi1  = isUrdu ? "آج آپ کیسا محسوس کر رہے ہیں؟ میں سننے کے لیے موجود ہوں۔ 🌿" : "How are you feeling today? I'm here to listen. 🌿"
+  const msgUser1 = isUrdu ? "سچ کہوں تو تھوڑا سا مغلوب ہوں۔" : "A bit overwhelmed, honestly."
+  const msgAi2  = isUrdu ? "یہ بالکل ٹھیک ہے۔ میں آپ کے ساتھ ہوں۔ آرام سے۔ 💛" : "That's completely okay. I'm here with you. Take your time. 💛"
+  const msgUser2 = isUrdu ? "شکریہ، مجھے یہی سننا تھا۔" : "Thank you, I needed to hear that."
+  const placeholder = isUrdu ? "پیغام لکھیں..." : "Type a message..."
   const bubbleBase: React.CSSProperties = {
     ...sans,
     fontSize: "0.8125rem",
@@ -111,10 +120,10 @@ function WebAppMockup() {
           </div>
           {/* Nav items */}
           {[
-            { icon: "💬", label: "Chat", active: true },
-            { icon: "📊", label: "Progress" },
-            { icon: "📋", label: "Assessments" },
-            { icon: "⚙️", label: "Settings" },
+            { icon: "💬", label: navLabels.chat, active: true },
+            { icon: "📊", label: navLabels.progress },
+            { icon: "📋", label: navLabels.assessments },
+            { icon: "⚙️", label: navLabels.settings },
           ].map((item) => (
             <div key={item.label} style={{
               display: "flex", alignItems: "center", gap: "0.5rem",
@@ -144,7 +153,7 @@ function WebAppMockup() {
             </div>
             <div>
               <div style={{ ...sans, fontSize: "0.875rem", fontWeight: 600, color: "var(--foreground)" }}>MindEase AI</div>
-              <div style={{ ...sans, fontSize: "0.6875rem", color: "var(--primary)" }}>● Online</div>
+              <div style={{ ...sans, fontSize: "0.6875rem", color: "var(--primary)" }}>{online}</div>
             </div>
           </div>
 
@@ -156,13 +165,13 @@ function WebAppMockup() {
                 <span style={{ ...serif, fontSize: "0.75rem", color: "white", fontWeight: 600 }}>M</span>
               </div>
               <div style={{ ...bubbleBase, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderBottomLeftRadius: 4, color: "var(--foreground)" }}>
-                How are you feeling today? I'm here to listen. 🌿
+                {msgAi1}
               </div>
             </div>
             {/* User message */}
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <div style={{ ...bubbleBase, backgroundColor: "var(--primary)", color: "white", borderBottomRightRadius: 4 }}>
-                A bit overwhelmed, honestly.
+                {msgUser1}
               </div>
             </div>
             {/* AI message */}
@@ -171,13 +180,13 @@ function WebAppMockup() {
                 <span style={{ ...serif, fontSize: "0.75rem", color: "white", fontWeight: 600 }}>M</span>
               </div>
               <div style={{ ...bubbleBase, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderBottomLeftRadius: 4, color: "var(--foreground)" }}>
-                That's completely okay. I'm here with you. Take your time. 💛
+                {msgAi2}
               </div>
             </div>
             {/* User message */}
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <div style={{ ...bubbleBase, backgroundColor: "var(--primary)", color: "white", borderBottomRightRadius: 4 }}>
-                Thank you, I needed to hear that.
+                {msgUser2}
               </div>
             </div>
           </div>
@@ -197,7 +206,7 @@ function WebAppMockup() {
               display: "flex", alignItems: "center",
               paddingLeft: "1rem",
             }}>
-              <span style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>Type a message...</span>
+              <span style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>{placeholder}</span>
             </div>
             <div style={{ width: 36, height: 36, borderRadius: "50%", backgroundColor: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               <ArrowRight size={14} color="white" />
@@ -240,7 +249,8 @@ function VoicePlayer({ isUrdu }: { isUrdu: boolean }) {
     >
       <audio
         ref={audioRef}
-        src="/sample-voice.mp3"
+        src={isUrdu ? "/sample-voice-ur.mp3?v=5" : "/sample-voice.mp3?v=5"}
+        preload="metadata"
         onTimeUpdate={e => setProgress((e.currentTarget.currentTime / (e.currentTarget.duration || 1)) * 100)}
         onLoadedMetadata={e => setDuration(e.currentTarget.duration)}
         onEnded={() => { setPlaying(false); setProgress(0) }}
@@ -260,7 +270,7 @@ function VoicePlayer({ isUrdu }: { isUrdu: boolean }) {
       >
         {playing
           ? <Pause size={14} color="white" fill="white" />
-          : <Play  size={14} color="white" fill="white" style={{ marginLeft: 2 }} />
+          : <Play  size={14} color="white" fill="white" style={{ marginLeft: isUrdu ? 0 : 2, marginRight: isUrdu ? 2 : 0, transform: isUrdu ? "scaleX(-1)" : undefined }} />
         }
       </motion.button>
 
@@ -361,20 +371,20 @@ const FEATURES_EN = [
 
 const FEATURES_UR = [
   { step: "خصوصیت 1", title: "دو زبانی سہولت",     content: "انگریزی اور اردو دونوں میں بے رکاوٹ بات چیت۔",                  image: FEATURES_EN[0].image },
-  { step: "خصوصیت 2", title: "جذبات کا تجزیہ",    content: "AI آپ کے جذبات کو سمجھ کر ہمدردی سے جواب دیتا ہے۔",              image: FEATURES_EN[1].image },
-  { step: "خصوصیت 3", title: "کلینیکل تشخیص",      content: "PHQ-9، GAD-7 اور اسٹریس اسکریننگ رہنمائی کے ساتھ۔",           image: FEATURES_EN[2].image },
-  { step: "خصوصیت 4", title: "سیشن یادداشت",       content: "ہر سیشن یاد رکھا، خلاصہ کیا، اور بعد میں دستیاب۔",            image: FEATURES_EN[3].image },
+  { step: "خصوصیت 2", title: "جذبات کا تجزیہ",    content: "AI آپ کے جذبات کو سمجھ کر ہمدردی سے جواب دیتا ہے۔",              image: "/images/features/feature-emotion-ur.svg" },
+  { step: "خصوصیت 3", title: "کلینیکل تشخیص",      content: "PHQ-9، GAD-7 اور اسٹریس اسکریننگ رہنمائی کے ساتھ۔",           image: "/images/features/feature-assessment-ur.svg" },
+  { step: "خصوصیت 4", title: "سیشن یادداشت",       content: "ہر سیشن یاد رکھا، خلاصہ کیا، اور بعد میں دستیاب۔",            image: "/images/features/feature-memory-ur.svg" },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const lang   = useLanguage()
-  const t      = dict[lang]
-  const isUrdu = lang === "ur"
+  const [mounted,  setMounted]  = useState(false)
+  const isUrdu = mounted && lang === "ur"
+  const t      = dict[isUrdu ? "ur" : "en"]
   const { theme, setTheme } = useTheme()
   const router = useRouter()
 
-  const [mounted,  setMounted]  = useState(false)
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
@@ -448,7 +458,7 @@ export default function HomePage() {
               <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1.25rem", borderRadius: 100, backgroundColor: C.ink, color: C.bg, fontSize: "0.875rem", fontWeight: 500, cursor: "pointer" }}
               >
-                {t.register} <ArrowRight size={13} />
+                {t.register} {isUrdu ? <ArrowLeft size={13} /> : <ArrowRight size={13} />}
               </motion.div>
             </Link>
           </nav>
@@ -514,7 +524,7 @@ export default function HomePage() {
                     onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 8px 28px rgba(166,124,82,0.32)")}
                     onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 4px 18px rgba(166,124,82,0.28)")}
                   >
-                    {isUrdu ? "مفت شروع کریں" : "Start for free"} <ArrowRight size={15} />
+                    {isUrdu ? "مفت شروع کریں" : "Start for free"} {isUrdu ? <ArrowLeft size={15} /> : <ArrowRight size={15} />}
                   </motion.div>
                 </Link>
                 <Link href="/auth" style={{ textDecoration: "none" }}>
@@ -550,7 +560,7 @@ export default function HomePage() {
               transition={{ duration: 1.1, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
               className={isUrdu ? "md:order-1" : "md:order-2"}
             >
-              <WebAppMockup />
+              <WebAppMockup isUrdu={isUrdu} />
             </motion.div>
           </div>
         </div>
@@ -567,10 +577,10 @@ export default function HomePage() {
         <div className="max-w-5xl mx-auto px-6">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-8">
             {[
-              { num: "10k+",  label: isUrdu ? "سیشن مکمل"    : "Sessions completed" },
-              { num: "2",     label: isUrdu ? "زبانیں"        : "Languages supported" },
-              { num: "24/7",  label: isUrdu ? "ہمیشہ دستیاب" : "Always available" },
-              { num: "100%",  label: isUrdu ? "رازداری"       : "Private & secure" },
+              { num: isUrdu ? "۱۰ہزار+" : "10k+",  label: isUrdu ? "سیشن مکمل"    : "Sessions completed" },
+              { num: isUrdu ? "۲"        : "2",     label: isUrdu ? "زبانیں"        : "Languages supported" },
+              { num: isUrdu ? "۲۴/۷"     : "24/7",  label: isUrdu ? "ہمیشہ دستیاب" : "Always available" },
+              { num: isUrdu ? "۱۰۰٪"     : "100%",  label: isUrdu ? "رازداری"       : "Private & secure" },
             ].map((stat, i) => (
               <motion.div
                 key={i}
@@ -601,6 +611,7 @@ export default function HomePage() {
               features={features}
               title={isUrdu ? "آپ کو جو چاہیے، سب یہاں ہے" : "Everything you need for mental wellness"}
               autoPlayInterval={4500}
+              isUrdu={isUrdu}
             />
           </motion.div>
         </div>
@@ -735,7 +746,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3">
             {[
               {
-                num: "01", accent: "#a67c52", bg: C.clayLight,
+                num: "01", numLabel: isUrdu ? "۱" : "01", stepLabel: isUrdu ? "مرحلہ ۱" : "Step 01", accent: "#a67c52", bg: C.clayLight,
                 icon: (
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a67c52" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
@@ -748,7 +759,7 @@ export default function HomePage() {
                 desc:  isUrdu ? "سادہ سوالات کے ذریعے اپنی ذہنی حالت کو سمجھیں۔"         : "A short questionnaire helps us understand your emotional needs and tailor support for you.",
               },
               {
-                num: "02", accent: "var(--sage)", bg: C.sageLight,
+                num: "02", numLabel: isUrdu ? "۲" : "02", stepLabel: isUrdu ? "مرحلہ ۲" : "Step 02", accent: "var(--sage)", bg: C.sageLight,
                 icon: (
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sage)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -759,7 +770,7 @@ export default function HomePage() {
                 desc:  isUrdu ? "ٹیکسٹ یا آواز کے ذریعے بات چیت شروع کریں۔"              : "Start a conversation via text or voice in English or Urdu — no waiting room required.",
               },
               {
-                num: "03", accent: "#a67c52", bg: C.clayLight,
+                num: "03", numLabel: isUrdu ? "۳" : "03", stepLabel: isUrdu ? "مرحلہ ۳" : "Step 03", accent: "#a67c52", bg: C.clayLight,
                 icon: (
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a67c52" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="18" y1="20" x2="18" y2="10"/>
@@ -789,7 +800,7 @@ export default function HomePage() {
                   color: "var(--primary)", opacity: 0.7,
                   userSelect: "none" as const, pointerEvents: "none" as const,
                 }}>
-                  {step.num}
+                  {step.numLabel}
                 </div>
 
                 <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: step.bg, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "1.25rem" }}>
@@ -797,7 +808,7 @@ export default function HomePage() {
                 </div>
 
                 <div style={{ fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: step.accent, marginBottom: "0.625rem" }}>
-                  Step {step.num}
+                  {step.stepLabel}
                 </div>
                 <h3 style={{ ...serif, fontSize: "1.5rem", fontWeight: 500, letterSpacing: "-0.01em", marginBottom: "0.75rem", color: C.ink }}>{step.title}</h3>
                 <p style={{ fontSize: "0.9375rem", color: C.muted, lineHeight: 1.72 }}>{step.desc}</p>
@@ -837,7 +848,7 @@ export default function HomePage() {
                 onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 12px 32px rgba(0,0,0,0.18)")}
                 onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)")}
               >
-                {isUrdu ? "مفت میں شروع کریں" : "Start for free"} <ArrowRight size={16} />
+                {isUrdu ? "مفت میں شروع کریں" : "Start for free"} {isUrdu ? <ArrowLeft size={16} /> : <ArrowRight size={16} />}
               </motion.div>
             </Link>
             <p style={{ marginTop: "1.25rem", fontSize: "0.8125rem", color: "rgba(255,255,255,0.45)" }}>

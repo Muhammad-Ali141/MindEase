@@ -3,13 +3,17 @@
 import { TrendingUp, Calendar, Award, TrendingDown, Minus, Info, Flame } from "lucide-react"
 import { useDashboardData } from "@/context/DashboardDataContext"
 import { type MoodTrendData } from "@/lib/api"
-import { useProfileDict } from "@/lib/i18n"
+import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 export function QuickStats() {
   const t = useProfileDict()
+  const lang = useProfileLanguage()
+  const isUr = lang === "ur"
+  const urNum = (n: number | string) =>
+    isUr ? String(n).replace(/\d/g, (c) => "٠١٢٣٤٥٦٧٨٩"[+c]) : String(n)
   const { loading, sessionCount, moodTrend, streak } = useDashboardData()
 
   // ── Mood chart ──────────────────────────────────────────────────────────────
@@ -122,7 +126,7 @@ export function QuickStats() {
 
   const BigNum = ({ n }: { n: number | null }) => (
     <span style={{ ...serif, fontSize: "2.75rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1 }}>
-      {loading ? "–" : n ?? 0}
+      {loading ? "–" : urNum(n ?? 0)}
     </span>
   )
 
@@ -140,7 +144,7 @@ export function QuickStats() {
         <BigNum n={sessionCount} />
         <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.375rem" }}>
           {loading ? "" : sessionCount && sessionCount > 0
-            ? sessionCount === 1 ? t.sessionCompleted : `${sessionCount} ${t.sessionsCompleted}`
+            ? sessionCount === 1 ? t.sessionCompleted : `${urNum(sessionCount)} ${t.sessionsCompleted}`
             : t.startFirstSession}
         </p>
       </Card>
@@ -160,7 +164,7 @@ export function QuickStats() {
         {!loading && (
           <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem" }}>
             {moodTrend.length > 0
-              ? moodTrend.length === 1 ? t.assessmentTrackedOne : `${moodTrend.length} ${t.assessmentsTracked}`
+              ? moodTrend.length === 1 ? t.assessmentTrackedOne : `${urNum(moodTrend.length)} ${t.assessmentsTracked}`
               : t.completeScreeningToStart}
           </p>
         )}
@@ -184,8 +188,8 @@ export function QuickStats() {
         </div>
         <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.375rem" }}>
           {loading ? ""
-            : streak && streak.current > 0 ? `${streak.current} ${streak.current === 1 ? t.day : t.days} ${t.inARow}`
-            : streak && streak.longest > 0 ? `${t.bestStreak}: ${streak.longest} ${streak.longest === 1 ? t.day : t.days}`
+            : streak && streak.current > 0 ? `${urNum(streak.current)} ${streak.current === 1 ? t.day : t.days} ${t.inARow}`
+            : streak && streak.longest > 0 ? `${t.bestStreak}: ${urNum(streak.longest)} ${streak.longest === 1 ? t.day : t.days}`
             : t.startDailyCheckin}
         </p>
       </Card>

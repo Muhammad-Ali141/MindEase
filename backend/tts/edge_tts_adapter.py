@@ -23,9 +23,12 @@ class EdgeTTSAdapter:
     # ------------------------------------------------------------------
 
     @staticmethod
-    async def _synthesize_mp3_async(text: str, voice: str) -> bytes:
+    async def _synthesize_mp3_async(text: str, voice: str, rate: str = None) -> bytes:
         import edge_tts
-        communicate = edge_tts.Communicate(text, voice)
+        if rate:
+            communicate = edge_tts.Communicate(text, voice, rate=rate)
+        else:
+            communicate = edge_tts.Communicate(text, voice)
         chunks = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -34,10 +37,10 @@ class EdgeTTSAdapter:
             raise RuntimeError("Edge TTS returned no audio data")
         return b"".join(chunks)
 
-    def _synthesize_mp3(self, text: str, voice: str = None) -> bytes:
+    def _synthesize_mp3(self, text: str, voice: str = None, rate: str = None) -> bytes:
         """Run async synthesis from sync Django views. Windows-safe: uses SelectorEventLoop."""
         import sys
-        coro = self._synthesize_mp3_async(text, voice or self._voice)
+        coro = self._synthesize_mp3_async(text, voice or self._voice, rate=rate)
         # aiohttp (used by edge-tts internally) requires SelectorEventLoop on Windows.
         # The default ProactorEventLoop on Windows does not support it.
         if sys.platform == "win32":
@@ -64,8 +67,11 @@ class EdgeTTSAdapter:
             raise ValueError("Text cannot be empty")
         import time
         t0 = time.perf_counter()
-        mp3 = self._synthesize_mp3(text.strip(), voice)
-        print(f"[edge-tts] voice={voice or self._voice}  {(time.perf_counter() - t0)*1000:.0f}ms  chars={len(text)}  bytes={len(mp3)}")
+        # English: slow down 10% for a calmer therapy cadence. Urdu: leave default.
+        is_urdu = str(language).lower() in ("ur", "urdu")
+        rate = None if is_urdu else "-10%"
+        mp3 = self._synthesize_mp3(text.strip(), voice, rate=rate)
+        print(f"[edge-tts] voice={voice or self._voice}  rate={rate or 'default'}  {(time.perf_counter() - t0)*1000:.0f}ms  chars={len(text)}  bytes={len(mp3)}")
         return mp3
 
     def synthesize_to_file(

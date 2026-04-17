@@ -52,8 +52,15 @@ export function subscribe(cb: () => void) {
   return () => listeners.delete(cb)
 }
 
+// On the server we always report "en" so the HTML matches the default layout.
+// The client-side getSnapshot reads the persisted value, and React re-renders
+// after hydration — the toggle + page content stay in sync.
+function getServerLanguage(): Language {
+  return "en"
+}
+
 export function useLanguage(): Language {
-  return useSyncExternalStore(subscribe, getLanguage, getLanguage)
+  return useSyncExternalStore(subscribe, getLanguage, getServerLanguage)
 }
 
 export const dict = {
@@ -320,6 +327,50 @@ export const dict = {
     voiceThinking: "Thinking…",
     voiceGeneratingVoice: "Generating voice…",
     voiceSpeaking: "Speaking…",
+    // Therapist directory
+    tdConnect: "Connect",
+    tdFind: "Find a Professional Therapist",
+    tdShowingNear: "Showing near",
+    tdNearYou: "Near you",
+    tdProfile: "Profile",
+    tdNoTherapists: "No therapists found for your area.",
+    tdBrowseAll: "Browse all",
+    // Severity labels
+    severityMinimal: "Minimal",
+    severityMild: "Mild",
+    severityModerate: "Moderate",
+    severitySevere: "Severe",
+    // Dashboard tour
+    tourSkip: "Skip tour",
+    tourBack: "Back",
+    tourNext: "Next →",
+    tourFinish: "Finish ✓",
+    tourStep: "Step %1 of %2",
+    tourMissing: "Couldn't highlight this section — make sure the dashboard is fully loaded.",
+    tour_theme_title: "Switch between light and dark mode",
+    tour_theme_desc: "Toggle between light and dark themes to match your comfort level any time.",
+    tour_profile_title: "Manage your profile",
+    tour_profile_desc: "Open your account menu to edit profile details or log out when you're done.",
+    tour_checkin_title: "Take a quick check-in",
+    tour_checkin_desc: "Run a short diagnostic to capture how you're feeling. We use it to tailor future conversations.",
+    tour_textchat_title: "Start a text session",
+    tour_textchat_desc: "Jump into a supportive text conversation with the AI therapist whenever you need to talk.",
+    tour_voicechat_title: "Plan a voice conversation",
+    tour_voicechat_desc: "Prefer speaking out loud? Use the voice option to prepare for upcoming audio sessions.",
+    tour_sessionsdone_title: "Track completed sessions",
+    tour_sessionsdone_desc: "See how many sessions you've finished so far and celebrate your progress.",
+    tour_mood_title: "Watch your mood trend",
+    tour_mood_desc: "We'll chart how your mood shifts over time as assessments and sessions build up.",
+    tour_streak_title: "Stay motivated with streaks",
+    tour_streak_desc: "Come back regularly to build a streak and keep consistent with your wellbeing check-ins.",
+    tour_recent_title: "Resume recent sessions",
+    tour_recent_desc: "Pick up right where you left off. We store the last few chats so nothing gets lost.",
+    tour_assess_title: "Explore mental health assessments",
+    tour_assess_desc: "Review any self-assessments you've taken and discover new tools as we add them.",
+    tour_therapist_title: "Connect with professionals",
+    tour_therapist_desc: "Browse the therapist directory when you're ready for human support alongside the AI.",
+    tour_tutorial_title: "Replay this anytime",
+    tour_tutorial_desc: "Tap the Tutorial button whenever you want a refresher. It lives here in the header for quick access.",
   },
   ur: {
     loginTitle: "خوش آمدید",
@@ -583,5 +634,49 @@ export const dict = {
     voiceThinking: "Soch raha hoon…",
     voiceGeneratingVoice: "Awaaz bana raha hoon…",
     voiceSpeaking: "Bol raha hoon…",
+    // Therapist directory
+    tdConnect: "رابطہ",
+    tdFind: "تھراپسٹ ڈائرکٹری",
+    tdShowingNear: "قریب دکھائے جا رہے ہیں",
+    tdNearYou: "آپ کے قریب",
+    tdProfile: "پروفائل",
+    tdNoTherapists: "آپ کے علاقے میں کوئی معالج نہیں ملا۔",
+    tdBrowseAll: "سب دیکھیں",
+    // Severity labels
+    severityMinimal: "معمولی",
+    severityMild: "ہلکا",
+    severityModerate: "درمیانہ",
+    severitySevere: "شدید",
+    // Dashboard tour
+    tourSkip: "ٹور چھوڑیں",
+    tourBack: "پیچھے",
+    tourNext: "اگلا ←",
+    tourFinish: "مکمل ✓",
+    tourStep: "مرحلہ %1 از %2",
+    tourMissing: "اس حصے کو نمایاں نہیں کیا جا سکا — یقینی بنائیں کہ ڈیش بورڈ مکمل لوڈ ہو چکا ہے۔",
+    tour_theme_title: "لائٹ اور ڈارک موڈ کے درمیان سوئچ کریں",
+    tour_theme_desc: "اپنی سہولت کے مطابق کسی بھی وقت لائٹ اور ڈارک تھیم کے درمیان منتقل ہوں۔",
+    tour_profile_title: "اپنی پروفائل منظم کریں",
+    tour_profile_desc: "پروفائل کی تفصیلات ترمیم کرنے یا لاگ آؤٹ کے لیے اپنا اکاؤنٹ مینو کھولیں۔",
+    tour_checkin_title: "فوری چیک اِن لیں",
+    tour_checkin_desc: "ایک مختصر تشخیص چلائیں تاکہ ہم آپ کی کیفیت جان سکیں اور آئندہ گفتگو کو اس کے مطابق ڈھال سکیں۔",
+    tour_textchat_title: "ٹیکسٹ سیشن شروع کریں",
+    tour_textchat_desc: "جب بھی بات کرنی ہو، AI معالج کے ساتھ حوصلہ افزا ٹیکسٹ گفتگو شروع کریں۔",
+    tour_voicechat_title: "وائس گفتگو کی منصوبہ بندی کریں",
+    tour_voicechat_desc: "بول کر بات کرنا پسند ہے؟ وائس آپشن استعمال کر کے آنے والے آڈیو سیشن کی تیاری کریں۔",
+    tour_sessionsdone_title: "مکمل سیشن ٹریک کریں",
+    tour_sessionsdone_desc: "دیکھیں اب تک آپ کتنے سیشن مکمل کر چکے ہیں اور اپنی پیشرفت پر خوش ہوں۔",
+    tour_mood_title: "اپنا موڈ ٹرینڈ دیکھیں",
+    tour_mood_desc: "جوں جوں تشخیصات اور سیشن بڑھتے جائیں گے، ہم آپ کے موڈ کی تبدیلی کا نقشہ بنائیں گے۔",
+    tour_streak_title: "سلسلے سے حوصلہ بلند رکھیں",
+    tour_streak_desc: "باقاعدگی سے آئیں تاکہ ایک سلسلہ بنے اور آپ کی فلاح کا جائزہ مستقل رہے۔",
+    tour_recent_title: "حالیہ سیشن دوبارہ شروع کریں",
+    tour_recent_desc: "جہاں چھوڑا تھا وہیں سے شروع کریں۔ ہم آخری چند گفتگوئیں محفوظ رکھتے ہیں۔",
+    tour_assess_title: "ذہنی صحت کی تشخیصات دیکھیں",
+    tour_assess_desc: "اپنی لی گئی تشخیصات کا جائزہ لیں اور جیسے جیسے ہم نئے ٹولز شامل کریں، انہیں دریافت کریں۔",
+    tour_therapist_title: "پیشہ ور افراد سے رابطہ کریں",
+    tour_therapist_desc: "جب آپ AI کے ساتھ انسانی مدد کے لیے تیار ہوں، تو معالج ڈائریکٹری دیکھیں۔",
+    tour_tutorial_title: "جب چاہیں دوبارہ چلائیں",
+    tour_tutorial_desc: "جب بھی یاد دہانی چاہیں ٹیوٹوریل بٹن دبائیں۔ یہ فوری رسائی کے لیے ہیڈر میں موجود ہے۔",
   },
 } as const

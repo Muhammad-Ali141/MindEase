@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation"
 import { useDashboardData } from "@/context/DashboardDataContext"
 import { CheckCircle2, Brain, AlertCircle, Heart, Smile, ArrowRight, Loader2 } from "lucide-react"
-import { useProfileDict } from "@/lib/i18n"
+import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -11,6 +11,18 @@ const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 export function DiagnosticTests() {
   const router = useRouter()
   const t = useProfileDict()
+  const lang = useProfileLanguage()
+  const isUr = lang === "ur"
+
+  const formatTakenAt = (iso: string): string => {
+    const d = new Date(iso)
+    if (isUr) {
+      const monthsUr = ["جنوری","فروری","مارچ","اپریل","مئی","جون","جولائی","اگست","ستمبر","اکتوبر","نومبر","دسمبر"]
+      const toArabExt = (n: number) => String(n).replace(/\d/g, (c) => "٠١٢٣٤٥٦٧٨٩"[+c])
+      return `${toArabExt(d.getDate())} ${monthsUr[d.getMonth()]} ${toArabExt(d.getFullYear())}`
+    }
+    return d.toLocaleDateString()
+  }
   const { loading, testStatus, testHistory } = useDashboardData()
 
   const getTestInfo = (testType: string | null) => {
@@ -23,6 +35,17 @@ export function DiagnosticTests() {
       "mood_test": { name: t.moodAssessment, icon: Smile,       bg: "linear-gradient(135deg,#325944,#5D8A6B)", color: "#90d0a0", desc: t.quickMood },
     }
     return map[testType] || null
+  }
+
+  const severityLabel = (level: string): string => {
+    const td = t as Record<string, string>
+    const key = (level || "").toLowerCase()
+    if (key === "minimal") return td.severityMinimal ?? level
+    if (key === "mild") return td.severityMild ?? level
+    if (key === "moderate") return td.severityModerate ?? level
+    if (key === "severe") return td.severitySevere ?? level
+    if (key === "extremely severe") return `${td.severitySevere ?? "Severe"}+`
+    return level
   }
 
   const severityStyle = (level: string): React.CSSProperties => {
@@ -171,12 +194,12 @@ export function DiagnosticTests() {
                         </p>
 
                         {/* Date */}
-                        <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-                          {new Date(r.taken_at).toLocaleDateString()}
+                        <p dir={isUr ? "rtl" : undefined} style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                          {formatTakenAt(r.taken_at)}
                         </p>
 
                         {/* Severity */}
-                        <span style={severityStyle(r.severity_level)}>{r.severity_level}</span>
+                        <span style={severityStyle(r.severity_level)}>{severityLabel(r.severity_level)}</span>
                       </div>
                     </div>
                   )

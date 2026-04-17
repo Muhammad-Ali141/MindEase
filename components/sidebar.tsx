@@ -7,7 +7,7 @@ import { useClerk } from "@clerk/nextjs"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useProfileDict } from "@/lib/i18n"
+import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -31,6 +31,8 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
   const { signOut } = useClerk()
   const { theme } = useTheme()
   const t = useProfileDict()
+  const lang = useProfileLanguage()
+  const isUr = lang === "ur"
   const [mounted, setMounted] = useState(false)
   const [pathname, setPathname] = useState("")
   useEffect(() => setMounted(true), [])
@@ -134,7 +136,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
               onMouseEnter={e => { e.currentTarget.style.backgroundColor = C.toggleHBg; e.currentTarget.style.color = C.toggleHTx }}
               onMouseLeave={e => { e.currentTarget.style.backgroundColor = C.toggleBg;  e.currentTarget.style.color = C.toggleTx }}
             >
-              <ChevronLeft size={13} strokeWidth={2.5} />
+              {isUr ? <ChevronRight size={13} strokeWidth={2.5} /> : <ChevronLeft size={13} strokeWidth={2.5} />}
             </button>
           </>
         )}
@@ -157,7 +159,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
             onMouseEnter={e => { e.currentTarget.style.backgroundColor = C.toggleHBg; e.currentTarget.style.color = C.toggleHTx }}
             onMouseLeave={e => { e.currentTarget.style.backgroundColor = C.toggleBg;  e.currentTarget.style.color = C.toggleTx }}
           >
-            <ChevronRight size={12} strokeWidth={2.5} />
+            {isUr ? <ChevronLeft size={12} strokeWidth={2.5} /> : <ChevronRight size={12} strokeWidth={2.5} />}
           </button>
         </div>
       )}

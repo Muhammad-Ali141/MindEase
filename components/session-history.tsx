@@ -6,9 +6,9 @@ import { useAuth } from "@/context/AuthContext"
 import { useDashboardData } from "@/context/DashboardDataContext"
 import { apiToggleSessionStar, type SessionPreview } from "@/lib/api"
 import { exportPreviewsToPdfFile, exportSinglePreviewToPdfFile } from "@/lib/export-sessions"
-import { MessageCircle, Star, Mic2, ArrowRight, Clock, Download, Loader2 } from "lucide-react"
+import { MessageCircle, Star, Mic2, ArrowRight, ArrowLeft, Clock, Download, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { useProfileDict } from "@/lib/i18n"
+import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -17,6 +17,8 @@ export function SessionHistory() {
   const router = useRouter()
   const { user } = useAuth()
   const t = useProfileDict()
+  const lang = useProfileLanguage()
+  const isUr = lang === "ur"
   const { loading, sessions, patchSession } = useDashboardData()
   const [exporting, setExporting] = useState(false)
   const [exportingSessionId, setExportingSessionId] = useState<string | null>(null)
@@ -142,8 +144,17 @@ export function SessionHistory() {
                 e.currentTarget.style.color = "var(--foreground)"
               }}
             >
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-              {exporting ? t.exportSessionsLoading : t.exportSessions}
+              {isUr ? (
+                <>
+                  {exporting ? t.exportSessionsLoading : t.exportSessions}
+                  {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                </>
+              ) : (
+                <>
+                  {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  {exporting ? t.exportSessionsLoading : t.exportSessions}
+                </>
+              )}
             </button>
             <button
               onClick={() => router.push("/sessions")}
@@ -153,7 +164,7 @@ export function SessionHistory() {
                 background: "none", border: "none", cursor: "pointer",
               }}
             >
-              {t.viewAll} <ArrowRight size={13} />
+              {t.viewAll} {isUr ? <ArrowLeft size={13} /> : <ArrowRight size={13} />}
             </button>
           </div>
         </div>
@@ -219,14 +230,6 @@ export function SessionHistory() {
                     <span style={{ ...sans, fontSize: "0.84375rem", fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {s.title}
                     </span>
-                    <span style={{
-                      ...sans, fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.07em",
-                      textTransform: "uppercase", padding: "0.1rem 0.35rem", borderRadius: 3, flexShrink: 0,
-                      backgroundColor: s.has_voice ? "color-mix(in srgb, var(--sage) 15%, transparent)" : "color-mix(in srgb, var(--primary) 12%, transparent)",
-                      color: s.has_voice ? "var(--sage)" : "var(--primary)",
-                    }}>
-                      {s.has_voice ? t.voice : t.text}
-                    </span>
                   </div>
                   <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.1rem" }}>
                     {formatDate(s.updated_at)}
@@ -235,13 +238,17 @@ export function SessionHistory() {
                 </div>
 
                 {/* Summary */}
-                <p style={{
-                  ...sans, fontSize: "0.71875rem", color: "var(--muted-foreground)",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  minWidth: 0, opacity: 0.85,
-                }}>
-                  {s.short_summary || s.summary || "—"}
-                </p>
+                {isUr ? (
+                  <span />
+                ) : (
+                  <p style={{
+                    ...sans, fontSize: "0.71875rem", color: "var(--muted-foreground)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    minWidth: 0, opacity: 0.85,
+                  }}>
+                    {s.short_summary || s.summary || "—"}
+                  </p>
+                )}
 
                 {/* Actions */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.2rem", flexShrink: 0 }}>
@@ -292,7 +299,7 @@ export function SessionHistory() {
                     <Star size={10} strokeWidth={1.75} fill={s.is_starred ? "currentColor" : "none"} />
                   </button>
                   <div style={{ width: 24, height: 24, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-foreground)", opacity: 0.6 }}>
-                    <ArrowRight size={12} />
+                    {isUr ? <ArrowLeft size={12} /> : <ArrowRight size={12} />}
                   </div>
                 </div>
               </div>

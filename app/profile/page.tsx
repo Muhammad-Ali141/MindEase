@@ -13,6 +13,7 @@ import { useAuth } from "@/context/AuthContext"
 import { apiGetUserProfile, apiUpdateUserProfile } from "@/lib/api"
 import { BeamsBackground } from "@/components/ui/beams-background"
 import { useTheme } from "next-themes"
+import { useProfileLanguage } from "@/lib/i18n"
 import {
   User, Mail, Calendar, Languages, Lock, Save,
   MapPin, Loader2, Eye, EyeOff, CheckCircle2,
@@ -23,6 +24,21 @@ const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 
 const majorCitySuggestions = ["Islamabad", "Lahore", "Karachi", "Multan", "Peshawar", "Faisalabad"]
+
+const UR_MONTHS: Record<string, string> = {
+  January: "جنوری", February: "فروری", March: "مارچ", April: "اپریل",
+  May: "مئی", June: "جون", July: "جولائی", August: "اگست",
+  September: "ستمبر", October: "اکتوبر", November: "نومبر", December: "دسمبر",
+}
+const toUrDigits = (s: string) => s.replace(/\d/g, (c) => "۰۱۲۳۴۵۶۷۸۹"[+c])
+function memberSinceUr(createdAt: string | null | undefined): string {
+  if (!createdAt) return "حال ہی میں"
+  const d = new Date(createdAt)
+  if (Number.isNaN(d.getTime())) return "حال ہی میں"
+  const month = d.toLocaleDateString("en-US", { month: "long" })
+  const year = String(d.getFullYear())
+  return `${UR_MONTHS[month] ?? month} ${toUrDigits(year)}`
+}
 
 /** Normalize lang_pref from API (en/ur/english/urdu/English/Urdu) to form value en|ur */
 function toFormLangPref(v: string | null | undefined): "en" | "ur" {
@@ -301,6 +317,108 @@ export default function ProfilePage() {
   const { toast } = useToast()
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
+  const isUr = useProfileLanguage() === "ur"
+  const t = isUr
+    ? {
+        account: "اکاؤنٹ",
+        profileSettings: "پروفائل سیٹنگز",
+        yourProfile: "آپ کا پروفائل",
+        since: "شامل ہوئے",
+        sections: "سیکشنز",
+        navPersonal: "ذاتی معلومات",
+        navContact: "رابطہ اور لوکیشن",
+        navPreferences: "ترجیحات",
+        navSecurity: "سیکیورٹی",
+        personalEyebrow: "ذاتی",
+        personalTitle: "ذاتی معلومات",
+        contactEyebrow: "رابطہ",
+        contactTitle: "رابطہ اور لوکیشن",
+        preferencesEyebrow: "ترجیحات",
+        preferencesTitle: "ایپ کی ترجیحات",
+        securityEyebrow: "سیکیورٹی",
+        securityTitle: "پاس ورڈ تبدیل کریں",
+        firstName: "پہلا نام",
+        lastName: "آخری نام",
+        firstNamePh: "پہلا نام",
+        lastNamePh: "آخری نام",
+        dob: "تاریخ پیدائش",
+        gender: "جنس",
+        male: "مرد",
+        female: "عورت",
+        other: "دیگر",
+        email: "ای میل ایڈریس",
+        locked: "لاک",
+        emailLockedNote: "ای میل تبدیل نہیں کی جا سکتی۔ ضرورت پر سپورٹ سے رابطہ کریں۔",
+        city: "شہر",
+        cityPh: "آپ کا شہر",
+        nearestCity: "قریب ترین بڑا شہر",
+        nearestCityPh: "قریب ترین بڑا شہر",
+        preferredLang: "ترجیحی زبان",
+        langNote: "یہ آپ کی تھراپی سیشنز اور اسیسمنٹس میں استعمال ہونے والی زبان کنٹرول کرتا ہے۔",
+        passwordNote: "اپنا موجودہ پاس ورڈ برقرار رکھنے کے لیے دونوں فیلڈز خالی چھوڑ دیں۔",
+        newPassword: "نیا پاس ورڈ",
+        confirmPassword: "پاس ورڈ کی تصدیق",
+        minChars: "کم از کم ۸ حروف",
+        repeatPassword: "نیا پاس ورڈ دہرائیں",
+        cancel: "منسوخ کریں",
+        save: "تبدیلیاں محفوظ کریں",
+        saving: "محفوظ ہو رہا ہے…",
+        saved: "محفوظ ہو گیا!",
+        toastError: "خرابی",
+        toastLoadFail: "پروفائل لوڈ نہیں ہو سکا",
+        toastUpdated: "پروفائل اپ ڈیٹ ہو گیا",
+        toastUpdateFail: "پروفائل اپ ڈیٹ نہیں ہو سکا",
+      }
+    : {
+        account: "Account",
+        profileSettings: "Profile Settings",
+        yourProfile: "Your Profile",
+        since: "Since",
+        sections: "Sections",
+        navPersonal: "Personal Info",
+        navContact: "Contact & Location",
+        navPreferences: "Preferences",
+        navSecurity: "Security",
+        personalEyebrow: "Personal",
+        personalTitle: "Personal Information",
+        contactEyebrow: "Contact",
+        contactTitle: "Contact & Location",
+        preferencesEyebrow: "Preferences",
+        preferencesTitle: "App Preferences",
+        securityEyebrow: "Security",
+        securityTitle: "Change Password",
+        firstName: "First Name",
+        lastName: "Last Name",
+        firstNamePh: "First name",
+        lastNamePh: "Last name",
+        dob: "Date of Birth",
+        gender: "Gender",
+        male: "Male",
+        female: "Female",
+        other: "Other",
+        email: "Email Address",
+        locked: "Locked",
+        emailLockedNote: "Email cannot be changed. Contact support if needed.",
+        city: "City",
+        cityPh: "Your city",
+        nearestCity: "Nearest Major City",
+        nearestCityPh: "Nearest major city",
+        preferredLang: "Preferred Language",
+        langNote: "This controls the language used in your therapy sessions and assessments.",
+        passwordNote: "Leave both fields empty to keep your current password unchanged.",
+        newPassword: "New Password",
+        confirmPassword: "Confirm Password",
+        minChars: "Min 8 characters",
+        repeatPassword: "Repeat new password",
+        cancel: "Cancel",
+        save: "Save Changes",
+        saving: "Saving…",
+        saved: "Saved!",
+        toastError: "Error",
+        toastLoadFail: "Failed to load profile",
+        toastUpdated: "Profile updated",
+        toastUpdateFail: "Failed to update profile",
+      }
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -357,7 +475,7 @@ export default function ProfilePage() {
       const data = await apiGetUserProfile(user.id)
       setProfileData(data)
     } catch (e: any) {
-      toast({ title: "Error", description: e.message || "Failed to load profile", variant: "destructive" })
+      toast({ title: t.toastError, description: e.message || t.toastLoadFail, variant: "destructive" })
     } finally {
       setLoading(false)
     }
@@ -396,12 +514,12 @@ export default function ProfilePage() {
       }
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
-      toast({ title: "Profile updated" })
+      toast({ title: t.toastUpdated })
       const { password: _p, confirm_password: _c, ...rest } = values
       reset({ ...rest, password: "", confirm_password: "" })
       await loadProfile()
     } catch (e: any) {
-      toast({ title: "Error", description: e.message || "Failed to update profile", variant: "destructive" })
+      toast({ title: t.toastError, description: e.message || t.toastUpdateFail, variant: "destructive" })
     }
   }
 
@@ -410,17 +528,19 @@ export default function ProfilePage() {
     sectionRefs[key]?.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
-  const fullName = [profileData?.first_name, profileData?.last_name].filter(Boolean).join(" ") || "Your Profile"
+  const fullName = [profileData?.first_name, profileData?.last_name].filter(Boolean).join(" ") || t.yourProfile
   const initial  = (profileData?.first_name || "U").charAt(0).toUpperCase()
-  const memberSince = profileData?.created_at
-    ? new Date(profileData.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })
-    : "Recently"
+  const memberSince = isUr
+    ? memberSinceUr(profileData?.created_at)
+    : (profileData?.created_at
+        ? new Date(profileData.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+        : "Recently")
 
   const nav = [
-    { key: "personal",    icon: UserCircle2,       label: "Personal Info"  },
-    { key: "contact",     icon: Navigation,         label: "Contact & Location" },
-    { key: "preferences", icon: SlidersHorizontal,  label: "Preferences"   },
-    { key: "security",    icon: ShieldCheck,        label: "Security"      },
+    { key: "personal",    icon: UserCircle2,       label: t.navPersonal },
+    { key: "contact",     icon: Navigation,        label: t.navContact  },
+    { key: "preferences", icon: SlidersHorizontal, label: t.navPreferences },
+    { key: "security",    icon: ShieldCheck,       label: t.navSecurity },
   ]
 
   if (loading) {
@@ -455,16 +575,16 @@ export default function ProfilePage() {
         <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <Header />
 
-          <main style={{ flex: 1, overflowY: "auto" }}>
+          <main style={{ flex: 1, overflowY: "auto" }} dir={isUr ? "rtl" : "ltr"}>
             <div style={{ padding: "2rem 2.25rem 3rem", maxWidth: 1060, margin: "0 auto" }}>
 
               {/* Page title row */}
               <div style={{ marginBottom: "2rem" }}>
                 <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.25rem" }}>
-                  Account
+                  {t.account}
                 </p>
                 <h1 style={{ ...serif, fontSize: "2rem", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)" }}>
-                  Profile Settings
+                  {t.profileSettings}
                 </h1>
               </div>
 
@@ -502,7 +622,7 @@ export default function ProfilePage() {
                       <h2 style={{ ...serif, fontSize: "1.25rem", fontWeight: 500, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
                         {fullName}
                       </h2>
-                      <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
+                      <p dir="ltr" style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180, unicodeBidi: "isolate" }}>
                         {profileData?.email || ""}
                       </p>
                     </div>
@@ -514,7 +634,7 @@ export default function ProfilePage() {
                       backgroundColor: "color-mix(in srgb, var(--sage) 12%, transparent)",
                       color: "var(--sage)", border: "1px solid color-mix(in srgb, var(--sage) 22%, transparent)",
                     }}>
-                      Since {memberSince}
+                      {t.since} {memberSince}
                     </div>
                   </div>
 
@@ -528,7 +648,7 @@ export default function ProfilePage() {
                     display: "flex", flexDirection: "column", gap: "0.25rem",
                   }}>
                     <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted-foreground)", padding: "0.25rem 0.75rem 0.5rem" }}>
-                      Sections
+                      {t.sections}
                     </p>
                     {nav.map(n => (
                       <NavItem
@@ -548,7 +668,7 @@ export default function ProfilePage() {
 
                   {/* Personal */}
                   <div ref={sectionRefs.personal}>
-                    <SectionCard id="personal" icon={UserCircle2} eyebrow="Personal" title="Personal Information">
+                    <SectionCard id="personal" icon={UserCircle2} eyebrow={t.personalEyebrow} title={t.personalTitle}>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                         <Controller
                           name="first_name"
@@ -556,10 +676,10 @@ export default function ProfilePage() {
                           defaultValue=""
                           render={({ field }) => (
                             <StyledInput
-                              label="First Name"
+                              label={t.firstName}
                               icon={User}
                               error={errors.first_name?.message}
-                              placeholder="First name"
+                              placeholder={t.firstNamePh}
                               value={field.value ?? ""}
                               onChange={(e) => field.onChange(e.target.value)}
                               onBlur={field.onBlur}
@@ -573,10 +693,10 @@ export default function ProfilePage() {
                           defaultValue=""
                           render={({ field }) => (
                             <StyledInput
-                              label="Last Name"
+                              label={t.lastName}
                               icon={User}
                               error={errors.last_name?.message}
-                              placeholder="Last name"
+                              placeholder={t.lastNamePh}
                               value={field.value ?? ""}
                               onChange={(e) => field.onChange(e.target.value)}
                               onBlur={field.onBlur}
@@ -592,7 +712,7 @@ export default function ProfilePage() {
                           defaultValue=""
                           render={({ field }) => (
                             <StyledInput
-                              label="Date of Birth"
+                              label={t.dob}
                               icon={Calendar}
                               type="date"
                               error={errors.dob?.message}
@@ -608,12 +728,12 @@ export default function ProfilePage() {
                           control={control}
                           render={({ field }) => (
                             <StyledSelect
-                              label="Gender"
+                              label={t.gender}
                               error={errors.gender?.message}
                               options={[
-                                { value: "Male",   label: "Male" },
-                                { value: "Female", label: "Female" },
-                                { value: "Other",  label: "Other" },
+                                { value: "Male",   label: t.male },
+                                { value: "Female", label: t.female },
+                                { value: "Other",  label: t.other },
                               ]}
                               value={field.value ?? "Other"}
                               onChange={(e) => field.onChange(e.target.value)}
@@ -628,10 +748,10 @@ export default function ProfilePage() {
 
                   {/* Contact */}
                   <div ref={sectionRefs.contact}>
-                    <SectionCard id="contact" icon={Navigation} eyebrow="Contact" title="Contact & Location">
+                    <SectionCard id="contact" icon={Navigation} eyebrow={t.contactEyebrow} title={t.contactTitle}>
                       {/* Email: read-only display */}
                       <div style={{ marginBottom: "1rem" }}>
-                        <FieldLabel>Email Address</FieldLabel>
+                        <FieldLabel>{t.email}</FieldLabel>
                         <div style={{
                           display: "flex", alignItems: "center", gap: "0.625rem",
                           height: 44, padding: "0 0.875rem 0 0.75rem",
@@ -650,11 +770,11 @@ export default function ProfilePage() {
                             padding: "0.2rem 0.5rem", borderRadius: 5,
                           }}>
                             <Lock size={9} />
-                            Locked
+                            {t.locked}
                           </div>
                         </div>
                         <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.3rem", opacity: 0.7 }}>
-                          Email cannot be changed. Contact support if needed.
+                          {t.emailLockedNote}
                         </p>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
@@ -664,10 +784,10 @@ export default function ProfilePage() {
                           defaultValue=""
                           render={({ field }) => (
                             <StyledInput
-                              label="City"
+                              label={t.city}
                               icon={MapPin}
                               error={errors.city?.message}
-                              placeholder="Your city"
+                              placeholder={t.cityPh}
                               value={field.value ?? ""}
                               onChange={(e) => field.onChange(e.target.value)}
                               onBlur={field.onBlur}
@@ -681,7 +801,7 @@ export default function ProfilePage() {
                           defaultValue=""
                           render={({ field }) => (
                             <div>
-                              <FieldLabel>Nearest Major City</FieldLabel>
+                              <FieldLabel>{t.nearestCity}</FieldLabel>
                               <div style={{ position: "relative" }}>
                                 <div style={{
                                   position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)",
@@ -700,7 +820,7 @@ export default function ProfilePage() {
                                     color: "var(--foreground)", fontSize: "0.875rem",
                                     outline: "none", boxSizing: "border-box",
                                   } as React.CSSProperties}
-                                  placeholder="Nearest major city"
+                                  placeholder={t.nearestCityPh}
                                   value={field.value ?? ""}
                                   onChange={(e) => field.onChange(e.target.value)}
                                   onBlur={field.onBlur}
@@ -722,7 +842,7 @@ export default function ProfilePage() {
 
                   {/* Preferences */}
                   <div ref={sectionRefs.preferences}>
-                    <SectionCard id="preferences" icon={SlidersHorizontal} eyebrow="Preferences" title="App Preferences">
+                    <SectionCard id="preferences" icon={SlidersHorizontal} eyebrow={t.preferencesEyebrow} title={t.preferencesTitle}>
                       <div style={{ maxWidth: 320 }}>
                         <Controller
                           name="lang_pref"
@@ -730,7 +850,7 @@ export default function ProfilePage() {
                           defaultValue="en"
                           render={({ field }) => (
                             <StyledSelect
-                              label="Preferred Language"
+                              label={t.preferredLang}
                               error={errors.lang_pref?.message}
                               options={[
                                 { value: "en", label: "English" },
@@ -745,32 +865,32 @@ export default function ProfilePage() {
                         />
                       </div>
                       <p style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.75rem", lineHeight: 1.6, opacity: 0.8 }}>
-                        This controls the language used in your therapy sessions and assessments.
+                        {t.langNote}
                       </p>
                     </SectionCard>
                   </div>
 
                   {/* Security */}
                   <div ref={sectionRefs.security}>
-                    <SectionCard id="security" icon={ShieldCheck} eyebrow="Security" title="Change Password">
+                    <SectionCard id="security" icon={ShieldCheck} eyebrow={t.securityEyebrow} title={t.securityTitle}>
                       <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)", marginBottom: "1.25rem", lineHeight: 1.6 }}>
-                        Leave both fields empty to keep your current password unchanged.
+                        {t.passwordNote}
                       </p>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                         <StyledInput
-                          label="New Password"
+                          label={t.newPassword}
                           icon={Lock}
                           type="password"
                           error={errors.password?.message}
-                          placeholder="Min 8 characters"
+                          placeholder={t.minChars}
                           {...register("password")}
                         />
                         <StyledInput
-                          label="Confirm Password"
+                          label={t.confirmPassword}
                           icon={Lock}
                           type="password"
                           error={errors.confirm_password?.message}
-                          placeholder="Repeat new password"
+                          placeholder={t.repeatPassword}
                           disabled={!password || password.length === 0}
                           {...register("confirm_password")}
                         />
@@ -805,7 +925,7 @@ export default function ProfilePage() {
                         e.currentTarget.style.color = "var(--muted-foreground)"
                       }}
                     >
-                      Cancel
+                      {t.cancel}
                     </button>
 
                     <button
@@ -826,11 +946,11 @@ export default function ProfilePage() {
                       }}
                     >
                       {isSubmitting ? (
-                        <><Loader2 size={15} className="animate-spin" /> Saving…</>
+                        <><Loader2 size={15} className="animate-spin" /> {t.saving}</>
                       ) : saved ? (
-                        <><CheckCircle2 size={15} /> Saved!</>
+                        <><CheckCircle2 size={15} /> {t.saved}</>
                       ) : (
-                        <><Save size={15} /> Save Changes</>
+                        <><Save size={15} /> {t.save}</>
                       )}
                     </button>
                   </div>

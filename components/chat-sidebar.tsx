@@ -89,6 +89,7 @@ export function ChatSidebar({ currentSessionId, onNewChat, onSessionSelect, open
 
   return (
     <div
+      dir="ltr"
       style={{
         width: open ? 240 : 56,
         height: "100%",

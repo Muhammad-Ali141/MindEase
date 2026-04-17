@@ -1,36 +1,54 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-label="MindEase">
   <defs>
-    <linearGradient id="meClay" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#c49a6e"/>
-      <stop offset="100%" stop-color="#7a5535"/>
+    <linearGradient id="meBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7f0e3"/>
+      <stop offset="100%" stop-color="#e8dcc5"/>
     </linearGradient>
-    <linearGradient id="meSage" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#7ba88a"/>
+    <linearGradient id="meStroke" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#6b4a2b"/>
+      <stop offset="55%" stop-color="#a67c52"/>
+      <stop offset="100%" stop-color="#c49a6e"/>
+    </linearGradient>
+    <radialGradient id="meDot" cx="0.35" cy="0.35" r="0.8">
+      <stop offset="0%" stop-color="#8ab99a"/>
       <stop offset="100%" stop-color="#4a6e55"/>
-    </linearGradient>
+    </radialGradient>
+    <filter id="meShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="0.45" result="b"/>
+      <feOffset dy="0.6" in="b" result="o"/>
+      <feComponentTransfer in="o" result="s">
+        <feFuncA type="linear" slope="0.4"/>
+      </feComponentTransfer>
+      <feMerge><feMergeNode in="s"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
-  <!-- Soft rounded square backdrop (very subtle, keeps mark grounded) -->
-  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#meClay)"/>
-  <!-- Leaf-heart: two overlapping organic petals forming a mindful heart/leaf -->
-  <!-- Left petal (cream) -->
-  <path
-    d="M32 46 C 18 40, 14 26, 22 20 C 28 16, 32 22, 32 28 Z"
-    fill="#f7f0e6"
-    opacity="0.95"
-  />
-  <!-- Right petal (sage) -->
-  <path
-    d="M32 46 C 46 40, 50 26, 42 20 C 36 16, 32 22, 32 28 Z"
-    fill="url(#meSage)"
-  />
-  <!-- Central vein / stem suggesting spine or growth -->
-  <path
-    d="M32 28 L32 46"
-    stroke="#ffffff"
-    stroke-width="1.6"
-    stroke-linecap="round"
-    opacity="0.75"
-  />
-  <!-- Small dot at top — mindful focal point / thought -->
-  <circle cx="32" cy="18" r="2.4" fill="#f7f0e6"/>
+
+  <!-- Warm paper backdrop -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#meBg)"/>
+  <!-- Subtle inner hairline for depth -->
+  <rect x="2.5" y="2.5" width="59" height="59" rx="14.5" fill="none" stroke="#d9caa7" stroke-width="0.6" opacity="0.55"/>
+
+  <!-- Enso: open brushstroke ring.
+       Outer arc sweeps clockwise 315° from NE-start to NE-end (small gap facing upper right);
+       inner arc sweeps counter-clockwise back. Center (32,32), R=19, r=15.5. -->
+  <g filter="url(#meShadow)">
+    <path
+      d="M 49.86 25.50
+         A 19 19 0 1 1 40.03 14.78
+         L 38.55 17.96
+         A 15.5 15.5 0 1 0 46.57 26.70
+         Z"
+      fill="url(#meStroke)"
+    />
+    <!-- Soft rounded caps on the brush endpoints -->
+    <circle cx="48.22" cy="26.10" r="1.75" fill="url(#meStroke)"/>
+    <circle cx="39.29" cy="16.37" r="1.75" fill="url(#meStroke)"/>
+    <!-- Brush-entry flare (subtle taper out of the top endpoint) -->
+    <path d="M 40.03 14.78 Q 42.4 13.6 43.6 15.2 Q 41.8 16.1 40.1 16.3 Z"
+          fill="url(#meStroke)" opacity="0.8"/>
+  </g>
+
+  <!-- Mindful anchor dot sitting inside the opening -->
+  <circle cx="44.3" cy="21.2" r="3" fill="url(#meDot)"/>
+  <circle cx="43.4" cy="20.3" r="0.85" fill="#ffffff" opacity="0.6"/>
 </svg>

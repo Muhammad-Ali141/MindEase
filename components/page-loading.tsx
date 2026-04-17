@@ -37,11 +37,10 @@ export function PageLoading({ message }: PageLoadingProps) {
         overflow: "hidden",
         marginTop: "0.25rem",
       }}>
-        <div style={{
-          height: "100%",
+        <div className="me-bar-snake" style={{
+          height: "100%", width: "30%",
           backgroundColor: "var(--primary)",
           borderRadius: 2,
-          animation: "me-bar 1.4s ease-in-out infinite",
           opacity: 0.7,
         }} />
       </div>
@@ -57,10 +56,19 @@ export function PageLoading({ message }: PageLoadingProps) {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.82; transform: scale(0.96); }
         }
-        @keyframes me-bar {
-          0% { width: 0%; margin-left: 0; }
-          50% { width: 75%; margin-left: 0; }
-          100% { width: 0%; margin-left: 100%; }
+        .me-bar-snake {
+          animation: me-bar-ltr 1.4s linear infinite;
+        }
+        html[lang="ur"] .me-bar-snake {
+          animation: me-bar-rtl 1.4s linear infinite;
+        }
+        @keyframes me-bar-ltr {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(433%); }
+        }
+        @keyframes me-bar-rtl {
+          0%   { transform: translateX(433%); }
+          100% { transform: translateX(-100%); }
         }
       `}</style>
     </div>

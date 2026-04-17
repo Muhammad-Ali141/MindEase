@@ -30,6 +30,7 @@ interface FeatureStepsProps {
   className?: string
   title?: string
   autoPlayInterval?: number
+  isUrdu?: boolean
 }
 
 export function FeatureSteps({
@@ -37,7 +38,10 @@ export function FeatureSteps({
   className,
   title = "Key Features",
   autoPlayInterval = 4000,
+  isUrdu = false,
 }: FeatureStepsProps) {
+  const toUr = (n: number) =>
+    isUrdu ? String(n).replace(/\d/g, (c) => "٠١٢٣٤٥٦٧٨٩"[+c]) : String(n)
   const [currentFeature, setCurrentFeature] = useState(0)
   const [timerKey, setTimerKey] = useState(0)
 
@@ -56,7 +60,7 @@ export function FeatureSteps({
       {/* Section title */}
       <div style={{ marginBottom: "3.5rem", textAlign: "center" }}>
         <p style={{ ...sans, fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.09em", textTransform: "uppercase" as const, color: C.clay, marginBottom: "0.75rem" }}>
-          What we offer
+          {isUrdu ? "ہم کیا پیش کرتے ہیں" : "What we offer"}
         </p>
         <h2 style={{ ...serif, fontSize: "clamp(2.25rem, 4vw, 3.25rem)", fontWeight: 400, letterSpacing: "-0.025em", lineHeight: 1.12, color: C.ink }}>
           {title}
@@ -93,7 +97,7 @@ export function FeatureSteps({
                   transition: "all 0.3s ease",
                 }}>
                     <span style={{ ...sans, fontSize: "0.75rem", fontWeight: 700, color: isActive ? "white" : C.muted }}>
-                      {index + 1}
+                      {toUr(index + 1)}
                     </span>
                 </div>
 

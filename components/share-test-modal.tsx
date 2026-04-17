@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext"
 import { apiGetDiagnosticTestHistory, type TestHistoryItem } from "@/lib/api"
 import { getTestHistoryCache, setTestHistoryCache } from "@/lib/cache"
 import { useRouter } from "next/navigation"
-import { useProfileDict } from "@/lib/i18n"
+import { dict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -74,13 +74,13 @@ type ShareTestModalProps = {
 export function ShareTestModal({ open, onClose, onShare, onSkip }: ShareTestModalProps) {
   const { user } = useAuth()
   const router = useRouter()
-  const t = useProfileDict()
   const profileLang: "en" | "ur" = useMemo(() => {
     const s = ((user as { lang_pref?: string })?.lang_pref || "en").toLowerCase()
     return s === "ur" || s === "urdu" ? "ur" : "en"
   }, [user])
   const [chosenLang, setChosenLang] = useState<"en" | "ur">(profileLang)
   useEffect(() => { if (open) setChosenLang(profileLang) }, [open, profileLang])
+  const t = dict[chosenLang]
 
   // Seed from cache so the modal opens instantly
   const cachedHistory = user?.id ? getTestHistoryCache(user.id) : null

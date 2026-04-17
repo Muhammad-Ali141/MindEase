@@ -117,6 +117,7 @@ export default function VoiceChatPage() {
   /** Language for THIS voice session. Seeded from profile, overridable in ShareTestModal. */
   const [chatLang, setChatLang] = useState<"en" | "ur">(profileLangPref)
   const t = dict[chatLang]
+
   const sessionTitle =
     savedSession?.title || (currentSessionId ? t.voiceSessionShort : t.voiceNewVoiceSession)
   const apiLangPref = chatLang === "ur" ? ("ur" as const) : undefined

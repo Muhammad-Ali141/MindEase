@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import { useProfileDict } from "@/lib/i18n"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -29,6 +30,7 @@ type HighlightSnapshot = {
 }
 
 export function DashboardTour({ open, onComplete }: DashboardTourProps) {
+  const td = useProfileDict() as Record<string, string>
   const [currentStep, setCurrentStep] = useState(0)
   const [mounted, setMounted] = useState(false)
   const [missingTarget, setMissingTarget] = useState(false)
@@ -44,82 +46,29 @@ export function DashboardTour({ open, onComplete }: DashboardTourProps) {
   const previousHighlightRef = useRef<HighlightSnapshot | null>(null)
 
   const steps = useMemo<TourStep[]>(
-    () => [
-      {
-        id: "theme-toggle",
-        selector: '[data-tour-target="theme-toggle"]',
-        title: "Switch between light and dark mode",
-        description: "Toggle between light and dark themes to match your comfort level any time.",
-      },
-      {
-        id: "profile-menu",
-        selector: '[data-tour-target="profile-menu"]',
-        title: "Manage your profile",
-        description: "Open your account menu to edit profile details or log out when you're done.",
-      },
-      {
-        id: "quick-check-in",
-        selector: '[data-tour-target="quick-check-in"]',
-        title: "Take a quick check-in",
-        description:
-          "Run a short diagnostic to capture how you're feeling. We use it to tailor future conversations.",
-      },
-      {
-        id: "text-chat",
-        selector: '[data-tour-target="text-chat"]',
-        title: "Start a text session",
-        description: "Jump into a supportive text conversation with the AI therapist whenever you need to talk.",
-      },
-      {
-        id: "voice-chat",
-        selector: '[data-tour-target="voice-chat"]',
-        title: "Plan a voice conversation",
-        description: "Prefer speaking out loud? Use the voice option to prepare for upcoming audio sessions.",
-      },
-      {
-        id: "sessions-completed",
-        selector: '[data-tour-target="sessions-completed"]',
-        title: "Track completed sessions",
-        description: "See how many sessions you've finished so far and celebrate your progress.",
-      },
-      {
-        id: "mood-trend",
-        selector: '[data-tour-target="mood-trend"]',
-        title: "Watch your mood trend",
-        description: "We’ll chart how your mood shifts over time as assessments and sessions build up.",
-      },
-      {
-        id: "current-streak",
-        selector: '[data-tour-target="current-streak"]',
-        title: "Stay motivated with streaks",
-        description: "Come back regularly to build a streak and keep consistent with your wellbeing check-ins.",
-      },
-      {
-        id: "recent-sessions",
-        selector: '[data-tour-target="recent-sessions"]',
-        title: "Resume recent sessions",
-        description: "Pick up right where you left off. We store the last few chats so nothing gets lost.",
-      },
-      {
-        id: "mental-health-assessments",
-        selector: '[data-tour-target="mental-health-assessments"]',
-        title: "Explore mental health assessments",
-        description: "Review any self-assessments you’ve taken and discover new tools as we add them.",
-      },
-      {
-        id: "find-therapist",
-        selector: '[data-tour-target="find-therapist"]',
-        title: "Connect with professionals",
-        description: "Browse the therapist directory when you’re ready for human support alongside the AI.",
-      },
-      {
-        id: "tutorial-button",
-        selector: '[data-tour-target="tutorial-button"]',
-        title: "Replay this anytime",
-        description: "Tap the Tutorial button whenever you want a refresher. It lives here in the header for quick access.",
-      },
-    ],
-    [],
+    () => {
+      const defs: { id: string; selector: string; key: string }[] = [
+        { id: "theme-toggle",               selector: '[data-tour-target="theme-toggle"]',               key: "theme" },
+        { id: "profile-menu",               selector: '[data-tour-target="profile-menu"]',               key: "profile" },
+        { id: "quick-check-in",             selector: '[data-tour-target="quick-check-in"]',             key: "checkin" },
+        { id: "text-chat",                  selector: '[data-tour-target="text-chat"]',                  key: "textchat" },
+        { id: "voice-chat",                 selector: '[data-tour-target="voice-chat"]',                 key: "voicechat" },
+        { id: "sessions-completed",         selector: '[data-tour-target="sessions-completed"]',         key: "sessionsdone" },
+        { id: "mood-trend",                 selector: '[data-tour-target="mood-trend"]',                 key: "mood" },
+        { id: "current-streak",             selector: '[data-tour-target="current-streak"]',             key: "streak" },
+        { id: "recent-sessions",            selector: '[data-tour-target="recent-sessions"]',            key: "recent" },
+        { id: "mental-health-assessments",  selector: '[data-tour-target="mental-health-assessments"]',  key: "assess" },
+        { id: "find-therapist",             selector: '[data-tour-target="find-therapist"]',             key: "therapist" },
+        { id: "tutorial-button",            selector: '[data-tour-target="tutorial-button"]',            key: "tutorial" },
+      ]
+      return defs.map(d => ({
+        id: d.id,
+        selector: d.selector,
+        title: td[`tour_${d.key}_title`] ?? "",
+        description: td[`tour_${d.key}_desc`] ?? "",
+      }))
+    },
+    [td],
   )
 
   const totalSteps = steps.length
@@ -419,7 +368,7 @@ export function DashboardTour({ open, onComplete }: DashboardTourProps) {
             {/* Brand icon */}
             <img src="/logo.svg" alt="MindEase" style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, objectFit: "contain" }} />
             <span style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--primary)" }}>
-              Step {currentStep + 1} of {totalSteps}
+              {(td.tourStep ?? "Step %1 of %2").replace("%1", String(currentStep + 1)).replace("%2", String(totalSteps))}
             </span>
           </div>
           <button
@@ -435,7 +384,7 @@ export function DashboardTour({ open, onComplete }: DashboardTourProps) {
             onMouseEnter={e => e.currentTarget.style.color = "var(--foreground)"}
             onMouseLeave={e => e.currentTarget.style.color = "var(--muted-foreground)"}
           >
-            Skip tour
+            {td.tourSkip}
           </button>
         </div>
 
@@ -458,7 +407,7 @@ export function DashboardTour({ open, onComplete }: DashboardTourProps) {
             backgroundColor: "rgba(181,74,53,0.08)",
             fontSize: "0.6875rem", color: "var(--destructive)", lineHeight: 1.5,
           }}>
-            Couldn’t highlight this section — make sure the dashboard is fully loaded.
+            {td.tourMissing}
           </div>
         )}
 
@@ -491,7 +440,7 @@ export function DashboardTour({ open, onComplete }: DashboardTourProps) {
             onMouseEnter={e => { if (currentStep > 0) e.currentTarget.style.backgroundColor = "rgba(166,124,82,0.08)" }}
             onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent" }}
           >
-            Back
+            {td.tourBack}
           </button>
 
           <button
@@ -511,7 +460,7 @@ export function DashboardTour({ open, onComplete }: DashboardTourProps) {
             onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
             onMouseLeave={e => e.currentTarget.style.opacity = "1"}
           >
-            {currentStep === totalSteps - 1 ? "Finish ✓" : "Next →"}
+            {currentStep === totalSteps - 1 ? td.tourFinish : td.tourNext}
           </button>
         </div>
       </div>

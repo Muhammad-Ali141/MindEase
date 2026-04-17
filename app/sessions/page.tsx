@@ -10,7 +10,7 @@ import { apiGetRecentSessions, apiToggleSessionStar, type SessionPreview } from 
 import { getSessionsCache, setSessionsCache } from "@/lib/cache"
 import { MessageCircle, Star, Mic2, BookOpen, Download, Loader2, CheckSquare, Square, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { useProfileDict } from "@/lib/i18n"
+import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
 import {
   exportPreviewsToPdfFile,
   exportSinglePreviewToPdfFile,
@@ -34,6 +34,9 @@ export default function SessionsPage() {
   const [activeFilter, setActiveFilter] = useState<"all" | "starred" | "voice" | "text">("all")
   const { toast } = useToast()
   const t = useProfileDict()
+  const isUr = useProfileLanguage() === "ur"
+  const urNum = (n: number | string) =>
+    isUr ? String(n).replace(/\d/g, (c) => "۰۱۲۳۴۵۶۷۸۹"[+c]) : String(n)
   const [exporting, setExporting] = useState(false)
   const [exportingSessionId, setExportingSessionId] = useState<string | null>(null)
 
@@ -85,14 +88,20 @@ export default function SessionsPage() {
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
       if (diffDays === 0) {
         const h = Math.floor(diffMs / (1000 * 60 * 60))
-        if (h === 0) return "Just now"
+        if (h === 0) return isUr ? "ابھی" : "Just now"
+        if (isUr) return `${urNum(h)} گھنٹے پہلے`
         return h === 1 ? "1 hour ago" : `${h} hours ago`
       }
-      if (diffDays === 1) return "Yesterday"
-      if (diffDays < 7)  return `${diffDays} days ago`
+      if (diffDays === 1) return isUr ? "کل" : "Yesterday"
+      if (diffDays < 7)  return isUr ? `${urNum(diffDays)} دن پہلے` : `${diffDays} days ago`
+      if (isUr) {
+        const monthsUr = ["جنوری","فروری","مارچ","اپریل","مئی","جون","جولائی","اگست","ستمبر","اکتوبر","نومبر","دسمبر"]
+        const base = `${urNum(date.getDate())} ${monthsUr[date.getMonth()]}`
+        return diffDays > 365 ? `${base} ${urNum(date.getFullYear())}` : base
+      }
       return date.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(diffDays > 365 ? { year: "numeric" } : {}) })
     } catch {
-      return "Recent"
+      return isUr ? "حالیہ" : "Recent"
     }
   }
 
@@ -117,12 +126,12 @@ export default function SessionsPage() {
       else                  earlier.push(s)
     })
     const groups: Group[] = []
-    if (today.length)     groups.push({ label: "Today",     sessions: today })
-    if (yesterday.length) groups.push({ label: "Yesterday", sessions: yesterday })
-    if (thisWeek.length)  groups.push({ label: "This Week", sessions: thisWeek })
-    if (earlier.length)   groups.push({ label: "Earlier",   sessions: earlier })
+    if (today.length)     groups.push({ label: isUr ? "آج"       : "Today",     sessions: today })
+    if (yesterday.length) groups.push({ label: isUr ? "کل"       : "Yesterday", sessions: yesterday })
+    if (thisWeek.length)  groups.push({ label: isUr ? "اس ہفتے"  : "This Week", sessions: thisWeek })
+    if (earlier.length)   groups.push({ label: isUr ? "پہلے"     : "Earlier",   sessions: earlier })
     return groups
-  }, [filteredSessions])
+  }, [filteredSessions, isUr])
 
   const stats = useMemo(() => ({
     total:   sessions.length,
@@ -265,20 +274,20 @@ export default function SessionsPage() {
                   style={{ marginBottom: "1.75rem" }}
                 >
                   <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.4rem" }}>
-                    Your journey
+                    {isUr ? "آپ کا سفر" : "Your journey"}
                   </p>
                   <h1 style={{ ...serif, fontSize: "clamp(1.75rem, 3vw, 2.5rem)", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1, marginBottom: "1rem" }}>
-                    Session History
+                    {isUr ? "سیشن ہسٹری" : "Session History"}
                   </h1>
 
                   {/* Stats chips — click to filter */}
                   {!loading && sessions.length > 0 && (
                     <div style={{ display: "flex", gap: "0.625rem", flexWrap: "wrap" }}>
                       {([
-                        { label: "Sessions", value: stats.total,   accent: "var(--primary)", filter: "all"     as const },
-                        { label: "Starred",  value: stats.starred, accent: "#e8a030",        filter: "starred" as const },
-                        { label: "Voice",    value: stats.voice,   accent: "var(--sage)",    filter: "voice"   as const },
-                        { label: "Text",     value: stats.text,    accent: "var(--muted-foreground)", filter: "text" as const },
+                        { label: isUr ? "سیشنز" : "Sessions", value: stats.total,   accent: "var(--primary)", filter: "all"     as const },
+                        { label: isUr ? "اسٹار" : "Starred",  value: stats.starred, accent: "#e8a030",        filter: "starred" as const },
+                        { label: isUr ? "وائس"  : "Voice",    value: stats.voice,   accent: "var(--sage)",    filter: "voice"   as const },
+                        { label: isUr ? "ٹیکسٹ" : "Text",     value: stats.text,    accent: "var(--muted-foreground)", filter: "text" as const },
                       ]).map((s, i) => {
                         const isActive = activeFilter === s.filter
                         return (
@@ -298,7 +307,7 @@ export default function SessionsPage() {
                               transition: "border 0.15s ease, box-shadow 0.15s ease",
                             }}
                           >
-                            <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: s.accent }}>{s.value}</span>
+                            <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: s.accent }}>{urNum(s.value)}</span>
                             <span style={{ fontSize: "0.75rem", color: isActive ? "var(--foreground)" : "var(--muted-foreground)", fontWeight: isActive ? 600 : 400 }}>
                               {s.label}
                             </span>
@@ -356,7 +365,7 @@ export default function SessionsPage() {
                           />
                           {selectedIds.size > 0 && (
                             <span style={{ ...sans, fontSize: "0.75rem", color: "var(--muted-foreground)" }}>
-                              {selectedIds.size} {t.sessionsSelected}
+                              {urNum(selectedIds.size)} {t.sessionsSelected}
                             </span>
                           )}
                         </>
@@ -626,10 +635,28 @@ function SessionCard({
   const t = useProfileDict()
   const starred     = session.is_starred
   const isVoice     = session.has_voice
+  const formatDateEn = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      const now = new Date()
+      const diffMs = now.getTime() - date.getTime()
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+      if (diffDays === 0) {
+        const h = Math.floor(diffMs / (1000 * 60 * 60))
+        if (h === 0) return "Just now"
+        return h === 1 ? "1 hour ago" : `${h} hours ago`
+      }
+      if (diffDays === 1) return "Yesterday"
+      if (diffDays < 7) return `${diffDays} days ago`
+      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(diffDays > 365 ? { year: "numeric" } : {}) })
+    } catch { return "Recent" }
+  }
   const summary     = session.short_summary || session.summary
 
   return (
     <motion.div
+      dir="ltr"
+      data-layout="ltr"
       initial={{ opacity: 0, x: -6 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.2, delay: index * 0.04 }}
@@ -727,7 +754,7 @@ function SessionCard({
         )}
 
         <span style={{ ...sans2, fontSize: "0.6875rem", color: "var(--muted-foreground)", opacity: 0.6 }}>
-          {formatDate(session.updated_at)}
+          {formatDateEn(session.updated_at)}
         </span>
       </button>
 

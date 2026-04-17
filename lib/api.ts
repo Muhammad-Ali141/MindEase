@@ -757,7 +757,7 @@ export async function apiSTTTranscribePartial(
  */
 export async function apiVoiceProcess(
   audioBlob: Blob,
-  language: string = "en"
+  language: string = "en",
 ): Promise<{ transcript: string; emotions: Array<{ emotion: string; score: number }> }> {
   const form = new FormData()
   form.append("audio", audioBlob, "recording.webm")

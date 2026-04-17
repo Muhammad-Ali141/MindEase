@@ -1,11 +1,43 @@
 "use client"
 
-import { MapPin, ArrowRight } from "lucide-react"
+import { MapPin, ArrowRight, ArrowLeft } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { useMemo } from "react"
 import Link from "next/link"
 import { useDashboardData } from "@/context/DashboardDataContext"
 import { type TherapistListItem } from "@/lib/api"
+import { useProfileDict, useProfileLanguage } from "@/lib/i18n"
+
+const CITY_UR: Record<string, string> = {
+  "lahore": "لاہور",
+  "karachi": "کراچی",
+  "islamabad": "اسلام آباد",
+  "rawalpindi": "راولپنڈی",
+  "faisalabad": "فیصل آباد",
+  "multan": "ملتان",
+  "peshawar": "پشاور",
+  "quetta": "کوئٹہ",
+  "hyderabad": "حیدرآباد",
+  "sialkot": "سیالکوٹ",
+  "gujranwala": "گوجرانوالہ",
+  "bahawalpur": "بہاولپور",
+  "sargodha": "سرگودھا",
+  "sukkur": "سکھر",
+  "larkana": "لاڑکانہ",
+  "mardan": "مردان",
+  "abbottabad": "ایبٹ آباد",
+  "pakistan": "پاکستان",
+  "punjab": "پنجاب",
+  "sindh": "سندھ",
+  "balochistan": "بلوچستان",
+  "kpk": "خیبر پختونخوا",
+  "khyber pakhtunkhwa": "خیبر پختونخوا",
+}
+
+function toUrPlace(s: string | undefined | null): string {
+  if (!s) return ""
+  return CITY_UR[s.trim().toLowerCase()] ?? s
+}
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -32,6 +64,9 @@ const PREVIEW_LIMIT = 4
 export function TherapistDirectory() {
   const { user } = useAuth()
   const { loading, therapists } = useDashboardData()
+  const t_ = useProfileDict()
+  const lang = useProfileLanguage()
+  const isUr = lang === "ur"
 
   const { therapistsWithMatch, locationLabel } = useMemo(() => {
     const userCity    = normalizeLocation(user?.city)
@@ -69,15 +104,15 @@ export function TherapistDirectory() {
       }}>
         <div>
           <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--sage)", marginBottom: "0.2rem" }}>
-            Connect
+            {t_.tdConnect}
           </p>
           <h2 style={{ ...serif, fontSize: "1.25rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
-            Find a Professional Therapist
+            {t_.tdFind}
           </h2>
           {cityParam && (
             <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
               <MapPin size={11} />
-              Showing near {locationLabel}
+              {t_.tdShowingNear} {isUr ? toUrPlace(locationLabel) : locationLabel}
             </p>
           )}
         </div>
@@ -89,18 +124,18 @@ export function TherapistDirectory() {
             textDecoration: "none",
           }}
         >
-          View all <ArrowRight size={13} />
+          {t_.viewAll} {isUr ? <ArrowLeft size={13} /> : <ArrowRight size={13} />}
         </Link>
       </div>
 
       {/* 2×2 card grid */}
       <div style={{ padding: "1rem 1.25rem" }}>
         {loading ? (
-          <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>Loading…</p>
+          <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>{t_.loading}</p>
         ) : therapistsWithMatch.length === 0 ? (
           <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)" }}>
-            No therapists found for your area.{" "}
-            <Link href="/dashboard/therapists" style={{ color: "var(--primary)", textDecoration: "none" }}>Browse all</Link>
+            {t_.tdNoTherapists}{" "}
+            <Link href="/dashboard/therapists" style={{ color: "var(--primary)", textDecoration: "none" }}>{t_.tdBrowseAll}</Link>
           </p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
@@ -150,7 +185,7 @@ export function TherapistDirectory() {
                             backgroundColor: "color-mix(in srgb, var(--sage) 15%, transparent)",
                             color: "var(--sage)", textTransform: "uppercase",
                           }}>
-                            Near you
+                            {t_.tdNearYou}
                           </span>
                         )}
                       </div>
@@ -167,7 +202,9 @@ export function TherapistDirectory() {
                     {(t.city || t.region) ? (
                       <p style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)", display: "flex", alignItems: "center", gap: "0.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         <MapPin size={9} style={{ color: "var(--primary)", flexShrink: 0 }} />
-                        {[t.city, t.region].filter(Boolean).join(", ")}
+                        {isUr
+                          ? [t.city, t.region].filter(Boolean).map(s => toUrPlace(s as string)).join("، ")
+                          : [t.city, t.region].filter(Boolean).join(", ")}
                       </p>
                     ) : <span />}
                     {profileUrl && (
@@ -182,7 +219,7 @@ export function TherapistDirectory() {
                           textDecoration: "none",
                         }}
                       >
-                        Profile <ArrowRight size={10} />
+                        {t_.tdProfile} {isUr ? <ArrowLeft size={10} /> : <ArrowRight size={10} />}
                       </a>
                     )}
                   </div>

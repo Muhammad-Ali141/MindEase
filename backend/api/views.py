@@ -240,9 +240,12 @@ def _urdu_voice_welcome_arabic_script(user_first_name=None):
 
 
 def _welcome_audio_lang_suffix(lang_pref, voice_welcome_urdu_script=False):
-    """Urdu cached files are separate so English welcome audio is not reused for Urdu users."""
+    """Urdu cached files share one `_ur` bucket regardless of script variant:
+    the `.txt` slot holds Roman Urdu (text chat) and the `.wav` slot holds
+    native-script Urdu (voice chat). Keeping one suffix keeps the on-disk
+    footprint at 8 files per user (2 per language per mode)."""
     if lang_pref and str(lang_pref).lower() in ("ur", "urdu"):
-        return "_ur_ar" if voice_welcome_urdu_script else "_ur"
+        return "_ur"
     return ""
 
 
@@ -473,7 +476,12 @@ def _ensure_welcome_text_cached(
     user_id, user_first_name, test_context, lang_pref,
     include_context=False, test_context_key=None, voice_welcome_urdu_script=False,
 ) -> str:
-    """Return welcome text, generating and caching under single-flight lock if missing."""
+    """Return welcome text, generating and caching under single-flight lock if missing.
+    The Urdu text cache slot always stores Roman Urdu (for text chat); any
+    native-script request is force-downgraded so the slot can't be clobbered."""
+    is_urdu = bool(lang_pref) and str(lang_pref).lower() in ("urdu", "ur")
+    if is_urdu:
+        voice_welcome_urdu_script = False
     path = _get_welcome_text_path(
         user_id, include_context=include_context, test_context_key=test_context_key,
         lang_pref=lang_pref, voice_welcome_urdu_script=voice_welcome_urdu_script,
@@ -522,48 +530,209 @@ def _ensure_welcome_audio_cached(
         if welcome_message_override:
             welcome_msg = welcome_message_override
         else:
-            welcome_msg = _ensure_welcome_text_cached(
-                user_id, user_first_name, test_context, lang_pref,
-                include_context=include_context, test_context_key=test_context_key,
-                voice_welcome_urdu_script=voice_welcome_urdu_script,
-            )
+            # For Urdu voice the audio must speak native-script Urdu, but the
+            # shared `.txt` slot holds Roman Urdu (used by text chat). Generate
+            # native-script text fresh without touching the text cache; the
+            # sidecar .json next to the .wav preserves it for the client.
+            is_urdu = bool(lang_pref) and str(lang_pref).lower() in ("urdu", "ur")
+            if is_urdu and voice_welcome_urdu_script:
+                welcome_msg = _generate_welcome_text(
+                    user_first_name, test_context, lang_pref,
+                    voice_welcome_urdu_script=True,
+                )
+            else:
+                welcome_msg = _ensure_welcome_text_cached(
+                    user_id, user_first_name, test_context, lang_pref,
+                    include_context=include_context, test_context_key=test_context_key,
+                    voice_welcome_urdu_script=voice_welcome_urdu_script,
+                )
         _synthesize_welcome_audio(welcome_msg, path, lang_pref=lang_pref)
         return path
 
 
+# Two language buckets; each bucket gets 4 cache files (text ctx/no-ctx, audio
+# ctx/no-ctx) for a total of 8 content files per user. For Urdu, `.txt` holds
+# Roman Urdu (for text chat) and `.wav` holds native-script Urdu (for voice
+# chat) — we do not split those into separate on-disk buckets.
+# Tuple: (lang_pref_for_cache, text_vus, audio_vus)
+#   text_vus/audio_vus select content style; both map to the same `_ur` path.
+_WELCOME_VARIANTS = (
+    ("english", False, False),  # English — vus flag ignored by generator
+    ("urdu",    False, True),   # text = Roman Urdu, audio = native-script Urdu
+)
+
+
+def _variant_label(vlang, *_args):
+    """Human-readable variant tag for logs."""
+    return "urdu" if str(vlang).lower() in ("urdu", "ur") else "english"
+
+
+def _legacy_cleanup_ur_ar(user_id):
+    """Remove stale `_ur_ar*` files from the prior split-bucket layout so
+    users that already have a test result collapse to the new 8-file layout."""
+    base = getattr(settings, "MEDIA_ROOT", None) or os.path.join(settings.BASE_DIR, "media")
+    for sub in ("welcome_audio", "welcome_text"):
+        d = os.path.join(base, sub)
+        if not os.path.isdir(d):
+            continue
+        try:
+            for name in os.listdir(d):
+                if name.startswith(f"{user_id}_ur_ar"):
+                    try:
+                        os.unlink(os.path.join(d, name))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+
 def _precompute_welcomes_for_test_result(user_id, user_first_name, lang_pref, test_result_id, test_context):
-    """Generate and cache all welcome variants (text + audio, with-context only for this result).
-    Safe to call concurrently with on-demand: single-flight locks prevent duplicate work."""
+    """Generate and cache welcome text + audio for every chat mode so
+    switching language/mode mid-use has no wait. Writes 8 content files per
+    user: 2 text + 2 audio per language (with-context + no-context)."""
     def _worker():
-        variants = [("", False)]  # English/Roman-Urdu
-        if lang_pref and str(lang_pref).lower() in ("urdu", "ur"):
-            variants.append(("ur_ar", True))  # Arabic-script voice variant
-        for _label, vus in variants:
+        try:
+            tr = Testresult.objects.get(result_id=test_result_id)
+        except Exception:
+            tr = None
+
+        _legacy_cleanup_ur_ar(user_id)
+
+        for vlang, text_vus, audio_vus in _WELCOME_VARIANTS:
+            tag = _variant_label(vlang)
+            print(f"[welcome-precompute] user={user_id} variant={tag} starting")
+            ctx = _build_assessment_test_context(tr, lang_pref=vlang) if tr else test_context
+
+            # Text: ctx + no-ctx
             try:
                 _ensure_welcome_text_cached(
-                    user_id, user_first_name, test_context, lang_pref,
+                    user_id, user_first_name, ctx, vlang,
                     include_context=True, test_context_key=test_result_id,
-                    voice_welcome_urdu_script=vus,
+                    voice_welcome_urdu_script=text_vus,
                 )
             except Exception as e:
-                print(f"[welcome-precompute] text(ctx) failed: {e}")
+                print(f"[welcome-precompute] text(ctx) failed [{tag}]: {e}")
             try:
-                _ensure_welcome_audio_cached(
-                    user_id, user_first_name, test_context, lang_pref,
-                    include_context=True, test_context_key=test_result_id,
-                    voice_welcome_urdu_script=vus,
-                )
-            except Exception as e:
-                print(f"[welcome-precompute] audio(ctx) failed: {e}")
-            # No-context voice (text no-context is static, no caching needed)
-            try:
-                _ensure_welcome_audio_cached(
-                    user_id, user_first_name, None, lang_pref,
+                _ensure_welcome_text_cached(
+                    user_id, user_first_name, None, vlang,
                     include_context=False, test_context_key=None,
-                    voice_welcome_urdu_script=vus,
+                    voice_welcome_urdu_script=text_vus,
                 )
             except Exception as e:
-                print(f"[welcome-precompute] audio(no-ctx) failed: {e}")
+                print(f"[welcome-precompute] text(no-ctx) failed [{tag}]: {e}")
+
+            # Audio: ctx + no-ctx (audio content uses audio_vus; for Urdu this is
+            # native script even though the path collides with the Roman text).
+            try:
+                _ensure_welcome_audio_cached(
+                    user_id, user_first_name, ctx, vlang,
+                    include_context=True, test_context_key=test_result_id,
+                    voice_welcome_urdu_script=audio_vus,
+                )
+            except Exception as e:
+                print(f"[welcome-precompute] audio(ctx) failed [{tag}]: {e}")
+            try:
+                _ensure_welcome_audio_cached(
+                    user_id, user_first_name, None, vlang,
+                    include_context=False, test_context_key=None,
+                    voice_welcome_urdu_script=audio_vus,
+                )
+            except Exception as e:
+                print(f"[welcome-precompute] audio(no-ctx) failed [{tag}]: {e}")
+            print(f"[welcome-precompute] user={user_id} variant={tag} done")
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
+def _refresh_welcomes_if_stale(user):
+    """Login-time safety net: if any of the 8 cached files for the user's
+    latest test result is missing or older than the test, delete the stale
+    ones and trigger a background precompute."""
+    def _worker():
+        try:
+            latest_test = Testresult.objects.filter(user_id=user.user_id).order_by("-taken_at").first()
+        except Exception as e:
+            print(f"[welcome-refresh] could not query latest test: {e}")
+            return
+        if not latest_test:
+            return
+        try:
+            cutoff_ts = latest_test.taken_at.timestamp()
+        except Exception:
+            return
+        result_id = latest_test.result_id
+
+        def _try_unlink(path):
+            try:
+                if os.path.isfile(path):
+                    os.unlink(path)
+            except Exception:
+                pass
+
+        _legacy_cleanup_ur_ar(user.user_id)
+
+        stale_variants = []
+        for vlang, text_vus, audio_vus in _WELCOME_VARIANTS:
+            tag = _variant_label(vlang)
+            text_ctx_path = _get_welcome_text_path(
+                user.user_id, include_context=True, test_context_key=result_id,
+                lang_pref=vlang, voice_welcome_urdu_script=text_vus,
+            )
+            text_noctx_path = _get_welcome_text_path(
+                user.user_id, include_context=False, test_context_key=None,
+                lang_pref=vlang, voice_welcome_urdu_script=text_vus,
+            )
+            audio_ctx_path = _get_welcome_audio_path(
+                user.user_id, include_context=True, test_context_key=result_id,
+                lang_pref=vlang, voice_welcome_urdu_script=audio_vus,
+            )
+            audio_noctx_path = _get_welcome_audio_path(
+                user.user_id, include_context=False, test_context_key=None,
+                lang_pref=vlang, voice_welcome_urdu_script=audio_vus,
+            )
+            sidecar_ctx = audio_ctx_path.replace(".wav", ".json")
+            sidecar_noctx = audio_noctx_path.replace(".wav", ".json")
+
+            checks = [
+                (text_ctx_path, "text-ctx"),
+                (text_noctx_path, "text-noctx"),
+                (audio_ctx_path, "audio-ctx"),
+                (audio_noctx_path, "audio-noctx"),
+                (sidecar_ctx, "sidecar-ctx"),
+                (sidecar_noctx, "sidecar-noctx"),
+            ]
+
+            variant_stale = False
+            reasons = []
+            for p, kind in checks:
+                if not os.path.isfile(p):
+                    variant_stale = True; reasons.append(f"{kind}-missing")
+                else:
+                    try:
+                        if os.path.getmtime(p) < cutoff_ts:
+                            variant_stale = True; reasons.append(f"{kind}-older-than-test")
+                    except Exception:
+                        variant_stale = True; reasons.append(f"{kind}-stat-failed")
+
+            if variant_stale:
+                for p, _ in checks:
+                    _try_unlink(p)
+                stale_variants.append((tag, reasons))
+
+        if not stale_variants:
+            return
+
+        for tag, reasons in stale_variants:
+            print(f"[welcome-refresh] stale variant [{tag}] for user {user.user_id}: {', '.join(reasons)}")
+        ctx_fallback = _build_assessment_test_context(latest_test, lang_pref=user.lang_pref)
+        _precompute_welcomes_for_test_result(
+            user_id=user.user_id,
+            user_first_name=user.first_name,
+            lang_pref=user.lang_pref,
+            test_result_id=result_id,
+            test_context=ctx_fallback,
+        )
+
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
 
@@ -682,6 +851,13 @@ def login_oauth(request):
             user = User.objects.get(email=email_normalized)
         except User.DoesNotExist:
             return JsonResponse({"error": "User not found. Complete sign up first."}, status=404)
+
+        # Safety net: refresh any stale / missing precomputed welcome files.
+        try:
+            _refresh_welcomes_if_stale(user)
+        except Exception as e:
+            print(f"[welcome-refresh] oauth login hook failed: {e}")
+
         # Return same shape as login for frontend setAuth
         return JsonResponse({
             "message": "Login successful.",
@@ -936,6 +1112,13 @@ def login(request):
             if not check_password(password, user.password):
                 return JsonResponse({"error": "Invalid email or password."}, status=401)
 
+            # Safety net: if any precomputed welcome files are missing or older
+            # than the user's latest test, regenerate them in the background.
+            try:
+                _refresh_welcomes_if_stale(user)
+            except Exception as e:
+                print(f"[welcome-refresh] login hook failed: {e}")
+
             return JsonResponse({
                 "message": "Login successful.",
                 "user_id": user.user_id,
@@ -1143,48 +1326,43 @@ def voice_process(request):
             audio_path = tmp.name
         t_saved = _time.perf_counter()
         lang_tag = "ur" if is_urdu else language
-        print(f"[voice-timing] lang={lang_tag}  audio_save: {t_saved - t0:.3f}s  file={suffix}  size={os.path.getsize(audio_path)}B")
+        audio_save_s = t_saved - t0
+        audio_size_b = os.path.getsize(audio_path)
+        print(f"[voice-timing] lang={lang_tag}  audio_save: {audio_save_s:.3f}s  file={suffix}  size={audio_size_b}B")
         try:
             stt_start = _time.perf_counter()
             ser_start_ref = [0.0]
+            stt_time_ref = [0.0]
+            ser_time_ref = [0.0]
+            stt_label_ref = ["en_stt"]
 
             def run_stt():
                 t = _time.perf_counter()
                 if is_urdu:
-                    from urdu_stt.stt_urdu_service import UrduSpeechToTextService, MODEL_ID
-                    svc = UrduSpeechToTextService(
-                        model_id=MODEL_ID,
-                        device=None,
-                        compute_type=None,
-                        beam_size=2,
-                        best_of=4,
-                        temperature=0.0,
-                        vad_filter=True,
-                    )
+                    svc = _get_urdu_stt_service()
                     result = svc.transcribe_file(audio_path, language="ur")
-                    print(f"[voice-timing] urdu_stt: {_time.perf_counter() - t:.3f}s  chars={len(result or '')}")
+                    elapsed = _time.perf_counter() - t
+                    stt_time_ref[0] = elapsed
+                    stt_label_ref[0] = "urdu_stt"
+                    print(f"[voice-timing] urdu_stt: {elapsed:.3f}s  chars={len(result or '')}")
                     return result
 
-                from stt.stt_service import SpeechToTextService
-                svc = SpeechToTextService(
-                    model_id="Systran/faster-distil-whisper-large-v3",
-                    device=None,
-                    compute_type=None,
-                    beam_size=2,
-                    temperature=0.0,
-                    vad_filter=True,
-                )
+                svc = _get_en_stt_service()
                 result = svc.transcribe_file(audio_path, language=language if language != "auto" else None)
-                print(f"[voice-timing] en_stt: {_time.perf_counter() - t:.3f}s  chars={len(result or '')}")
+                elapsed = _time.perf_counter() - t
+                stt_time_ref[0] = elapsed
+                stt_label_ref[0] = "en_stt"
+                print(f"[voice-timing] en_stt: {elapsed:.3f}s  chars={len(result or '')}")
                 return result
 
             def run_ser():
                 t = _time.perf_counter()
                 try:
-                    from chatbot.audio_emotion_detector import AudioEmotionDetector
-                    det = AudioEmotionDetector()
+                    det = _get_ser_detector()
                     result = det.detect_emotions_from_audio(audio_path, top_k=2, threshold=0.2)
-                    print(f"[voice-timing] ser: {_time.perf_counter() - t:.3f}s")
+                    elapsed = _time.perf_counter() - t
+                    ser_time_ref[0] = elapsed
+                    print(f"[voice-timing] ser: {elapsed:.3f}s")
                     return result
                 except Exception as ser_err:
                     import logging
@@ -1201,9 +1379,20 @@ def voice_process(request):
                     ser_emotions = []
 
             t_done = _time.perf_counter()
+            total_s = t_done - t0
+            parallel_s = t_done - stt_start
             emotions_list = [{"emotion": e, "score": float(s)} for e, s in ser_emotions]
-            print(f"[voice-timing] TOTAL: {t_done - t0:.3f}s  transcript_len={len(transcript)}")
+            print(f"[voice-timing] TOTAL: {total_s:.3f}s  transcript_len={len(transcript)}")
             print(f"[Voice] SER emotions from audio: {emotions_list}")
+            print("================ VOICE PIPELINE SUMMARY ================")
+            print(f"  lang                : {lang_tag}")
+            print(f"  audio file          : {suffix}  size={audio_size_b}B")
+            print(f"  audio save (disk)   : {audio_save_s:7.3f}s")
+            print(f"  {stt_label_ref[0]:<20}: {stt_time_ref[0]:7.3f}s  chars={len(transcript)}")
+            print(f"  ser                 : {ser_time_ref[0]:7.3f}s  emotions={len(emotions_list)}")
+            print(f"  parallel block      : {parallel_s:7.3f}s  (stt + ser ran together)")
+            print(f"  TOTAL               : {total_s:7.3f}s")
+            print("========================================================")
             return JsonResponse({"transcript": transcript, "emotions": emotions_list}, status=200)
         finally:
             try:
@@ -2478,39 +2667,19 @@ def stt_transcribe(request):
 
             try:
                 if is_urdu:
-                    from urdu_stt.stt_urdu_service import UrduSpeechToTextService, MODEL_ID
-
-                    stt_service = UrduSpeechToTextService(
-                        model_id=MODEL_ID,
-                        device=None,
-                        compute_type=None,
-                        beam_size=2,
-                        best_of=4,
-                        temperature=0.0,
-                        vad_filter=True,
-                    )
+                    stt_service = _get_urdu_stt_service()
                     transcript = stt_service.transcribe_file(
                         temp_file_path,
                         language="ur",
                     )
-                    print(f"[stt-timing] urdu_stt (fallback): {_time.perf_counter() - t0_stt:.3f}s  chars={len(transcript or '')}")
+                    print(f"[stt-timing] urdu_stt (cached): {_time.perf_counter() - t0_stt:.3f}s  chars={len(transcript or '')}")
                 else:
-                    from stt.stt_service import SpeechToTextService
-
-                    # Distil-large-v3: ~6x faster than large-v3, within ~1% WER
-                    stt_service = SpeechToTextService(
-                        model_id="Systran/faster-distil-whisper-large-v3",
-                        device=None,
-                        compute_type=None,
-                        beam_size=2,
-                        temperature=0.0,
-                        vad_filter=True,
-                    )
+                    stt_service = _get_en_stt_service()
                     transcript = stt_service.transcribe_file(
                         temp_file_path,
                         language=language if language != 'auto' else None,
                     )
-                    print(f"[stt-timing] en_stt (fallback): {_time.perf_counter() - t0_stt:.3f}s  chars={len(transcript or '')}")
+                    print(f"[stt-timing] en_stt (cached): {_time.perf_counter() - t0_stt:.3f}s  chars={len(transcript or '')}")
                 
                 try:
                     os.unlink(temp_file_path)
@@ -2572,6 +2741,64 @@ def _get_partial_stt_service():
                 vad_filter=True,
             )
         return _partial_stt_service
+
+
+# Cached English STT (distil-large-v3) for the main /stt endpoint — loaded once, reused.
+_en_stt_service = None
+_en_stt_lock = threading.Lock()
+
+def _get_en_stt_service():
+    global _en_stt_service
+    with _en_stt_lock:
+        if _en_stt_service is None:
+            import sys
+            stt_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'stt')
+            if stt_dir not in sys.path:
+                sys.path.insert(0, stt_dir)
+            from stt.stt_service import SpeechToTextService
+            _en_stt_service = SpeechToTextService(
+                model_id="Systran/faster-distil-whisper-large-v3",
+                device=None,
+                compute_type=None,
+                beam_size=2,
+                temperature=0.0,
+                vad_filter=True,
+            )
+        return _en_stt_service
+
+
+# Cached Speech Emotion Recognition (wav2vec2) — loaded once, reused.
+_ser_detector = None
+_ser_lock = threading.Lock()
+
+def _get_ser_detector():
+    global _ser_detector
+    with _ser_lock:
+        if _ser_detector is None:
+            from chatbot.audio_emotion_detector import AudioEmotionDetector
+            _ser_detector = AudioEmotionDetector()
+        return _ser_detector
+
+
+# Cached Urdu STT (finetuned Whisper) for the main /stt endpoint — loaded once, reused.
+_urdu_stt_service = None
+_urdu_stt_lock = threading.Lock()
+
+def _get_urdu_stt_service():
+    global _urdu_stt_service
+    with _urdu_stt_lock:
+        if _urdu_stt_service is None:
+            from urdu_stt.stt_urdu_service import UrduSpeechToTextService, MODEL_ID
+            _urdu_stt_service = UrduSpeechToTextService(
+                model_id=MODEL_ID,
+                device=None,
+                compute_type=None,
+                beam_size=2,
+                best_of=4,
+                temperature=0.0,
+                vad_filter=True,
+            )
+        return _urdu_stt_service
 
 
 # Real-time STT: transcribe partial audio chunks for live display (TINY model so results return in ~1s)
@@ -2637,12 +2864,28 @@ def stt_transcribe_partial(request):
 @csrf_exempt
 def tts_synthesize(request):
     if request.method == "POST":
+        import time as _tts_time, sys as _tts_sys
+        _tts_t0 = _tts_time.perf_counter()
+        _tts_info = {"backend": "?", "text_len": 0, "lang": "?", "audio_bytes": 0, "ok": False}
+        def _tts_emit_summary():
+            total_s = _tts_time.perf_counter() - _tts_t0
+            print("================ TTS PIPELINE SUMMARY ================", file=_tts_sys.stderr, flush=True)
+            print(f"  backend             : {_tts_info['backend']}", file=_tts_sys.stderr, flush=True)
+            print(f"  lang                : {_tts_info['lang']}", file=_tts_sys.stderr, flush=True)
+            print(f"  text chars          : {_tts_info['text_len']}", file=_tts_sys.stderr, flush=True)
+            print(f"  audio bytes         : {_tts_info['audio_bytes']}", file=_tts_sys.stderr, flush=True)
+            print(f"  status              : {'ok' if _tts_info['ok'] else 'error'}", file=_tts_sys.stderr, flush=True)
+            print(f"  TOTAL               : {total_s:7.3f}s", file=_tts_sys.stderr, flush=True)
+            print("======================================================", file=_tts_sys.stderr, flush=True)
         try:
             import os
             data = json.loads(request.body)
             text = data.get("text")
             language = data.get("language", "en")
             tts_backend = _resolve_tts_backend(data, language=language)
+            _tts_info["backend"] = tts_backend or "?"
+            _tts_info["lang"] = language
+            _tts_info["text_len"] = len(text or "")
             
             if not text:
                 return JsonResponse({"error": "Text is required."}, status=400)
@@ -2668,6 +2911,7 @@ def tts_synthesize(request):
                     response = HttpResponse(audio_data, content_type="audio/wav")
                     response["Content-Disposition"] = 'inline; filename="tts_audio.wav"'
                     response["Content-Length"] = len(audio_data)
+                    _tts_info["audio_bytes"] = len(audio_data); _tts_info["ok"] = True
                     return response
                 except Exception as e:
                     import traceback
@@ -2687,6 +2931,7 @@ def tts_synthesize(request):
                     response = HttpResponse(audio_data, content_type="audio/mpeg")
                     response["Content-Disposition"] = 'inline; filename="tts_audio.mp3"'
                     response["Content-Length"] = len(audio_data)
+                    _tts_info["audio_bytes"] = len(audio_data); _tts_info["ok"] = True
                     return response
                 except Exception as edge_err:
                     import traceback
@@ -2737,6 +2982,7 @@ def tts_synthesize(request):
                     response = HttpResponse(audio_data, content_type="audio/wav")
                     response["Content-Disposition"] = 'inline; filename="tts_audio.wav"'
                     response["Content-Length"] = len(audio_data)
+                    _tts_info["audio_bytes"] = len(audio_data); _tts_info["ok"] = True
                     return response
                 except Exception as e:
                     import traceback
@@ -2775,6 +3021,7 @@ def tts_synthesize(request):
                 response = HttpResponse(audio_data, content_type='audio/wav')
                 response['Content-Disposition'] = 'inline; filename="tts_audio.wav"'
                 response['Content-Length'] = len(audio_data)
+                _tts_info["audio_bytes"] = len(audio_data); _tts_info["ok"] = True
                 return response
                 
             except Exception as e:
@@ -2793,13 +3040,15 @@ def tts_synthesize(request):
                 return JsonResponse({
                     "error": f"TTS synthesis failed: {str(e)}"
                 }, status=500)
-                
+
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
         except Exception as e:
             import traceback
             traceback.print_exc()
             return JsonResponse({"error": str(e)}, status=500)
+        finally:
+            _tts_emit_summary()
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 

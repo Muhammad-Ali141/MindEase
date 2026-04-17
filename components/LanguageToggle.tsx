@@ -1,13 +1,18 @@
 "use client"
 
-import { useLanguage } from "@/lib/i18n"
+import { useEffect, useState } from "react"
+import { useLanguage, setLanguage } from "@/lib/i18n"
 
 export function LanguageToggle() {
-  const lang = useLanguage()
+  const storeLang = useLanguage()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  // Before mount, keep the toggle's "active" indicator on EN so server HTML and
+  // first client paint agree. After mount, it snaps to the real language —
+  // matching exactly what the page content gates on via its own `mounted` flag.
+  const lang = mounted ? storeLang : "en"
 
-  const setLang = (l: "en" | "ur") => {
-    import("@/lib/i18n").then((m) => m.setLanguage(l))
-  }
+  const setLang = (l: "en" | "ur") => setLanguage(l)
 
   const btn = (code: "en" | "ur", label: string) => {
     const active = lang === code

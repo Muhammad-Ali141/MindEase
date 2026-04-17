@@ -2,9 +2,44 @@
 
 import { MapPin, Globe, ExternalLink } from "lucide-react"
 import type { TherapistListItem } from "@/lib/api"
+import { useProfileLanguage } from "@/lib/i18n"
 
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+
+const PLACE_UR: Record<string, string> = {
+  "lahore": "لاہور", "karachi": "کراچی", "islamabad": "اسلام آباد",
+  "rawalpindi": "راولپنڈی", "faisalabad": "فیصل آباد", "multan": "ملتان",
+  "peshawar": "پشاور", "quetta": "کوئٹہ", "sialkot": "سیالکوٹ",
+  "gujranwala": "گوجرانوالہ", "hyderabad": "حیدرآباد", "bahawalpur": "بہاولپور",
+  "sargodha": "سرگودھا", "sukkur": "سکھر", "abbottabad": "ایبٹ آباد",
+  "mardan": "مردان", "mingora": "مینگورہ", "gujrat": "گجرات", "sahiwal": "ساہیوال",
+  "murree": "مری", "attock": "اٹک", "jhelum": "جہلم", "kasur": "قصور",
+  "okara": "اوکاڑہ", "larkana": "لاڑکانہ", "nawabshah": "نواب شاہ",
+  "mirpur": "میرپور", "chakwal": "چکوال", "khuzdar": "خضدار",
+  "kot mithan": "کوٹ مٹھن", "lower dir": "لوئر دیر", "mansehra": "مانسہرہ",
+  "sheikhupura": "شیخوپورہ",
+  "pakistan": "پاکستان", "punjab": "پنجاب", "sindh": "سندھ",
+  "balochistan": "بلوچستان", "kpk": "خیبر پختونخوا",
+  "khyber pakhtunkhwa": "خیبر پختونخوا",
+}
+const toUrPlace = (s: string) => PLACE_UR[s.trim().toLowerCase()] ?? s
+
+const LANG_UR: Record<string, string> = {
+  "english": "انگریزی", "urdu": "اردو", "hindi": "ہندی",
+  "hindi/urdu": "اردو", "urdu/hindi": "اردو",
+  "punjabi": "پنجابی", "sindhi": "سندھی", "pashto": "پشتو",
+  "pashtu": "پشتو", "balochi": "بلوچی", "saraiki": "سرائیکی",
+  "arabic": "عربی", "persian": "فارسی", "farsi": "فارسی",
+}
+const toUrLang = (s: string) => LANG_UR[s.trim().toLowerCase()] ?? s
+
+const SERVICE_UR: Record<string, string> = {
+  "online": "آن لائن",
+  "in-person": "ان-پرسن",
+  "in person": "ان-پرسن",
+}
+const toUrService = (s: string) => SERVICE_UR[s.trim().toLowerCase()] ?? s
 
 type TherapistCardProps = {
   therapist: TherapistListItem
@@ -16,6 +51,7 @@ export function TherapistCard({ therapist: t, match, compact = false }: Therapis
   const profileUrl = t.website || t.profile_url
   const isNear = match && match !== "other"
   const initial = (t.name || "T").charAt(0).toUpperCase()
+  const isUr = useProfileLanguage() === "ur"
 
   if (compact) {
     return (
@@ -156,7 +192,7 @@ export function TherapistCard({ therapist: t, match, compact = false }: Therapis
                     backgroundColor: "color-mix(in srgb, var(--sage) 15%, transparent)",
                     color: "var(--sage)", textTransform: "uppercase",
                   }}>
-                    In your area
+                    {isUr ? "آپ کے قریب" : "In your area"}
                   </span>
                 )}
               </div>
@@ -180,7 +216,9 @@ export function TherapistCard({ therapist: t, match, compact = false }: Therapis
                     border: "1px solid var(--border)",
                   }}>
                     <MapPin size={11} style={{ color: "var(--primary)" }} />
-                    {[t.city, t.region].filter(Boolean).join(", ")}
+                    {isUr
+                      ? [t.city, t.region].filter(Boolean).map(s => toUrPlace(s as string)).join("، ")
+                      : [t.city, t.region].filter(Boolean).join(", ")}
                   </span>
                 )}
                 {t.languages && t.languages.length > 0 && (
@@ -190,7 +228,8 @@ export function TherapistCard({ therapist: t, match, compact = false }: Therapis
                     padding: "0.2rem 0.55rem", borderRadius: 6,
                     border: "1px solid var(--border)",
                   }}>
-                    {t.languages.slice(0, 3).join(" · ")}{t.languages.length > 3 ? " …" : ""}
+                    {(isUr ? t.languages.slice(0, 3).map(toUrLang) : t.languages.slice(0, 3)).join(" · ")}
+                    {t.languages.length > 3 ? " …" : ""}
                   </span>
                 )}
                 {t.service_type && t.service_type.length > 0 && (
@@ -201,7 +240,9 @@ export function TherapistCard({ therapist: t, match, compact = false }: Therapis
                     padding: "0.2rem 0.55rem", borderRadius: 6,
                     border: "1px solid color-mix(in srgb, var(--primary) 20%, transparent)",
                   }}>
-                    {t.service_type.join(" & ")}
+                    {isUr
+                      ? t.service_type.map(toUrService).join(" اور ")
+                      : t.service_type.join(" & ")}
                   </span>
                 )}
               </div>
@@ -234,7 +275,7 @@ export function TherapistCard({ therapist: t, match, compact = false }: Therapis
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = "1"}
             >
               <Globe size={14} />
-              View profile
+              {isUr ? "پروفائل دیکھیں" : "View profile"}
               <ExternalLink size={12} />
             </a>
           )}

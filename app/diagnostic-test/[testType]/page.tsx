@@ -103,6 +103,17 @@ export default function TestPage() {
     load()
   }, [testType, user?.id, profileLang])
 
+  const urNum = (n: number | string) =>
+    isUrduTest ? String(n).replace(/\d/g, (c) => "۰۱۲۳۴۵۶۷۸۹"[+c]) : String(n)
+  const urTestName = (name: string) => {
+    if (!isUrduTest) return name
+    return name
+      .replace(/GAD-?7/gi, "جی اے ڈی-۷")
+      .replace(/PHQ-?9/gi, "پی ایچ کیو-۹")
+      .replace(/PSS-?10/gi, "پی ایس ایس-۱۰")
+      .replace(/\d/g, (c) => "۰۱۲۳۴۵۶۷۸۹"[+c])
+  }
+
   const questions = testData?.questions || []
   const total = questions.length
   const progress = total > 0 ? (Object.keys(answers).length / total) * 100 : 0
@@ -310,11 +321,11 @@ export default function TestPage() {
             onClick={() => router.push("/dashboard")}
             style={{ ...sans, display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8125rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
           >
-            <ArrowLeft size={14} /> {t.dashboard}
+            {isUrduTest ? <ArrowRight size={14} /> : <ArrowLeft size={14} />} {t.dashboard}
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <Clock size={12} style={{ color: "var(--muted-foreground)" }} />
-            <span style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)" }}>5-10 {t.minutesShort}</span>
+            <span style={{ ...sans, fontSize: "0.6875rem", color: "var(--muted-foreground)" }}>{urNum("5-10")} {t.minutesShort}</span>
           </div>
         </div>
 
@@ -330,7 +341,7 @@ export default function TestPage() {
               {t.dailyWellness}
             </p>
             <h1 style={{ ...serif, fontSize: "1.5rem", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--foreground)" }}>
-              {testData.name}
+              {urTestName(testData.name)}
             </h1>
           </div>
           {/* Circular progress */}
@@ -349,7 +360,7 @@ export default function TestPage() {
             </svg>
             <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ ...sans, fontSize: "0.6875rem", fontWeight: 700, color: "var(--primary)" }}>
-                {Object.keys(answers).length}/{total}
+                {urNum(Object.keys(answers).length)}/{urNum(total)}
               </span>
             </div>
           </div>
@@ -416,11 +427,11 @@ export default function TestPage() {
                 }}>
                   {currentAnswer !== undefined
                     ? <CheckCircle2 size={16} color="white" strokeWidth={2} />
-                    : <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 700, color: "var(--muted-foreground)" }}>{currentQ + 1}</span>
+                    : <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 700, color: "var(--muted-foreground)" }}>{urNum(currentQ + 1)}</span>
                   }
                 </div>
                 <p style={{ ...sans, fontSize: "0.6875rem", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>
-                  {t.questionOf.replace("%1", String(currentQ + 1)).replace("%2", String(total))}
+                  {t.questionOf.replace("%1", urNum(currentQ + 1)).replace("%2", urNum(total))}
                 </p>
               </div>
 
@@ -456,7 +467,7 @@ export default function TestPage() {
                       <span style={{
                         fontSize: "1.25rem", fontWeight: 700, lineHeight: 1,
                         color: isSelected ? "var(--primary)" : "var(--foreground)",
-                      }}>{i}</span>
+                      }}>{urNum(i)}</span>
                       <span style={{
                         fontSize: "0.6875rem", fontWeight: 500, lineHeight: 1.35,
                         color: isSelected ? "var(--primary)" : "var(--foreground)",
@@ -487,7 +498,7 @@ export default function TestPage() {
               opacity: currentQ === 0 ? 0.35 : 1,
             }}
           >
-            <ChevronLeft size={15} /> {t.previous}
+            {isUrduTest ? <ChevronRight size={15} /> : <ChevronLeft size={15} />} {t.previous}
           </button>
 
           {currentQ < total - 1 ? (
@@ -500,7 +511,7 @@ export default function TestPage() {
                 color: "var(--foreground)", fontSize: "0.875rem", cursor: "pointer",
               }}
             >
-              {t.next} <ChevronRight size={15} />
+              {t.next} {isUrduTest ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
             </button>
           ) : (
             <motion.button
@@ -522,8 +533,12 @@ export default function TestPage() {
               }}
             >
               {submitting
-                ? <><Loader2 size={16} className="animate-spin" /> {t.submitting}</>
-                : <><CheckCircle2 size={16} /> {t.submitCheckin}</>
+                ? (isUrduTest
+                    ? <>{t.submitting} <Loader2 size={16} className="animate-spin" /></>
+                    : <><Loader2 size={16} className="animate-spin" /> {t.submitting}</>)
+                : (isUrduTest
+                    ? <>{t.submitCheckin} <CheckCircle2 size={16} /></>
+                    : <><CheckCircle2 size={16} /> {t.submitCheckin}</>)
               }
             </motion.button>
           )}

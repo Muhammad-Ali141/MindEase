@@ -191,17 +191,72 @@
 /* Remap brand font variables so every component that reads them gets clean
    Arabic-script UI fonts automatically — no per-component edits needed. */
 html[lang="ur"] {
-  --font-dm-sans: var(--font-noto-arabic);
-  --font-inter: var(--font-noto-arabic);
+  --font-dm-sans: var(--font-noto-naskh);
+  --font-inter: var(--font-noto-naskh);
   --font-cormorant: var(--font-amiri);
 }
 
 html[lang="ur"] body {
-  font-family: var(--font-noto-arabic), "Noto Sans Arabic", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-noto-naskh), "Noto Naskh Arabic", var(--font-noto-arabic), "Noto Sans Arabic", "Segoe UI", system-ui, sans-serif;
   font-feature-settings: "kern", "liga", "calt";
-  /* Arabic glyphs have larger x-height — nudge base size down slightly so
-     UI elements don't feel oversized compared to the English layout. */
-  font-size: 0.95rem;
+  font-size: 1.1rem;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* On force-LTR routes (chat, voice-chat) drop the Urdu size bump so the
+   layout matches the English pipeline exactly. */
+html[lang="ur"][data-layout="ltr"] body {
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+/* Bump tiny UI labels (badges, meta, pills) so they stay readable in Urdu. */
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.5rem"],
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.5625rem"],
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.625rem"] {
+  font-size: 0.875rem !important;
+  letter-spacing: 0 !important;
+}
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.6875rem"],
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.71875rem"] {
+  font-size: 0.92rem !important;
+  letter-spacing: 0 !important;
+}
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.75rem"],
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.8125rem"] {
+  font-size: 0.98rem !important;
+}
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.84375rem"],
+html[lang="ur"]:not([data-layout="ltr"]) [style*="font-size: 0.875rem"] {
+  font-size: 1.02rem !important;
+}
+
+/* Nested LTR scope (e.g., session cards): use English typography inside. */
+html[lang="ur"] [data-layout="ltr"],
+html[lang="ur"] [data-layout="ltr"] * {
+  font-family: var(--font-dm-sans), var(--font-inter), system-ui, sans-serif !important;
+  font-weight: revert;
+}
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.5rem"]    { font-size: 0.5rem    !important; }
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.5625rem"] { font-size: 0.5625rem !important; }
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.625rem"]  { font-size: 0.625rem  !important; }
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.6875rem"] { font-size: 0.6875rem !important; }
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.71875rem"]{ font-size: 0.71875rem!important; }
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.75rem"]   { font-size: 0.75rem   !important; }
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.8125rem"] { font-size: 0.8125rem !important; }
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.84375rem"]{ font-size: 0.84375rem!important; }
+html[lang="ur"] [data-layout="ltr"] [style*="font-size: 0.875rem"]  { font-size: 0.875rem  !important; }
+html[lang="ur"] [data-layout="ltr"] [style*="text-align: left"],
+html[lang="ur"] [data-layout="ltr"] [style*="textAlign: left"] {
+  text-align: left !important;
+}
+html[lang="ur"] [data-layout="ltr"],
+html[lang="ur"] [data-layout="ltr"] *:not([style*="text-align: right"]):not([style*="textAlign: right"]):not([style*="text-align: center"]):not([style*="textAlign: center"]) {
+  text-align: left !important;
+  direction: ltr !important;
 }
 
 html[lang="ur"] p,
@@ -230,10 +285,26 @@ html[lang="ur"] body {
   direction: rtl;
 }
 
+/* Escape hatch: keep LTR layout on specific routes (chat, voice-chat) even
+   when the user's profile language is Urdu. Urdu text still renders in Urdu;
+   only the page/sidebar direction stays English-style. */
+html[data-layout="ltr"] body,
+html[data-layout="ltr"] body * {
+  direction: ltr !important;
+}
+html[data-layout="ltr"] [style*="text-align: right"],
+html[data-layout="ltr"] [style*="textAlign: right"] {
+  text-align: left !important;
+}
+html[data-layout="ltr"] [style*="text-align: left"],
+html[data-layout="ltr"] [style*="textAlign: left"] {
+  text-align: left !important;
+}
+
 /* Inline-styled textAlign:"left" is sprinkled across components; force to right
    so everything inside the RTL page resolves to the logical start side. */
-html[lang="ur"] [style*="text-align: left"],
-html[lang="ur"] [style*="textAlign: left"] {
+html[lang="ur"]:not([data-layout="ltr"]) [style*="text-align: left"],
+html[lang="ur"]:not([data-layout="ltr"]) [style*="textAlign: left"] {
   text-align: right !important;
 }
 

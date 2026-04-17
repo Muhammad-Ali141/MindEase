@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
+import { useProfileLanguage } from "@/lib/i18n"
 import { Users, MapPin } from "lucide-react"
 import {
   apiGetTherapists,
@@ -19,6 +20,19 @@ import { motion } from "framer-motion"
 
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
+
+const CITY_UR: Record<string, string> = {
+  lahore: "لاہور", karachi: "کراچی", islamabad: "اسلام آباد", rawalpindi: "راولپنڈی",
+  faisalabad: "فیصل آباد", multan: "ملتان", peshawar: "پشاور", quetta: "کوئٹہ",
+  sialkot: "سیالکوٹ", gujranwala: "گوجرانوالہ", hyderabad: "حیدرآباد",
+  bahawalpur: "بہاولپور", sargodha: "سرگودھا", sukkur: "سکھر", abbottabad: "ایبٹ آباد",
+  mardan: "مردان", mingora: "مینگورہ", gujrat: "گجرات", sahiwal: "ساہیوال",
+  murree: "مری", attock: "اٹک", jhelum: "جہلم", kasur: "قصور",
+  okara: "اوکاڑہ", larkana: "لاڑکانہ", nawabshah: "نواب شاہ", mirpur: "میرپور",
+  chakwal: "چکوال", khuzdar: "خضدار", "kot mithan": "کوٹ مٹھن",
+  "lower dir": "لوئر دیر", mansehra: "مانسہرہ", sheikhupura: "شیخوپورہ",
+}
+const toUrCity = (c: string) => CITY_UR[c.trim().toLowerCase()] || c
 
 function normalizeLocation(s: string | undefined | null): string {
   if (!s || typeof s !== "string") return ""
@@ -35,26 +49,26 @@ function therapistMatchesUserLocation(
   return "other"
 }
 
-const SPECIALTIES: { value: string; label: string }[] = [
-  { value: "", label: "All specialties" },
-  { value: "Anxiety", label: "Anxiety" },
-  { value: "Depression", label: "Depression" },
-  { value: "CBT", label: "CBT" },
-  { value: "Trauma", label: "Trauma" },
-  { value: "PTSD", label: "PTSD" },
-  { value: "OCD", label: "OCD" },
-  { value: "Relationship", label: "Relationship" },
-  { value: "Child", label: "Child & adolescent" },
-  { value: "Addiction", label: "Addiction" },
-  { value: "Stress", label: "Stress" },
-  { value: "Grief", label: "Grief" },
-  { value: "Bipolar", label: "Bipolar" },
-  { value: "Psychotherapy", label: "Psychotherapy" },
-  { value: "Family", label: "Family therapy" },
-  { value: "Group therapy", label: "Group therapy" },
-  { value: "Counseling", label: "Counseling" },
-  { value: "Schizophrenia", label: "Schizophrenia" },
-  { value: "Eating", label: "Eating disorders" },
+const SPECIALTIES: { value: string; label: string; labelUr: string }[] = [
+  { value: "", label: "All specialties", labelUr: "تمام اسپیشلٹیز" },
+  { value: "Anxiety", label: "Anxiety", labelUr: "اینزائٹی" },
+  { value: "Depression", label: "Depression", labelUr: "ڈپریشن" },
+  { value: "CBT", label: "CBT", labelUr: "سی بی ٹی" },
+  { value: "Trauma", label: "Trauma", labelUr: "ٹراما" },
+  { value: "PTSD", label: "PTSD", labelUr: "پی ٹی ایس ڈی" },
+  { value: "OCD", label: "OCD", labelUr: "او سی ڈی" },
+  { value: "Relationship", label: "Relationship", labelUr: "ریلیشن شپ" },
+  { value: "Child", label: "Child & adolescent", labelUr: "چائلڈ اینڈ ایڈولیسنٹ" },
+  { value: "Addiction", label: "Addiction", labelUr: "ایڈکشن" },
+  { value: "Stress", label: "Stress", labelUr: "اسٹریس" },
+  { value: "Grief", label: "Grief", labelUr: "گریِف" },
+  { value: "Bipolar", label: "Bipolar", labelUr: "بائی پولر" },
+  { value: "Psychotherapy", label: "Psychotherapy", labelUr: "سائیکوتھراپی" },
+  { value: "Family", label: "Family therapy", labelUr: "فیملی تھراپی" },
+  { value: "Group therapy", label: "Group therapy", labelUr: "گروپ تھراپی" },
+  { value: "Counseling", label: "Counseling", labelUr: "کاؤنسلنگ" },
+  { value: "Schizophrenia", label: "Schizophrenia", labelUr: "شیزوفرینیا" },
+  { value: "Eating", label: "Eating disorders", labelUr: "ایٹنگ ڈس آرڈرز" },
 ]
 
 const SERVICE_OPTIONS: { value: "" | "in-person" | "online"; label: string }[] = [
@@ -66,6 +80,9 @@ const SERVICE_OPTIONS: { value: "" | "in-person" | "online"; label: string }[] =
 export default function TherapistsPage() {
   const router   = useRouter()
   const { user } = useAuth()
+  const isUr = useProfileLanguage() === "ur"
+  const urNum = (n: number | string) =>
+    isUr ? String(n).replace(/\d/g, (c) => "۰۱۲۳۴۵۶۷۸۹"[+c]) : String(n)
   const [cities, setCities]                   = useState<string[]>([])
   const [therapists, setTherapists]           = useState<TherapistListItem[]>([])
   const [loadingFilters, setLoadingFilters]   = useState(true)
@@ -184,13 +201,15 @@ export default function TherapistsPage() {
                   style={{ marginBottom: "1.75rem" }}
                 >
                   <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--primary)", marginBottom: "0.4rem" }}>
-                    Professional support
+                    {isUr ? "پروفیشنل سپورٹ" : "Professional support"}
                   </p>
                   <h1 style={{ ...serif, fontSize: "clamp(1.75rem, 3vw, 2.5rem)", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1, marginBottom: "0.5rem" }}>
-                    Find a Therapist
+                    {isUr ? "تھراپسٹ تلاش کریں" : "Find a Therapist"}
                   </h1>
                   <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>
-                    Browse verified mental health professionals by location, specialty, and service type.
+                    {isUr
+                      ? "لوکیشن، اسپیشلٹی اور سروس ٹائپ کے مطابق ویریفائیڈ مینٹل ہیلتھ پروفیشنلز کو براؤز کریں۔"
+                      : "Browse verified mental health professionals by location, specialty, and service type."}
                   </p>
                 </motion.div>
 
@@ -226,7 +245,9 @@ export default function TherapistsPage() {
                           onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = "color-mix(in srgb, var(--primary) 30%, transparent)" }}
                           onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = "var(--border)" }}
                         >
-                          {opt.label}
+                          {isUr
+                            ? (opt.value === "in-person" ? "ان-پرسن" : opt.value === "online" ? "آن لائن" : "سب")
+                            : opt.label}
                         </button>
                       )
                     })}
@@ -241,7 +262,7 @@ export default function TherapistsPage() {
                     style={{ ...selectStyle, minWidth: 160 }}
                   >
                     {cityOptions.map(c => (
-                      <option key={c || "all"} value={c}>{c || "All cities"}</option>
+                      <option key={c || "all"} value={c}>{c ? (isUr ? toUrCity(c) : c) : (isUr ? "تمام شہر" : "All cities")}</option>
                     ))}
                   </select>
 
@@ -252,16 +273,18 @@ export default function TherapistsPage() {
                     style={{ ...selectStyle, minWidth: 188 }}
                   >
                     {SPECIALTIES.map(opt => (
-                      <option key={opt.value || "all"} value={opt.value}>{opt.label}</option>
+                      <option key={opt.value || "all"} value={opt.value}>{isUr ? opt.labelUr : opt.label}</option>
                     ))}
                   </select>
 
                   {/* Result count */}
                   {!loadingTherapists && (
                     <span style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)", marginLeft: "auto" }}>
-                      {therapistsWithMatch.length} therapist{therapistsWithMatch.length !== 1 ? "s" : ""}
+                      {isUr
+                        ? `${urNum(therapistsWithMatch.length)} تھراپسٹ`
+                        : `${therapistsWithMatch.length} therapist${therapistsWithMatch.length !== 1 ? "s" : ""}`}
                       {nearbyCount > 0 && (
-                        <span style={{ color: "var(--sage)" }}> · {nearbyCount} near you</span>
+                        <span style={{ color: "var(--sage)" }}> · {isUr ? `${urNum(nearbyCount)} آپ کے قریب` : `${nearbyCount} near you`}</span>
                       )}
                     </span>
                   )}
@@ -282,8 +305,17 @@ export default function TherapistsPage() {
                   >
                     <MapPin size={14} color="var(--sage)" strokeWidth={1.75} style={{ flexShrink: 0 }} />
                     <p style={{ ...sans, fontSize: "0.8125rem", color: "var(--sage)", margin: 0 }}>
-                      <strong>{nearbyCount}</strong> therapist{nearbyCount !== 1 ? "s" : ""} found near{" "}
-                      <strong>{user?.city || user?.nearest_major_city || "your location"}</strong> — shown first.
+                      {isUr ? (
+                        <>
+                          <strong>{toUrCity(user?.city || user?.nearest_major_city || "")}</strong>{" "}
+                          کے قریب <strong>{urNum(nearbyCount)}</strong> تھراپسٹس — پہلے دکھائے جا رہے ہیں
+                        </>
+                      ) : (
+                        <>
+                          <strong>{nearbyCount}</strong> therapist{nearbyCount !== 1 ? "s" : ""} found near{" "}
+                          <strong>{user?.city || user?.nearest_major_city || "your location"}</strong> — shown first.
+                        </>
+                      )}
                     </p>
                   </motion.div>
                 )}

@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ede5d8"/>
+      <stop offset="100%" stop-color="#e2d8c3"/>
+    </linearGradient>
+    <filter id="s4"><feDropShadow dx="0" dy="3" stdDeviation="8" flood-color="#a67c52" flood-opacity="0.12"/></filter>
+  </defs>
+  <rect width="800" height="420" fill="url(#bg4)"/>
+
+  <!-- Browser window -->
+  <rect x="48" y="18" width="704" height="384" rx="12" fill="white" filter="url(#s4)"/>
+  <!-- Title bar -->
+  <rect x="48" y="18" width="704" height="38" rx="12" fill="#f0ebe0"/>
+  <rect x="48" y="44" width="704" height="12" fill="#f0ebe0"/>
+  <circle cx="72" cy="37" r="5.5" fill="#ff5f57"/>
+  <circle cx="90" cy="37" r="5.5" fill="#febc2e"/>
+  <circle cx="108" cy="37" r="5.5" fill="#28c840"/>
+  <rect x="190" y="28" width="280" height="18" rx="9" fill="white" opacity="0.7"/>
+  <text x="330" y="41" text-anchor="middle" font-family="system-ui" font-size="10" fill="#a67c52">mindease.app/history</text>
+
+  <!-- Left sidebar -->
+  <rect x="48" y="56" width="170" height="346" fill="#faf7f2"/>
+  <rect x="217" y="56" width="1" height="346" fill="#ede5d8"/>
+
+  <!-- Sidebar header -->
+  <text x="68" y="80" font-family="Georgia,serif" font-size="13" fill="#4a3f35" font-weight="bold">سیشنز</text>
+  <text x="68" y="94" font-family="system-ui" font-size="9" fill="#7d6b56">12 کل گفتگوئیں</text>
+
+  <!-- Session list items -->
+  <!-- Active session -->
+  <rect x="56" y="104" width="152" height="54" rx="8" fill="#a67c52"/>
+  <text x="72" y="122" font-family="system-ui" font-size="9.5" fill="white" font-weight="600">آج، 10:42 AM</text>
+  <rect x="72" y="128" width="90" height="6" rx="3" fill="white" opacity="0.6"/>
+  <rect x="72" y="138" width="70" height="5" rx="2.5" fill="white" opacity="0.4"/>
+  <rect x="148" y="118" width="44" height="15" rx="7.5" fill="white" opacity="0.2"/>
+  <text x="170" y="129" text-anchor="middle" font-family="system-ui" font-size="8" fill="white">فعال</text>
+
+  <rect x="56" y="164" width="152" height="50" rx="8" fill="white" stroke="#ede5d8" stroke-width="1"/>
+  <text x="72" y="181" font-family="system-ui" font-size="9" fill="#4a3f35" font-weight="600">کل، 3:15 PM</text>
+  <rect x="72" y="187" width="80" height="6" rx="3" fill="#c5bcac"/>
+  <rect x="72" y="197" width="60" height="5" rx="2.5" fill="#ede5d8"/>
+
+  <rect x="56" y="220" width="152" height="50" rx="8" fill="white" stroke="#ede5d8" stroke-width="1"/>
+  <text x="72" y="237" font-family="system-ui" font-size="9" fill="#4a3f35" font-weight="600">مارچ 5، 9:00 AM</text>
+  <rect x="72" y="243" width="95" height="6" rx="3" fill="#c5bcac"/>
+  <rect x="72" y="253" width="70" height="5" rx="2.5" fill="#ede5d8"/>
+
+  <rect x="56" y="276" width="152" height="50" rx="8" fill="white" stroke="#ede5d8" stroke-width="1"/>
+  <text x="72" y="293" font-family="system-ui" font-size="9" fill="#4a3f35" font-weight="600">مارچ 3، 7:30 PM</text>
+  <rect x="72" y="299" width="75" height="6" rx="3" fill="#c5bcac"/>
+  <rect x="72" y="309" width="55" height="5" rx="2.5" fill="#ede5d8"/>
+
+  <text x="132" y="358" text-anchor="middle" font-family="system-ui" font-size="8.5" fill="#a67c52" font-weight="600">+ 8 مزید سیشنز</text>
+
+  <!-- Main content area: session detail -->
+  <rect x="218" y="56" width="534" height="346" fill="white"/>
+
+  <!-- Detail header -->
+  <rect x="218" y="56" width="534" height="48" fill="#faf7f2"/>
+  <rect x="218" y="103" width="534" height="1" fill="#ede5d8"/>
+  <text x="236" y="74" font-family="system-ui" font-size="11" fill="#4a3f35" font-weight="600">آج، 10:42 AM</text>
+  <text x="236" y="90" font-family="system-ui" font-size="9" fill="#7d6b56">سیشن #12 · 23 منٹ · موڈ: بہتر ہو رہا</text>
+  <!-- Mood badge -->
+  <rect x="626" y="65" width="110" height="22" rx="11" fill="#e8f0eb" stroke="#c5d8cc" stroke-width="1"/>
+  <circle cx="642" cy="76" r="4" fill="#5D8A6B"/>
+  <text x="660" y="80" font-family="system-ui" font-size="9" fill="#4a7358" font-weight="600">بہتر ہو رہا</text>
+
+  <!-- AI memory summary card -->
+  <rect x="232" y="114" width="506" height="72" rx="10" fill="#fdf3ec" stroke="#dbd0ba" stroke-width="1"/>
+  <text x="248" y="133" font-family="system-ui" font-size="9" fill="#a67c52" font-weight="700" letter-spacing="0.07em">AI یادداشت خلاصہ</text>
+  <rect x="248" y="140" width="420" height="7" rx="3.5" fill="#dbd0ba"/>
+  <rect x="248" y="152" width="380" height="7" rx="3.5" fill="#ede5d8"/>
+  <rect x="248" y="164" width="300" height="7" rx="3.5" fill="#ede5d8"/>
+  <!-- Brain icon placeholder -->
+  <circle cx="714" cy="148" r="12" fill="#a67c52" opacity="0.12"/>
+  <text x="714" y="153" text-anchor="middle" font-family="system-ui" font-size="11" fill="#a67c52">✦</text>
+
+  <!-- Chat transcript preview -->
+  <text x="232" y="210" font-family="system-ui" font-size="9" fill="#7d6b56" font-weight="700" letter-spacing="0.07em">چیٹ ٹرانسکرپٹ</text>
+
+  <!-- AI message -->
+  <circle cx="250" cy="236" r="10" fill="#a67c52"/>
+  <text x="250" y="240" text-anchor="middle" font-family="Georgia,serif" font-size="8" fill="white" font-weight="bold">M</text>
+  <rect x="268" y="222" width="240" height="36" rx="10" fill="#f5f1e6" stroke="#ede5d8" stroke-width="1"/>
+  <rect x="282" y="233" width="190" height="7" rx="3.5" fill="#7d6b56"/>
+  <rect x="282" y="244" width="150" height="6" rx="3" fill="#c5bcac"/>
+
+  <!-- User message -->
+  <rect x="432" y="268" width="290" height="36" rx="10" fill="#a67c52"/>
+  <rect x="448" y="279" width="200" height="7" rx="3.5" fill="white" opacity="0.8"/>
+  <rect x="448" y="290" width="140" height="6" rx="3" fill="white" opacity="0.5"/>
+
+  <!-- AI message 2 -->
+  <circle cx="250" cy="324" r="10" fill="#a67c52"/>
+  <text x="250" y="328" text-anchor="middle" font-family="Georgia,serif" font-size="8" fill="white" font-weight="bold">M</text>
+  <rect x="268" y="310" width="260" height="46" rx="10" fill="#f5f1e6" stroke="#ede5d8" stroke-width="1"/>
+  <rect x="282" y="321" width="210" height="7" rx="3.5" fill="#7d6b56"/>
+  <rect x="282" y="332" width="180" height="6" rx="3" fill="#c5bcac"/>
+  <rect x="282" y="342" width="130" height="6" rx="3" fill="#c5bcac"/>
+
+  <!-- Insights strip at bottom -->
+  <rect x="218" y="368" width="534" height="34" fill="#faf7f2"/>
+  <rect x="218" y="368" width="534" height="1" fill="#ede5d8"/>
+  <text x="236" y="383" font-family="system-ui" font-size="8.5" fill="#7d6b56" font-weight="600">اہم نکات:</text>
+  <rect x="310" y="372" width="90" height="16" rx="8" fill="#fdf3ec" stroke="#dbd0ba" stroke-width="1"/>
+  <text x="355" y="383" text-anchor="middle" font-family="system-ui" font-size="8" fill="#a67c52">نیند کے اطوار</text>
+  <rect x="408" y="372" width="80" height="16" rx="8" fill="#e8f0eb" stroke="#c5d8cc" stroke-width="1"/>
+  <text x="448" y="383" text-anchor="middle" font-family="system-ui" font-size="8" fill="#5D8A6B">کام کا دباؤ</text>
+  <rect x="496" y="372" width="88" height="16" rx="8" fill="#fdf3ec" stroke="#dbd0ba" stroke-width="1"/>
+  <text x="540" y="383" text-anchor="middle" font-family="system-ui" font-size="8" fill="#a67c52">خود اعتمادی</text>
+</svg>
