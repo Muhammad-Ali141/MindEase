@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import DIDAvatar, { type DIDAvatarHandle } from "@/components/did-avatar"
 import { useRouter } from "next/navigation"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/context/AuthContext"
 import { BeamsBackground } from "@/components/ui/beams-background"
-import { AIVoiceInput, type AIVoiceState } from "@/components/ui/ai-voice-input"
+import type { AIVoiceState } from "@/components/ui/ai-voice-input"
 import { useTheme } from "next-themes"
 import { Header } from "@/components/header"
 import { ChatSidebar } from "@/components/chat-sidebar"
@@ -17,10 +18,9 @@ import {
   apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar,
   apiTTSSynthesize, type ChatMessage, type Session, type SessionPreview,
 } from "@/lib/api"
-import { ArrowLeft, Star, Loader2, CheckCircle2, Mic2, MessageCircle, Brain, Volume2 } from "lucide-react"
+import { ArrowLeft, Star, Loader2, CheckCircle2, Mic, Mic2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useMicrophone } from "@/hooks/use-microphone"
-import { motion, AnimatePresence } from "framer-motion"
 
 const serif = { fontFamily: "var(--font-cormorant, Georgia, serif)" }
 const sans  = { fontFamily: "var(--font-dm-sans, system-ui, sans-serif)" }
@@ -101,13 +101,13 @@ export default function VoiceChatPage() {
   // Streaming TTS — ordered promise chain
   const ttsPromisesRef         = useRef<Array<Promise<Blob | null>>>([])
   const ttsSequenceActiveRef   = useRef(false)
+  // D-ID avatar (English only)
+  const didRef                 = useRef<DIDAvatarHandle>(null)
 
   const {
     isRecording, hasPermission, error: micError,
     startRecording, stopRecording, requestPermission, recordingTime,
   } = useMicrophone()
-
-  const hasUserMessages = messages.some(m => m.role === "user")
 
   const profileLangPref: "en" | "ur" = (() => {
     const lp = (user as { lang_pref?: string } | undefined)?.lang_pref
@@ -116,6 +116,8 @@ export default function VoiceChatPage() {
   })()
   /** Language for THIS voice session. Seeded from profile, overridable in ShareTestModal. */
   const [chatLang, setChatLang] = useState<"en" | "ur">(profileLangPref)
+  const chatLangRef            = useRef(chatLang)
+  chatLangRef.current          = chatLang
   const t = dict[chatLang]
 
   const sessionTitle =
@@ -237,14 +239,23 @@ export default function VoiceChatPage() {
       setCurrentSessionId(null); setBaselineUserMessageCount(0)
 
       if (audioBlob) {
-        const url = URL.createObjectURL(audioBlob)
-        const audio = new Audio(url)
-        audio.onplay  = () => { if (isMountedRef.current) setVoiceState("playing") }
-        audio.onended = () => { URL.revokeObjectURL(url); if (isMountedRef.current) setVoiceState("idle"); currentAudioRef.current = null }
-        audio.onerror = () => { URL.revokeObjectURL(url); if (isMountedRef.current) setVoiceState("idle"); currentAudioRef.current = null }
-        audio.onpause = () => { if (isMountedRef.current) setVoiceState("idle") }
-        currentAudioRef.current = audio
-        await audio.play()
+        if (isMountedRef.current) setWelcomeLoading(false)
+        if (didRef.current) {
+          // wav2lip plays the audio for both English and Urdu
+          if (isMountedRef.current) setVoiceState("synthesizing")
+          await didRef.current.sendAudio(audioBlob).catch(() => null)
+          if (isMountedRef.current) setVoiceState("idle")
+        } else {
+          // Fallback: play TTS audio directly
+          const url = URL.createObjectURL(audioBlob)
+          const audio = new Audio(url)
+          audio.onplay  = () => { if (isMountedRef.current) setVoiceState("playing") }
+          audio.onended = () => { URL.revokeObjectURL(url); if (isMountedRef.current) setVoiceState("idle"); currentAudioRef.current = null }
+          audio.onerror = () => { URL.revokeObjectURL(url); if (isMountedRef.current) setVoiceState("idle"); currentAudioRef.current = null }
+          audio.onpause = () => { if (isMountedRef.current) setVoiceState("idle") }
+          currentAudioRef.current = audio
+          await audio.play()
+        }
       }
     } catch (error: any) {
       if (isMountedRef.current) {
@@ -407,33 +418,48 @@ export default function VoiceChatPage() {
     }
   }
 
-  // ── Streaming TTS — promise-chain player ────────────────────────────────────
-  const playBlob = (blob: Blob): Promise<void> =>
-    new Promise(resolve => {
-      const url = URL.createObjectURL(blob)
+  // ── TTS audio fallback (Urdu or wav2lip failure) ────────────────────────────────────────────
+  const playBlob = async (blob: Blob): Promise<void> => {
+    await new Promise<void>(resolve => {
+      const url   = URL.createObjectURL(blob)
       const audio = new Audio(url)
       audio.onplay  = () => { if (isMountedRef.current) setVoiceState("playing") }
       audio.onended = () => { URL.revokeObjectURL(url); currentAudioRef.current = null; resolve() }
       audio.onerror = () => { URL.revokeObjectURL(url); currentAudioRef.current = null; resolve() }
       currentAudioRef.current = audio
-      audio.play().catch(resolve)
+      audio.play().catch(() => resolve())
     })
+  }
 
   const playSequential = async (streamDoneFlag: { done: boolean }) => {
     ttsSequenceActiveRef.current = true
-    let idx = 0
-    while (true) {
-      const promises = ttsPromisesRef.current
-      if (idx < promises.length) {
-        const blob = await promises[idx]
-        idx++
-        if (blob && isMountedRef.current) await playBlob(blob)
-        if (!isMountedRef.current) break
-      } else if (streamDoneFlag.done) {
-        break
-      } else {
-        await new Promise(r => setTimeout(r, 30))
-      }
+
+    // Wait for LLM stream + all TTS synthesis to finish
+    while (!streamDoneFlag.done) await new Promise(r => setTimeout(r, 30))
+    const blobs = (await Promise.all(ttsPromisesRef.current)).filter(Boolean) as Blob[]
+
+    if (!isMountedRef.current || blobs.length === 0) {
+      ttsSequenceActiveRef.current = false
+      if (isMountedRef.current) setVoiceState("idle")
+      return
+    }
+
+    // Send full concatenated audio to wav2lip (both English and Urdu)
+    if (didRef.current) {
+      if (isMountedRef.current) setVoiceState("synthesizing")
+      const fullBlob = new Blob(blobs, { type: "audio/mpeg" })
+      try {
+        await didRef.current.sendAudio(fullBlob)
+        ttsSequenceActiveRef.current = false
+        if (isMountedRef.current) setVoiceState("idle")
+        return
+      } catch { /* fall through to TTS audio playback */ }
+    }
+
+    // wav2lip fallback: play TTS sentences sequentially
+    for (const blob of blobs) {
+      if (!isMountedRef.current) break
+      await playBlob(blob)
     }
     ttsSequenceActiveRef.current = false
     if (isMountedRef.current) setVoiceState("idle")
@@ -521,12 +547,8 @@ export default function VoiceChatPage() {
           onDone: (payload) => {
             finalEmotions = payload.emotions ?? []
             streamDoneFlag.done = true
-            // Flush any trailing text that didn't end with punctuation
             if (sentenceBuffer.trim()) enqueueTTS(sentenceBuffer)
             sentenceBuffer = ""
-            // Display the full reply as soon as the stream is done —
-            // TTS fetches are in-flight but audio won't play for ~2s,
-            // so the text appears before the user hears anything.
             if (isMountedRef.current) {
               setMessages(prev => [...prev, { role: "assistant", content: fullResponse, content_type: "text" }])
             }
@@ -554,7 +576,6 @@ export default function VoiceChatPage() {
         })
       }
 
-      // If nothing queued (e.g. empty response), go idle
       if (!firstSentenceFired) setVoiceState("idle")
 
     } catch (error: any) {
@@ -725,261 +746,56 @@ export default function VoiceChatPage() {
           </button>
         </div>
 
-        {/* Chat body */}
+        {/* Chat body — full-screen avatar for both English and Urdu */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ position: "relative", flex: 1, overflow: "hidden", background: "#0a0a0a" }}>
+            <DIDAvatar
+              ref={didRef}
+              onSpeakingStart={() => { if (isMountedRef.current) setVoiceState("playing") }}
+              onSpeakingEnd={() => { if (isMountedRef.current) setVoiceState("idle") }}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
 
-          {/* Landing (no user messages) */}
-          {!hasUserMessages ? (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "1.5rem 1.5rem 1rem" }}>
-              <div style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                  style={{ textAlign: "center", marginBottom: "1.75rem" }}
-                >
-                  <p style={{ ...sans, fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--sage)", marginBottom: "0.5rem" }}>
-                    {t.voiceCompanionLabel}
-                  </p>
-                  <h1 style={{ ...serif, fontSize: "clamp(1.875rem, 3.5vw, 2.625rem)", fontWeight: 400, letterSpacing: "-0.03em", color: "var(--foreground)", lineHeight: 1.1, marginBottom: "0.6rem" }}>
-                    {t.voiceSpeakFreely}{" "}
-                    <span style={{ fontStyle: "italic", color: "var(--primary)" }}>
-                      {user?.first_name || t.voiceFriendFallback}
-                    </span>
-                    .
-                  </h1>
-                  <p style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)", lineHeight: 1.7 }}>
-                    {t.voiceHeardSub}
-                  </p>
-                </motion.div>
-
-                {/* AI welcome card */}
-                {messages.length > 0 && messages[0].role === "assistant" && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-                    style={{
-                      width: "100%", marginBottom: "1.5rem", padding: "0.875rem 1rem",
-                      borderRadius: 14,
-                      backgroundColor: "color-mix(in srgb, var(--card) 82%, transparent)",
-                      backdropFilter: "blur(12px)",
-                      borderTop: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-                      borderRight: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-                      borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-                      borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)",
-                      display: "flex", alignItems: "center", gap: "0.75rem",
-                    }}
-                  >
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(93,138,107,0.25)" }}>
-                      <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
-                    </div>
-                    <p
-                      dir={chatLang === "ur" ? "rtl" : "ltr"}
-                      style={{
-                        ...sans,
-                        fontSize: "0.9375rem",
-                        lineHeight: 1.78,
-                        color: "var(--foreground)",
-                        margin: 0,
-                        flex: 1,
-                        textAlign: chatLang === "ur" ? "right" : "left",
-                      }}
-                    >
-                      {messages[0].content}
-                    </p>
-                    {voiceState === "playing" && (
-                      <div style={{ flexShrink: 0, display: "flex", gap: 3, alignItems: "flex-end", height: 16 }}>
-                        {[0,1,2,3].map(i => (
-                          <div key={i} style={{ width: 3, borderRadius: 2, backgroundColor: "var(--sage)", animation: `voice-bar 0.8s ease-in-out ${i * 0.15}s infinite alternate` }} />
-                        ))}
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-
-                {/* Welcome loading state */}
-                {welcomeLoading && messages.length === 0 && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.75rem" }}
-                  >
-                    <Loader2 size={16} color="var(--sage)" className="animate-spin" />
-                    <span style={{ ...sans, fontSize: "0.875rem", color: "var(--muted-foreground)" }}>
-                      {t.voicePreparingCompanion}
-                    </span>
-                  </motion.div>
-                )}
-
-                {/* Voice input */}
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.38, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  style={{ width: "100%" }}
-                >
-                  <AIVoiceInput
-                    voiceState={voiceState}
-                    recordingTime={recordingTime}
-                    disabled={welcomeLoading || voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing"}
-                    onMicClick={handleMicClick}
-                    statusLabels={voiceStatusLabels}
-                  />
-                </motion.div>
+            {/* Loading spinner while welcome audio processes */}
+            {welcomeLoading && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.22)" }}>
+                <Loader2 size={48} color="var(--sage)" className="animate-spin" style={{ opacity: 0.85 }} />
               </div>
+            )}
+
+            {/* Single mic button — bottom center */}
+            <div style={{ position: "absolute", bottom: 36, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+              <button
+                onClick={handleMicClick}
+                disabled={welcomeLoading || voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing"}
+                style={{
+                  width: 64, height: 64, borderRadius: "50%",
+                  background: voiceState === "recording" ? "rgba(239,68,68,0.9)" : "rgba(166,124,82,0.92)",
+                  backdropFilter: "blur(8px)",
+                  border: "2px solid rgba(255,255,255,0.18)",
+                  cursor: (welcomeLoading || voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing") ? "default" : "pointer",
+                  opacity: (welcomeLoading || voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing") ? 0.5 : 1,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
+                  transition: "background 0.2s ease, opacity 0.2s ease",
+                }}
+              >
+                {voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing"
+                  ? <Loader2 size={26} color="white" className="animate-spin" />
+                  : <Mic size={26} color="white" strokeWidth={1.75} />
+                }
+              </button>
+              <span style={{ ...sans, fontSize: "0.8125rem", fontWeight: 500, color: "rgba(255,255,255,0.75)", letterSpacing: "0.02em", textShadow: "0 1px 4px rgba(0,0,0,0.6)" }}>
+                {voiceState === "recording" ? (chatLang === "ur" ? "ریکارڈنگ…" : "Recording…") : voiceState === "transcribing" ? (chatLang === "ur" ? "ٹرانسکرائب ہو رہا ہے…" : "Transcribing…") : voiceState === "thinking" ? (chatLang === "ur" ? "سوچ رہا ہے…" : "Thinking…") : voiceState === "synthesizing" ? (chatLang === "ur" ? "پروسیسنگ…" : "Processing…") : voiceState === "playing" ? (chatLang === "ur" ? "بول رہا ہے…" : "Speaking…") : (chatLang === "ur" ? "بولنے کے لیے دبائیں" : "Tap to speak")}
+              </span>
             </div>
-          ) : (
-            /* Chat mode — messages + voice input */
-            <>
-              {/* Messages scroll area */}
-              <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-                <div style={{ flex: 1, minHeight: "1.5rem" }} />
-                <div style={{ padding: "1rem 1.5rem 0.5rem" }}>
-
-                  <AnimatePresence initial={false}>
-                    {messages.map((msg, i) => {
-                      const isUser = msg.role === "user"
-                      const isAudio = msg.content_type === "audio"
-                      const isLastMsg = i === messages.length - 1
-                      const prev = messages[i - 1]
-                      const grouped = prev?.role === msg.role
-
-                      return (
-                        <motion.div
-                          key={i}
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                          style={{ marginBottom: grouped ? "0.3rem" : "0.875rem" }}
-                        >
-                          {isUser ? (
-                            /* User bubble */
-                            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "0.5rem" }}>
-                              <div style={{
-                                maxWidth: "62%", padding: "0.625rem 0.875rem",
-                                borderRadius: "16px 4px 16px 16px",
-                                background: "linear-gradient(135deg, #7a5535 0%, #a67c52 100%)",
-                                boxShadow: "0 2px 12px rgba(166,124,82,0.22)",
-                                display: "flex", alignItems: "flex-start", gap: "0.5rem",
-                              }}>
-                                {isAudio && <Mic2 size={12} color="rgba(255,255,255,0.7)" strokeWidth={1.75} style={{ flexShrink: 0, marginTop: 3 }} />}
-                                <p style={{ ...sans, fontSize: "0.9375rem", lineHeight: 1.65, color: "rgba(255,255,255,0.95)", margin: 0 }}>
-                                  {msg.content}
-                                </p>
-                              </div>
-                              {!grouped && (
-                                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #7a5535, #a67c52)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(166,124,82,0.28)" }}>
-                                  <span style={{ ...sans, fontSize: "0.6875rem", fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>
-                                    {(user?.first_name?.[0] || "U").toUpperCase()}
-                                  </span>
-                                </div>
-                              )}
-                              {grouped && <div style={{ width: 28, flexShrink: 0 }} />}
-                            </div>
-                          ) : (
-                            /* AI bubble */
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-                              {!grouped ? (
-                                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(93,138,107,0.25)" }}>
-                                  <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
-                                </div>
-                              ) : (
-                                <div style={{ width: 28, flexShrink: 0 }} />
-                              )}
-                              <div style={{
-                                maxWidth: "82%", padding: "0.625rem 0.875rem",
-                                borderRadius: "4px 16px 16px 16px",
-                                backgroundColor: "var(--card)",
-                                borderTop: "1px solid var(--border)",
-                                borderRight: "1px solid var(--border)",
-                                borderBottom: "1px solid var(--border)",
-                                borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)",
-                                display: "flex", alignItems: "flex-start", gap: "0.625rem",
-                              }}>
-                                <p style={{ ...sans, fontSize: "0.9375rem", lineHeight: 1.78, color: "var(--foreground)", margin: 0, flex: 1 }}>
-                                  {msg.content}
-                                </p>
-                                {/* Audio playback indicator on last AI message */}
-                                {isLastMsg && (
-                                  voiceState === "synthesizing" ? (
-                                    <Loader2 size={14} color="var(--sage)" className="animate-spin" style={{ flexShrink: 0, marginTop: 2 }} />
-                                  ) : voiceState === "playing" ? (
-                                    <div style={{ flexShrink: 0, display: "flex", gap: 2, alignItems: "flex-end", height: 18, marginTop: 1 }}>
-                                      {[0,1,2].map(j => (
-                                        <div key={j} style={{ width: 3, borderRadius: 2, backgroundColor: "var(--sage)", animation: `voice-bar 0.7s ease-in-out ${j * 0.18}s infinite alternate` }} />
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <Volume2 size={14} color="var(--sage)" style={{ flexShrink: 0, marginTop: 2, opacity: 0.5 }} />
-                                  )
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
-                      )
-                    })}
-                  </AnimatePresence>
-
-                  {/* Transcribing indicator */}
-                  <AnimatePresence>
-                    {voiceState === "transcribing" && (
-                      <motion.div key="transcribing" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}
-                        style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.875rem" }}
-                      >
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <Mic2 size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
-                        </div>
-                        <div style={{ padding: "0.625rem 0.875rem", borderRadius: "4px 14px 14px 14px", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                          {[0,1,2].map(j => <div key={j} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--sage)", opacity: 0.8, animation: `mindease-bounce 1.2s ease-in-out ${j * 0.18}s infinite` }} />)}
-                          <span style={{ ...sans, fontSize: "0.8125rem", color: "var(--muted-foreground)", marginLeft: "0.25rem" }}>Transcribing…</span>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {/* AI thinking indicator */}
-                    {voiceState === "thinking" && (
-                      <motion.div key="thinking" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}
-                        style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.875rem" }}
-                      >
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #325944, #5D8A6B)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <Brain size={13} color="rgba(255,255,255,0.9)" strokeWidth={1.75} />
-                        </div>
-                        <div style={{ padding: "0.625rem 0.875rem", borderRadius: "4px 14px 14px 14px", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderLeft: "2px solid color-mix(in srgb, #5D8A6B 55%, transparent)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                          {[0,1,2].map(j => <div key={j} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--primary)", opacity: 0.65, animation: `mindease-bounce 1.2s ease-in-out ${j * 0.18}s infinite` }} />)}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <div ref={messagesEndRef} />
-                </div>
-              </div>
-
-              {/* Voice input bar */}
-              <div style={{
-                flexShrink: 0,
-                borderTop: "1px solid color-mix(in srgb, var(--border) 45%, transparent)",
-                backgroundColor: "color-mix(in srgb, var(--background) 65%, transparent)",
-                backdropFilter: "blur(12px)",
-                padding: "1rem 1.5rem 1.25rem",
-              }}>
-                <AIVoiceInput
-                  voiceState={voiceState}
-                  recordingTime={recordingTime}
-                  disabled={welcomeLoading}
-                  onMicClick={handleMicClick}
-                  statusLabels={voiceStatusLabels}
-                />
-              </div>
-            </>
-          )}
+          </div>
         </div>
 
         <style>{`
           @keyframes mindease-bounce { 0%,60%,100%{transform:translateY(0);opacity:.65} 30%{transform:translateY(-5px);opacity:1} }
           @keyframes voice-bar { from { height: 4px } to { height: 14px } }
+          @keyframes avatar-ring { 0%{transform:scale(1);opacity:0.7} 100%{transform:scale(1.18);opacity:0} }
         `}</style>
       </VoiceChatShell>
     </AuthGuard>

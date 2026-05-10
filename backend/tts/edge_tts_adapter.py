@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Good therapy-appropriate voices. Override via EDGE_TTS_VOICE env var.
-DEFAULT_VOICE = "en-US-AriaNeural"
+DEFAULT_VOICE = "en-US-AndrewNeural"
 
 
 class EdgeTTSAdapter:

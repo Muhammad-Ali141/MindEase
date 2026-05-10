@@ -152,3 +152,16 @@ scraper/output/
 
 # Local Remotion sandbox (not part of MindEase app)
 /my-video/
+
+# Wav2Lip — third-party dependency, clone separately (see setup notes)
+backend/wav2lip/
+
+# Welcome audio/text cache (user-specific, generated at runtime — not source)
+backend/media/welcome_audio/
+backend/media/welcome_text/
+
+# Generated TTS audio samples
+backend/tts/Audios/*.wav
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json

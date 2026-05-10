@@ -22,8 +22,15 @@ _KNOWN_VOICE_IDS = {
     "antoni":  "ErXwobaYiN019PkySvjV",
     "elli":    "MF3mGyEYCl7XYWbV9V6O",
     "sam":     "yoZ06aMxZJJ28mfd3POQ",
+    # Deep / mid-age male voices
+    "daniel":  "onwK4e9ZLuTAKqWW03F9",
+    "george":  "JBFqnCBsd6RMkjVDRZzb",
+    "brian":   "nPczCjzI2devNBz1zQrb",
+    "clyde":   "2EiwWnXFnvU5JabPnv8n",
+    # Hindi/Urdu voices
+    "haseeb":  "aPfeouerZvEVukwmLSP0",
 }
-_DEFAULT_FALLBACK_ID = "pqHfZKP75CvOlQylNhV4"  # Bill
+_DEFAULT_FALLBACK_ID = "nPczCjzI2devNBz1zQrb"  # Brian
 _MODEL_ID = "eleven_multilingual_v2"
 
 
@@ -104,9 +111,10 @@ class ElevenLabsTTSAdapter:
         body = {
             "text": text,
             "model_id": _MODEL_ID,
+            "speed": 0.85,
             "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.75,
+                "stability": 0.6,
+                "similarity_boost": 0.80,
                 "style": 0.0,
                 "use_speaker_boost": True,
             },
@@ -116,6 +124,8 @@ class ElevenLabsTTSAdapter:
         # Surface quota/auth errors clearly so the caller can fall back to MMS
         if resp.status_code == 401:
             raise RuntimeError("ElevenLabs: invalid API key (401)")
+        if resp.status_code == 402:
+            raise RuntimeError("ElevenLabs: free plan cannot use library voices via API — upgrade or use a premade voice (402)")
         if resp.status_code == 429:
             raise RuntimeError("ElevenLabs: quota exceeded / rate limited (429)")
         resp.raise_for_status()
@@ -139,6 +149,12 @@ class ElevenLabsTTSAdapter:
     # ------------------------------------------------------------------
     # Public interface (matches MmsUrduTTSAdapter / TTSService)
     # ------------------------------------------------------------------
+
+    def synthesize_to_mp3_bytes(self, text: str, language: str = "ur") -> bytes:
+        """Return raw MP3 bytes from ElevenLabs (no pydub needed)."""
+        if not text or not text.strip():
+            raise ValueError("Text cannot be empty")
+        return self._call_api(text.strip())
 
     def synthesize_to_wav_bytes(self, text: str, language: str = "ur") -> bytes:
         if not text or not text.strip():

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.37.4",
+    "@daily-co/daily-js": "^0.89.1",
     "@hookform/resolvers": "latest",
     "@paper-design/shaders-react": "^0.0.71",
     "@radix-ui/react-accordion": "1.2.2",
@@ -59,6 +60,7 @@
     "react-hook-form": "latest",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.4",
+    "simli-client": "^3.0.1",
     "sonner": "^1.7.4",
     "swr": "latest",
     "tailwind-merge": "^2.5.5",

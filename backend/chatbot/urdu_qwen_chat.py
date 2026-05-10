@@ -226,6 +226,12 @@ def qwen_chat(
                 end = content.find("</think>")
                 if end != -1:
                     content = content[end + len("</think>"):].strip()
+            # Strip stray CJK characters (Chinese/Japanese/Korean) Qwen models occasionally leak
+            import re as _re
+            cleaned = _re.sub(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f]+', '', content).strip()
+            if cleaned != content:
+                _qlog(f"[urdu-llm] stripped CJK chars from {label} response")
+                content = cleaned
             if not content:
                 raise RuntimeError(f"{label} returned empty content")
             _qlog(f"[urdu-llm] {label} succeeded  chars={len(content)}")

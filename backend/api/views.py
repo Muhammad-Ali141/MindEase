@@ -105,9 +105,13 @@ _qwen3_tts_cache = None
 _qwen3_tts_lock = None
 
 
-# ElevenLabs TTS adapter cache (Urdu primary)
+# ElevenLabs TTS adapter cache — key 1 (Urdu primary)
 _elevenlabs_tts_cache = None
 _elevenlabs_tts_lock = None
+
+# ElevenLabs TTS adapter cache — key 2 (Urdu secondary fallback)
+_elevenlabs_tts_cache_2 = None
+_elevenlabs_tts_lock_2 = None
 
 # MMS-TTS adapter cache (Urdu fallback)
 _mms_urdu_tts_cache = None
@@ -136,9 +140,32 @@ def _get_elevenlabs_tts_service():
                 from tts.elevenlabs_tts_adapter import ElevenLabsTTSAdapter
                 _elevenlabs_tts_cache = ElevenLabsTTSAdapter(
                     api_key=api_key,
-                    voice_name=os.environ.get("ELEVENLABS_VOICE_NAME", "Jessica"),
+                    voice_name=os.environ.get("ELEVENLABS_VOICE_NAME", "Adam"),
                 )
     return _elevenlabs_tts_cache
+
+
+def _get_elevenlabs_tts_service_2():
+    """Get or create ElevenLabs adapter for the second API key (fallback). Returns None if not configured."""
+    global _elevenlabs_tts_cache_2, _elevenlabs_tts_lock_2
+    api_key = os.environ.get("ELEVENLABS_API_KEY_2", "").strip()
+    if not api_key:
+        return None
+    if _elevenlabs_tts_cache_2 is None:
+        if _elevenlabs_tts_lock_2 is None:
+            _elevenlabs_tts_lock_2 = threading.Lock()
+        with _elevenlabs_tts_lock_2:
+            if _elevenlabs_tts_cache_2 is None:
+                import sys
+                tts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tts')
+                if tts_dir not in sys.path:
+                    sys.path.insert(0, tts_dir)
+                from tts.elevenlabs_tts_adapter import ElevenLabsTTSAdapter
+                _elevenlabs_tts_cache_2 = ElevenLabsTTSAdapter(
+                    api_key=api_key,
+                    voice_name=os.environ.get("ELEVENLABS_VOICE_NAME", "Adam"),
+                )
+    return _elevenlabs_tts_cache_2
 
 
 def _get_mms_urdu_tts_service():
@@ -195,16 +222,21 @@ def _get_qwen3_tts_service():
 
 def _resolve_tts_backend(data, language=None):
     """
-    Both English and Urdu default to Edge TTS (Microsoft cloud, ~500ms, no GPU).
-    English fallback: Qwen3. Urdu fallback: MMS.
+    Urdu defaults to ElevenLabs (when key set), then Edge TTS, then MMS.
+    English defaults to Edge TTS, then Qwen3.
     Override via JSON body `tts_backend` or env `TTS_BACKEND`.
     """
+    _valid = ("xtts", "qwen3", "mms_urdu", "edge_tts", "elevenlabs")
     req = (data.get("tts_backend") or "").strip().lower()
-    if req in ("xtts", "qwen3", "mms_urdu", "edge_tts"):
+    if req in _valid:
         return req
     env = (os.environ.get("TTS_BACKEND") or "").strip().lower()
-    if env in ("xtts", "qwen3", "mms_urdu", "edge_tts"):
+    if env in _valid:
         return env
+    # Auto-select: Urdu → ElevenLabs if key is present, else Edge TTS
+    if str(language or "").lower() in ("ur", "urdu"):
+        if os.environ.get("ELEVENLABS_API_KEY", "").strip():
+            return "elevenlabs"
     return "edge_tts"
 
 
@@ -429,6 +461,43 @@ def _synthesize_welcome_audio(welcome_message: str, audio_path: str, lang_pref=N
     """TTS the welcome message to audio_path (atomic). Also writes sidecar .json with the text."""
     language = "ur" if (lang_pref and str(lang_pref).lower() in ("urdu", "ur")) else "en"
     backend = _resolve_tts_backend({}, language=language)
+    root, ext = os.path.splitext(audio_path)
+
+    if backend == "elevenlabs":
+        # Urdu primary: ElevenLabs key1 → key2 → Edge TTS
+        tmp_mp3 = f"{root}.part.mp3"
+        mp3_bytes = None
+        for _el_getter in (_get_elevenlabs_tts_service, _get_elevenlabs_tts_service_2):
+            el = _el_getter()
+            if el is None:
+                continue
+            try:
+                mp3_bytes = el.synthesize_to_mp3_bytes(welcome_message, language=language)
+                break
+            except Exception as el_err:
+                print(f"[TTS] ElevenLabs welcome audio failed ({el_err}), trying next key")
+        if mp3_bytes:
+            with open(tmp_mp3, "wb") as _f:
+                _f.write(mp3_bytes)
+            os.replace(tmp_mp3, audio_path)
+        else:
+            # Final fallback: Edge TTS
+            print("[TTS] All ElevenLabs keys failed for welcome audio, falling back to Edge TTS")
+            voice = os.environ.get("EDGE_TTS_VOICE_UR", "ur-PK-AsadNeural")
+            try:
+                edge_service = _get_edge_tts_service()
+                edge_service.synthesize_to_file(text=welcome_message, output_path=tmp_mp3, language=language, voice=voice)
+                os.replace(tmp_mp3, audio_path)
+            except Exception as edge_err:
+                print(f"[TTS] Edge TTS welcome fallback also failed ({edge_err})")
+                raise
+        sidecar = audio_path.replace(".wav", ".json")
+        try:
+            _atomic_write_text(sidecar, json.dumps({"welcome_message": welcome_message}, ensure_ascii=False))
+        except Exception:
+            pass
+        return
+
     if backend == "xtts":
         tts_service = _get_tts_service()
     elif backend == "edge_tts":
@@ -437,7 +506,6 @@ def _synthesize_welcome_audio(welcome_message: str, audio_path: str, lang_pref=N
             os.environ.get("EDGE_TTS_VOICE_UR", "ur-PK-AsadNeural") if is_urdu
             else os.environ.get("EDGE_TTS_VOICE", "en-US-AriaNeural")
         )
-        root, ext = os.path.splitext(audio_path)
         tmp_audio = f"{root}.part.mp3"
         try:
             edge_service = _get_edge_tts_service()
@@ -2899,6 +2967,31 @@ def tts_synthesize(request):
             if language not in supported_languages:
                 language = "en"  # Default to English if invalid
             
+            if tts_backend == "elevenlabs":
+                # Urdu primary: key1 → key2 → Edge TTS
+                from django.http import HttpResponse
+                mp3_bytes = None
+                for _el_getter in (_get_elevenlabs_tts_service, _get_elevenlabs_tts_service_2):
+                    el = _el_getter()
+                    if el is None:
+                        continue
+                    try:
+                        mp3_bytes = el.synthesize_to_mp3_bytes(text, language=language)
+                        break
+                    except Exception as el_err:
+                        import traceback
+                        traceback.print_exc()
+                        print(f"[TTS] ElevenLabs key failed ({el_err}), trying next key")
+                if mp3_bytes:
+                    response = HttpResponse(mp3_bytes, content_type="audio/mpeg")
+                    response["Content-Disposition"] = 'inline; filename="tts_audio.mp3"'
+                    response["Content-Length"] = len(mp3_bytes)
+                    _tts_info["audio_bytes"] = len(mp3_bytes); _tts_info["ok"] = True
+                    return response
+                # All ElevenLabs keys exhausted — fall through to Edge TTS
+                print("[TTS] All ElevenLabs keys exhausted, falling back to Edge TTS")
+                tts_backend = "edge_tts"
+
             if tts_backend == "mms_urdu":
                 # Explicit MMS-only override (e.g. for testing)
                 try:
