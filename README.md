@@ -111,7 +111,33 @@ DID_API_KEY=...                  # optional, for avatar
 PGVECTOR_URL=postgresql://user:pass@localhost:5432/mindease
 ```
 
-### 3. Models / Data (optional, for full local pipeline)
+### 3. Wav2Lip avatar service (terminal 3)
+
+The avatar lip-sync runs as a separate FastAPI service on port `8002`.
+
+```bash
+cd backend
+venv\Scripts\activate            # Windows
+# source venv/bin/activate       # macOS / Linux
+
+python wav2lip_service.py        # http://127.0.0.1:8002
+```
+
+Requires `backend/wav2lip/checkpoints/wav2lip_gan.pth` and `public/avatar.jpg`. CUDA GPU recommended (falls back to CPU, much slower).
+
+### Running everything — three terminals
+
+Open three terminals. In each, activate the venv first if it's a Python terminal.
+
+| Terminal | Folder    | Command                                              | Port |
+| -------- | --------- | ---------------------------------------------------- | ---- |
+| 1 — Frontend | repo root | `npm run dev` (or `npm run build && npm run start`) | 3000 |
+| 2 — Backend  | `backend/` | `venv\Scripts\activate` then `python manage.py runserver` | 8000 |
+| 3 — Wav2Lip  | `backend/` | `venv\Scripts\activate` then `python wav2lip_service.py` | 8002 |
+
+Then open `http://localhost:3000`.
+
+### 4. Models / Data (optional, for full local pipeline)
 
 - Place fine-tuned Urdu Whisper weights in `finetuned_urdu_whisper/`.
 - Place DeBERTa emotion weights in `deberta_best/`.
