@@ -2,6 +2,7 @@
 Qwen-only Roman Urdu mental health chat pipeline.
 No Qalb, no local LLM, no transliteration. User and assistant stay in Roman Urdu; single API (Alibaba qwen3.5-122b-a10b).
 """
+import re
 import sys
 import time as _time
 from typing import Optional, List, Dict, Generator
@@ -11,6 +12,7 @@ from chatbot.urdu_qwen_chat import (
     qwen_chat,
     CRISIS_RESPONSE_ROMAN_URDU,
 )
+from chatbot.crisis_detection import is_crisis_message as _shared_is_crisis
 
 def _log(msg: str):
     import sys
@@ -24,7 +26,26 @@ URDU_CRISIS_KEYWORDS = [
 ]
 
 
+_ASTERISK_PAIR_RE = re.compile(r"\*{1,3}([^*\n]+?)\*{1,3}")
+
+
+def _sanitize_roman_urdu(text: str) -> str:
+    if not text:
+        return text
+    text = _ASTERISK_PAIR_RE.sub(r"\1", text)
+    text = text.replace("*", "")
+    text = text.replace("—", ", ").replace("–", ", ")
+    text = text.replace("--", ", ")
+    text = re.sub(r"\s+,", ",", text)
+    text = re.sub(r",{2,}", ",", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
+
+
 def _is_crisis_message(roman_text: str) -> bool:
+    if _shared_is_crisis(roman_text):
+        return True
     t = (roman_text or "").lower()
     return any(kw in t for kw in URDU_CRISIS_KEYWORDS)
 
@@ -89,10 +110,12 @@ def run_urdu_pipeline(
     _log(f"[urdu-chat-timing] message_count: {len(messages)} (system + {len(messages)-2} history + user)")
 
     t_llm_start = _time.perf_counter()
-    reply = qwen_chat(messages, max_tokens=900, temperature=0.7, enable_thinking=False)
+    reply = qwen_chat(messages, max_tokens=300, temperature=0.7, enable_thinking=False)
     t_llm_done = _time.perf_counter()
     _log(f"[urdu-chat-timing] qwen_llm_call:      {(t_llm_done - t_llm_start):.3f}s")
     _log(f"[urdu-chat-timing] TOTAL:              {(t_llm_done - t0):.3f}s")
+    if not _is_arabic_script(roman_user_input):
+        reply = _sanitize_roman_urdu(reply)
     return reply
 
 

@@ -183,9 +183,10 @@ class SessionService:
         if total_full <= 3:
             return
 
+        slots = max(0, 3 - len(preserve_ids))
         keep_ids = set(
             full_sessions.exclude(session_id__in=preserve_ids)
-            .values_list('session_id', flat=True)[:3]
+            .values_list('session_id', flat=True)[:slots]
         )
         keep_ids.update(preserve_ids)
 

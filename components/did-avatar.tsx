@@ -73,14 +73,14 @@ const DIDAvatar = forwardRef<DIDAvatarHandle, Props>(
           <img
             src="/avatar.jpg"
             alt="Therapist"
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 20%" }}
           />
         )}
         <video
           ref={videoRef}
           playsInline
           className={className}
-          style={{ ...style, opacity: speaking ? 1 : 0, transition: "opacity 0.15s ease" }}
+          style={{ objectPosition: "center 20%", ...style, opacity: speaking ? 1 : 0, transition: "opacity 0.15s ease" }}
         />
       </div>
     )

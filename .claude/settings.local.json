@@ -37,7 +37,24 @@
       "Bash(./venv/Scripts/python -c ':*)",
       "Bash(venv/Scripts/python.exe -c \"import django; print\\(django.__version__\\)\")",
       "Bash(python3 -c \"import sys; print\\(sys.executable\\)\")",
-      "Bash(ls \"/b/Uni/FYP/Implementation/MindEase/MindEase/backend/api/tests\"*)"
+      "Bash(ls \"/b/Uni/FYP/Implementation/MindEase/MindEase/backend/api/tests\"*)",
+      "Bash(git show *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(cp \"C:/Users/Hasnain Ibrar Butt/Downloads/wav2lip_gan.pth\" backend/wav2lip/checkpoints/)",
+      "Bash(cp \"C:/Users/Hasnain Ibrar Butt/Downloads/GFPGANv1.4.pth\" backend/wav2lip/checkpoints/)",
+      "Bash(backend/venv/Scripts/python.exe *)",
+      "Bash(venv/Scripts/python.exe -m pip --version)",
+      "Bash(venv/Scripts/python.exe -m pip install opencv-python torch torchvision torchaudio face-alignment librosa numpy imageio-ffmpeg)",
+      "Bash(venv/Scripts/python.exe -c \"import torch, torchvision, torchaudio, cv2, face_alignment, librosa, numpy, imageio_ffmpeg; print\\('torch', torch.__version__\\); print\\('cv2', cv2.__version__\\); print\\('numpy', numpy.__version__\\)\")",
+      "Bash(venv/Scripts/python.exe -m pip install \"numpy<2\" \"networkx<3\")",
+      "Bash(venv/Scripts/python.exe -m pip install \"opencv-python<4.10\" \"scikit-image<0.25\")",
+      "Bash(venv/Scripts/python.exe -c \"import torch, torchvision, torchaudio, cv2, face_alignment, librosa, numpy, imageio_ffmpeg; print\\('torch', torch.__version__\\); print\\('cv2', cv2.__version__\\); print\\('numpy', numpy.__version__\\); print\\('cuda', torch.cuda.is_available\\(\\)\\)\")",
+      "Bash(venv/Scripts/python.exe *)",
+      "Bash(grep *)",
+      "Bash(python3)",
+      "Bash(python3 -c ' *)",
+      "Bash(git add *)"
     ]
   }
 }

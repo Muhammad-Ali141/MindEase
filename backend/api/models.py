@@ -66,6 +66,7 @@ class User(models.Model):
     primary_condition = models.CharField(max_length=20, blank=True, null=True)
     generic_screening_completed = models.BooleanField(default=False)
     last_test_date = models.DateField(blank=True, null=True)
+    auth_token = models.CharField(max_length=128, blank=True, null=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,6 +1,28 @@
 // lib/api.ts — aligned with Django backend
 
-const API_BASE = "http://localhost:8000/api";
+const API_BASE =
+  (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000") + "/api";
+
+const AUTH_TOKEN_STORAGE_KEY = "mindease_auth_token";
+
+export function setAuthToken(token: string | null | undefined): void {
+  if (typeof window === "undefined") return;
+  if (token) {
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  } else {
+    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  }
+}
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 // Send OTP for email verification
 export const apiSendOtp = async (email: string) => {
@@ -8,6 +30,7 @@ export const apiSendOtp = async (email: string) => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ email }),
   });
@@ -26,6 +49,7 @@ export const apiVerifyOtp = async (email: string, otp: string) => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ email, otp }),
   });
@@ -44,6 +68,7 @@ export const apiCheckEmail = async (email: string) => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ email }),
   });
@@ -62,6 +87,7 @@ export const apiRegister = async (data: any) => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({
       first_name: data.first_name,
@@ -81,13 +107,15 @@ export const apiRegister = async (data: any) => {
     throw new Error(errorData.error || "Registration failed");
   }
 
-  return res.json();
+  const out = await res.json();
+  if (out?.auth_token) setAuthToken(out.auth_token);
+  return out;
 }
 
 export async function apiLogin(body: { email: string; password: string }) {
   const response = await fetch(`${API_BASE}/login/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
 
@@ -97,6 +125,7 @@ export async function apiLogin(body: { email: string; password: string }) {
     throw new Error(data.error || "Login failed");
   }
 
+  if (data?.auth_token) setAuthToken(data.auth_token);
   return data;
 }
 
@@ -104,12 +133,13 @@ export async function apiLogin(body: { email: string; password: string }) {
 export async function apiLoginOauth(email: string) {
   const res = await fetch(`${API_BASE}/login-oauth/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ email }),
   });
   const data = await res.json();
   if (res.status === 404) throw new Error("USER_NOT_FOUND");
   if (!res.ok) throw new Error(data.error || "Login failed");
+  if (data?.auth_token) setAuthToken(data.auth_token);
   return data;
 }
 
@@ -127,7 +157,7 @@ export async function apiRegisterOauth(data: {
 }) {
   const res = await fetch(`${API_BASE}/register-oauth/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       email: data.email,
       first_name: data.first_name,
@@ -142,6 +172,7 @@ export async function apiRegisterOauth(data: {
   });
   const out = await res.json();
   if (!res.ok) throw new Error(out.error || "Registration failed");
+  if (out?.auth_token) setAuthToken(out.auth_token);
   return out;
 }
 
@@ -150,6 +181,7 @@ export async function apiUpdateDashboardTour(user_id: string, seen: boolean) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id, seen }),
   });
@@ -195,6 +227,7 @@ export async function apiChatMessage(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({
       message,
@@ -238,7 +271,7 @@ export async function apiChatMessageStream(
   const trimmedHistory = conversation_history.slice(-10)
   const res = await fetch(`${API_BASE}/chat/stream/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       message,
       user_id,
@@ -306,6 +339,7 @@ export async function apiChatWelcome(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({
       user_id,
@@ -342,6 +376,7 @@ export async function apiChatSummary(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({
       user_id,
@@ -370,6 +405,7 @@ export async function apiGetSessionCount(user_id: string): Promise<SessionCountR
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id }),
   })
@@ -448,6 +484,7 @@ export async function apiSaveSession(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({
       user_id,
@@ -481,6 +518,7 @@ export async function apiGetRecentSessions(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id, limit }),
   })
@@ -506,6 +544,7 @@ export async function apiGetSessionById(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id, session_id }),
   })
@@ -532,6 +571,7 @@ export async function apiToggleSessionStar(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id, session_id, star }),
   })
@@ -562,6 +602,7 @@ export async function apiGetUserProfile(user_id: string): Promise<UserProfileDat
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id }),
   })
@@ -607,6 +648,7 @@ export async function apiUpdateUserProfile(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({
       user_id,
@@ -706,6 +748,7 @@ export async function apiSTTTranscribe(
   const res = await fetch(`${API_BASE}/stt/transcribe/`, {
     method: "POST",
     body: formData,
+    headers: { ...authHeaders() },
     // Don't set Content-Type header - browser will set it with boundary for FormData
   })
 
@@ -740,6 +783,7 @@ export async function apiSTTTranscribePartial(
   const res = await fetch(`${API_BASE}/stt/transcribe-partial/`, {
     method: "POST",
     body: formData,
+    headers: { ...authHeaders() },
   })
 
   if (!res.ok) {
@@ -762,7 +806,7 @@ export async function apiVoiceProcess(
   const form = new FormData()
   form.append("audio", audioBlob, "recording.webm")
   form.append("language", language)
-  const res = await fetch(`${API_BASE}/voice/process/`, { method: "POST", body: form })
+  const res = await fetch(`${API_BASE}/voice/process/`, { method: "POST", body: form, headers: { ...authHeaders() } })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error((err as { error?: string }).error || "Voice process failed")
@@ -812,7 +856,7 @@ export async function apiGetWelcomeAudio(
   }
   if (langPref === "ur") params.set("lang_pref", "ur")
   if (voiceWelcomeUrduScript) params.set("voice_welcome_urdu_script", "true")
-  const res = await fetch(`${API_BASE}/voice/welcome-audio/?${params}`)
+  const res = await fetch(`${API_BASE}/voice/welcome-audio/?${params}`, { headers: { ...authHeaders() } })
   if (!res.ok) throw new Error(res.status === 404 ? "No welcome audio" : "Failed to get welcome audio")
   const blob = await res.blob()
   const encoded = res.headers.get("X-Welcome-Message")
@@ -852,7 +896,7 @@ export async function apiGenerateAndSaveWelcomeAudio(
   if (voiceWelcomeUrduScript) body.voice_welcome_urdu_script = true
   const res = await fetch(`${API_BASE}/voice/welcome-audio/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -878,6 +922,7 @@ export async function apiTTSSynthesize(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(body),
   })
@@ -926,7 +971,7 @@ export async function apiGetDashboardData(
 ): Promise<DashboardData> {
   const res = await fetch(`${API_BASE}/dashboard/data/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       user_id,
       therapist_city: therapist_city || undefined,
@@ -960,6 +1005,7 @@ export async function apiGetDiagnosticTestStatus(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id }),
   });
@@ -996,6 +1042,7 @@ export async function apiGetMoodTrend(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id }),
   });
@@ -1021,6 +1068,7 @@ export async function apiGetStreak(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id }),
   });
@@ -1055,6 +1103,7 @@ export async function apiSubmitDiagnosticTest(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({
       user_id,
@@ -1091,6 +1140,7 @@ export async function apiGetDiagnosticTestHistory(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify({ user_id }),
   });

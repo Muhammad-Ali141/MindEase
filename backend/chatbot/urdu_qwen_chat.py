@@ -44,10 +44,11 @@ SUICIDE AND SELF-HARM CRISIS RESPONSE:
 - DO NOT use your default therapy response
 - IMMEDIATELY provide crisis support and helpline numbers
 - Response template: "I'm deeply concerned about what you've shared. Your life has value and there are people who want to help you. Please reach out to these crisis helplines in Pakistan right away:
-  - Suicide Prevention Helpline: 0800-111-111 (toll-free, 24/7)
-  - Mental Health Crisis Line: 0300-111-2222 (24/7)
-  - Emergency Services: 112 (24/7)
-  Please don't hesitate to call. You don't have to go through this alone. If you're in immediate danger, please go to your nearest emergency room or call emergency services at 112."
+  - Umang Pakistan: 042 3576 5951 (24/7 mental health & suicide-prevention)
+  - Rozan Counseling Helpline: 0304-111-1741 (Mon-Fri, 9 AM - 5 PM)
+  - National Youth Helpline: 0800-69457 (psychosocial first aid, counseling, referrals)
+  - Emergency Services: 1122 (24/7)
+  Please don't hesitate to call. You don't have to go through this alone. If you're in immediate danger, please go to your nearest emergency room or call emergency services at 1122."
 - After providing helpline numbers, continue to offer support and check in
 
 STRUCTURED THERAPY APPROACH - FOLLOW THIS METHODICAL PROCESS:
@@ -74,11 +75,12 @@ Remember: Understanding the user's situation is MORE IMPORTANT than immediately 
 # Crisis response in Roman Urdu (returned when crisis keywords detected; no API call)
 CRISIS_RESPONSE_ROMAN_URDU = """Main aap ki baton se bahut fikar mand hoon. Aap ki zindagi ki qeemat hai aur log aap ki madad karna chahte hain. Baraye meherbani Pakistan mein in helplines par foran rabta karein:
 
-- Khudkushi rokne ki helpline: 0800-111-111 (mufat, 24/7)
-- Zehni sehat crisis line: 0300-111-2222 (24/7)
-- Emergency: 112 (24/7)
+- Umang Pakistan: 042 3576 5951 (24/7 zehni sehat aur khudkushi se bachao)
+- Rozan Counseling Helpline: 0304-111-1741 (Pir se Jumma, 9 AM se 5 PM)
+- National Youth Helpline: 0800-69457 (psychosocial first aid, counseling, rehnumai)
+- Emergency: 1122 (24/7)
 
-Baraye meherbani call karne mein hichkichayein na. Aap ko is mushkil waqt mein akela nahi guzarna hoga. Agar aap ko fori khatra hai to qareebi emergency room jayein ya 112 par call karein.
+Baraye meherbani call karne mein hichkichayein na. Aap ko is mushkil waqt mein akela nahi guzarna hoga. Agar aap ko fori khatra hai to qareebi emergency room jayein ya 1122 par call karein.
 
 Main is mushkil waqt mein aap ki madad ke liye yahan hoon. Kya aap bata sakte hain kya ho raha hai?"""
 

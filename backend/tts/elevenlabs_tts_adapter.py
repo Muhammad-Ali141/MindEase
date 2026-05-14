@@ -33,6 +33,11 @@ _KNOWN_VOICE_IDS = {
 _DEFAULT_FALLBACK_ID = "nPczCjzI2devNBz1zQrb"  # Brian
 _MODEL_ID = "eleven_multilingual_v2"
 
+# Global gate — free tier allows max 2 concurrent requests across the whole
+# account. We serialize to 1 in-flight so we never trip the limit even when
+# welcome-audio synthesis overlaps with a user TTS call.
+_GLOBAL_INFLIGHT = threading.Semaphore(1)
+
 
 class ElevenLabsTTSAdapter:
 
@@ -120,14 +125,28 @@ class ElevenLabsTTSAdapter:
             },
         }
         t0 = time.perf_counter()
-        resp = requests.post(url, headers=headers, json=body, timeout=30)
+        resp = None
+        with _GLOBAL_INFLIGHT:
+            for attempt in range(4):
+                resp = requests.post(url, headers=headers, json=body, timeout=30)
+                if resp.status_code == 429:
+                    retry_after = resp.headers.get("retry-after")
+                    delay = float(retry_after) if retry_after else (0.5 * (2 ** attempt))
+                    logger.warning(
+                        "ElevenLabs 429 (attempt %d/4) body=%s retry-after=%s sleeping=%.2fs",
+                        attempt + 1, resp.text[:200], retry_after, delay,
+                    )
+                    if attempt < 3:
+                        time.sleep(delay)
+                        continue
+                break
         # Surface quota/auth errors clearly so the caller can fall back to MMS
         if resp.status_code == 401:
             raise RuntimeError("ElevenLabs: invalid API key (401)")
         if resp.status_code == 402:
             raise RuntimeError("ElevenLabs: free plan cannot use library voices via API — upgrade or use a premade voice (402)")
         if resp.status_code == 429:
-            raise RuntimeError("ElevenLabs: quota exceeded / rate limited (429)")
+            raise RuntimeError(f"ElevenLabs: rate limited after retries (429): {resp.text[:200]}")
         resp.raise_for_status()
         logger.debug(
             "ElevenLabs API call: %.1f ms  bytes=%s",

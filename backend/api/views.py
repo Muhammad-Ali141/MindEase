@@ -61,6 +61,8 @@ import os
 from api.models import EmailVerification, Message, Session, User, Testresult, Therapistdirectory
 from api.services.session_service import SessionService
 from api.services.diagnostic_test_service import DiagnosticTestService
+from api.rate_limit import rate_limit_chat
+from api.auth_token import require_auth_token
 from chatbot.conversation_memory import ConversationMemory
 from chatbot.llm_client import LLMClient
 
@@ -878,6 +880,7 @@ def register(request):
                 return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
 
             # Create user record
+            from api.auth_token import generate_auth_token
             user = User.objects.create(
                 first_name=first_name,
                 last_name=last_name,
@@ -888,12 +891,14 @@ def register(request):
                 lang_pref=lang_pref,
                 city=city.strip() if city else None,
                 nearest_major_city=nearest_major_city_clean,
+                auth_token=generate_auth_token(),
             )
 
             return JsonResponse({
                 "message": "User registered successfully!",
                 "user_id": user.user_id,
-                "email": user.email
+                "email": user.email,
+                "auth_token": user.auth_token,
             }, status=201)
 
         except Exception as e:
@@ -926,6 +931,11 @@ def login_oauth(request):
         except Exception as e:
             print(f"[welcome-refresh] oauth login hook failed: {e}")
 
+        from api.auth_token import generate_auth_token
+        if not user.auth_token:
+            user.auth_token = generate_auth_token()
+            user.save(update_fields=["auth_token"])
+
         # Return same shape as login for frontend setAuth
         return JsonResponse({
             "message": "Login successful.",
@@ -940,6 +950,7 @@ def login_oauth(request):
             "dashboard_tour_seen": user.dashboard_tour_seen,
             "primary_condition": user.primary_condition,
             "generic_screening_completed": user.generic_screening_completed,
+            "auth_token": user.auth_token,
         }, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -987,6 +998,7 @@ def register_oauth(request):
         if not dob_parsed:
             return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
 
+        from api.auth_token import generate_auth_token
         user = User.objects.create(
             first_name=first_name or "User",
             last_name=last_name,
@@ -997,6 +1009,7 @@ def register_oauth(request):
             lang_pref=lang_pref,
             city=city or None,
             nearest_major_city=nearest_major_city,
+            auth_token=generate_auth_token(),
         )
         return JsonResponse({
             "message": "User registered successfully!",
@@ -1011,6 +1024,7 @@ def register_oauth(request):
             "dashboard_tour_seen": user.dashboard_tour_seen,
             "primary_condition": user.primary_condition,
             "generic_screening_completed": user.generic_screening_completed,
+            "auth_token": user.auth_token,
         }, status=201)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -1187,6 +1201,11 @@ def login(request):
             except Exception as e:
                 print(f"[welcome-refresh] login hook failed: {e}")
 
+            from api.auth_token import generate_auth_token
+            if not user.auth_token:
+                user.auth_token = generate_auth_token()
+                user.save(update_fields=["auth_token"])
+
             return JsonResponse({
                 "message": "Login successful.",
                 "user_id": user.user_id,
@@ -1200,6 +1219,7 @@ def login(request):
                 "dashboard_tour_seen": user.dashboard_tour_seen,
                 "primary_condition": user.primary_condition,
                 "generic_screening_completed": user.generic_screening_completed,
+                "auth_token": user.auth_token,
             }, status=200)
 
         except Exception as e:
@@ -1212,6 +1232,8 @@ def login(request):
 # CHAT MESSAGE
 # -------------------------
 @csrf_exempt
+@rate_limit_chat
+@require_auth_token
 def chat_message(request):
     if request.method == "POST":
         try:
@@ -1295,6 +1317,8 @@ def chat_message(request):
 # CHAT MESSAGE (STREAMING)
 # -------------------------
 @csrf_exempt
+@rate_limit_chat
+@require_auth_token
 def chat_message_stream(request):
     """Stream LLM response as SSE; client can TTS per sentence and play while stream continues."""
     if request.method != "POST":
@@ -1362,6 +1386,8 @@ def chat_message_stream(request):
 # VOICE PROCESS (STT + SER) - get transcript and emotions-from-audio for voice chat
 # -------------------------
 @csrf_exempt
+@rate_limit_chat
+@require_auth_token
 def voice_process(request):
     """
     Accept audio file; run STT and Speech Emotion Recognition (SER) in parallel.
@@ -1474,6 +1500,7 @@ def voice_process(request):
 
 
 @csrf_exempt
+@require_auth_token
 def voice_welcome_audio(request):
     """GET: return cached welcome audio. Query: user_id, include_context, test_context_key (required when include_context true).
      Returns X-Welcome-Message header (base64) when we have stored text so client can show matching text.
@@ -1554,6 +1581,7 @@ def voice_welcome_audio(request):
 # GET WELCOME MESSAGE
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def chat_welcome(request):
     if request.method == "POST":
         try:
@@ -1626,6 +1654,7 @@ def chat_welcome(request):
 # GET CHAT SUMMARY
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def chat_summary(request):
     if request.method == "POST":
         try:
@@ -1692,6 +1721,7 @@ def chat_summary(request):
 # GET SESSION COUNT
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def get_session_count(request):
     if request.method == "POST":
         try:
@@ -1953,6 +1983,7 @@ def _generate_title_and_summary(conversation_history, llm_client, user_first_nam
 # SAVE SESSION
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def save_session(request):
     if request.method == "POST":
         try:
@@ -2046,6 +2077,7 @@ def save_session(request):
 # GET RECENT SESSIONS
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def get_recent_sessions(request):
     if request.method == "POST":
         try:
@@ -2101,6 +2133,7 @@ def get_recent_sessions(request):
 # CONSOLIDATED DASHBOARD DATA
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def dashboard_data(request):
     """Return all dashboard data in a single response to avoid multiple round-trips."""
     if request.method != "POST":
@@ -2298,6 +2331,7 @@ def dashboard_data(request):
 # GET SESSION BY ID
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def get_session_by_id(request):
     if request.method == "POST":
         try:
@@ -2377,6 +2411,7 @@ def get_session_by_id(request):
 # TOGGLE SESSION STAR
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def toggle_session_star(request):
     if request.method == "POST":
         try:
@@ -2503,6 +2538,7 @@ def get_therapist_filters(request):
 # GET USER PROFILE
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def get_user_profile(request):
     if request.method == "POST":
         try:
@@ -2550,6 +2586,7 @@ def get_user_profile(request):
 # UPDATE USER PROFILE
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def update_user_profile(request):
     if request.method == "POST":
         try:
@@ -2658,6 +2695,7 @@ def update_user_profile(request):
 # UPDATE DASHBOARD TOUR STATUS
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def update_dashboard_tour(request):
     if request.method == "POST":
         try:
@@ -2696,6 +2734,7 @@ def update_dashboard_tour(request):
 # STT TRANSCRIBE
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def stt_transcribe(request):
     if request.method == "POST":
         try:
@@ -2871,6 +2910,7 @@ def _get_urdu_stt_service():
 
 # Real-time STT: transcribe partial audio chunks for live display (TINY model so results return in ~1s)
 @csrf_exempt
+@require_auth_token
 def stt_transcribe_partial(request):
     """
     Live speech-to-text while user is speaking. Uses tiny Whisper so each chunk
@@ -2930,6 +2970,7 @@ def stt_transcribe_partial(request):
 # TTS SYNTHESIZE
 # -------------------------
 @csrf_exempt
+@require_auth_token
 def tts_synthesize(request):
     if request.method == "POST":
         import time as _tts_time, sys as _tts_sys
@@ -3150,6 +3191,7 @@ def tts_synthesize(request):
 # -------------------------
 
 @csrf_exempt
+@require_auth_token
 def diagnostic_test_status(request):
     """Get diagnostic test status for user."""
     if request.method == "POST":
@@ -3214,6 +3256,7 @@ def diagnostic_test_status(request):
 
 
 @csrf_exempt
+@require_auth_token
 def diagnostic_test_submit(request):
     """Submit diagnostic test results."""
     if request.method == "POST":
@@ -3362,6 +3405,7 @@ def diagnostic_test_submit(request):
 
 
 @csrf_exempt
+@require_auth_token
 def diagnostic_test_history(request):
     """Get diagnostic test history for user."""
     if request.method == "POST":
@@ -3405,6 +3449,7 @@ def diagnostic_test_history(request):
 
 
 @csrf_exempt
+@require_auth_token
 def diagnostic_test_mood_trend(request):
     """Get mood trend data for user (day-wise scores for their primary condition)."""
     if request.method == "POST":
@@ -3484,6 +3529,7 @@ def diagnostic_test_mood_trend(request):
 
 
 @csrf_exempt
+@require_auth_token
 def diagnostic_test_streak(request):
     """Calculate current streak based on consecutive days of taking assessments."""
     if request.method == "POST":

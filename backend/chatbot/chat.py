@@ -132,6 +132,10 @@ class MindEaseChat:
         """Process user message through pipeline (silent).
         emotions_override: optional list of (emotion, score) from e.g. audio SER; when set, skip text-based emotion detection."""
         try:
+            from chatbot.prompt_sanitizer import sanitize_user_message
+            user_input = sanitize_user_message(user_input)
+            if not user_input:
+                return "I'm here for you. Could you say that again? I want to make sure I understand."
             effective_test_context = self.test_context if self.test_context else test_context
 
             # Urdu text chat: Qwen-only Roman Urdu (no Qalb, no transliteration)
@@ -295,6 +299,11 @@ class MindEaseChat:
         emotions_override: optional list of (emotion, score) from e.g. audio SER; when set, skip text-based emotion detection.
         """
         try:
+            from chatbot.prompt_sanitizer import sanitize_user_message
+            user_input = sanitize_user_message(user_input)
+            if not user_input:
+                yield "I'm here for you. Could you say that again? I want to make sure I understand."
+                return
             effective_test_context = self.test_context if self.test_context else test_context
 
             # Urdu: Qwen-only Roman Urdu (yields full response as single chunk)

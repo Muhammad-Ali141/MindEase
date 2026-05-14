@@ -18,7 +18,7 @@ import {
   apiChatSummary, apiSaveSession, apiGetSessionById, apiToggleSessionStar,
   apiTTSSynthesize, type ChatMessage, type Session, type SessionPreview,
 } from "@/lib/api"
-import { ArrowLeft, Star, Loader2, CheckCircle2, Mic, Mic2 } from "lucide-react"
+import { ArrowLeft, Star, Loader2, CheckCircle2, Mic, Mic2, Maximize, Minimize } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useMicrophone } from "@/hooks/use-microphone"
 
@@ -103,6 +103,22 @@ export default function VoiceChatPage() {
   const ttsSequenceActiveRef   = useRef(false)
   // D-ID avatar (English only)
   const didRef                 = useRef<DIDAvatarHandle>(null)
+  const avatarContainerRef     = useRef<HTMLDivElement>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener("fullscreenchange", onChange)
+    return () => document.removeEventListener("fullscreenchange", onChange)
+  }, [])
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      avatarContainerRef.current?.requestFullscreen().catch(() => {})
+    } else {
+      document.exitFullscreen().catch(() => {})
+    }
+  }
 
   const {
     isRecording, hasPermission, error: micError,
@@ -525,6 +541,10 @@ export default function VoiceChatPage() {
         if (!ttsSequenceActiveRef.current) playSequential(streamDoneFlag)
       }
 
+      // Urdu uses ElevenLabs (free tier = 2 concurrent req cap) → send full text as one TTS request.
+      // English keeps per-sentence streaming for low latency.
+      const useSingleShotTTS = userLanguage === "ur"
+
       await apiChatMessageStream(
         transcript,
         user.id,
@@ -535,6 +555,7 @@ export default function VoiceChatPage() {
           onDelta: (delta: string) => {
             if (!isMountedRef.current) return
             fullResponse += delta
+            if (useSingleShotTTS) return
             sentenceBuffer += delta
             // Fire TTS for each complete sentence as it arrives
             let match: RegExpExecArray | null
@@ -547,7 +568,11 @@ export default function VoiceChatPage() {
           onDone: (payload) => {
             finalEmotions = payload.emotions ?? []
             streamDoneFlag.done = true
-            if (sentenceBuffer.trim()) enqueueTTS(sentenceBuffer)
+            if (useSingleShotTTS) {
+              if (fullResponse.trim()) enqueueTTS(fullResponse)
+            } else if (sentenceBuffer.trim()) {
+              enqueueTTS(sentenceBuffer)
+            }
             sentenceBuffer = ""
             if (isMountedRef.current) {
               setMessages(prev => [...prev, { role: "assistant", content: fullResponse, content_type: "text" }])
@@ -748,7 +773,7 @@ export default function VoiceChatPage() {
 
         {/* Chat body — full-screen avatar for both English and Urdu */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ position: "relative", flex: 1, overflow: "hidden", background: "#0a0a0a" }}>
+          <div ref={avatarContainerRef} style={{ position: "relative", flex: 1, overflow: "hidden", background: "#0a0a0a" }}>
             <DIDAvatar
               ref={didRef}
               onSpeakingStart={() => { if (isMountedRef.current) setVoiceState("playing") }}
@@ -763,8 +788,31 @@ export default function VoiceChatPage() {
               </div>
             )}
 
+            {/* Fullscreen toggle — bottom right */}
+            <button
+              onClick={toggleFullscreen}
+              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              style={{
+                position: "absolute", bottom: 24, right: 24, zIndex: 10,
+                width: 40, height: 40, borderRadius: 10,
+                background: "rgba(0,0,0,0.45)",
+                backdropFilter: "blur(8px)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer",
+                transition: "background 0.15s ease, border-color 0.15s ease",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,0,0,0.65)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)" }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(0,0,0,0.45)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)" }}
+            >
+              {isFullscreen
+                ? <Minimize size={18} color="white" strokeWidth={1.75} />
+                : <Maximize size={18} color="white" strokeWidth={1.75} />
+              }
+            </button>
+
             {/* Single mic button — bottom center */}
-            <div style={{ position: "absolute", bottom: 36, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+            <div style={{ position: "absolute", bottom: 36, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem", pointerEvents: "none" }}>
               <button
                 onClick={handleMicClick}
                 disabled={welcomeLoading || voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing"}
@@ -778,6 +826,7 @@ export default function VoiceChatPage() {
                   display: "flex", alignItems: "center", justifyContent: "center",
                   boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
                   transition: "background 0.2s ease, opacity 0.2s ease",
+                  pointerEvents: "auto",
                 }}
               >
                 {voiceState === "transcribing" || voiceState === "thinking" || voiceState === "synthesizing"
